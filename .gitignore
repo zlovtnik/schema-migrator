@@ -1,0 +1,19 @@
+# sbt / Scala
+target/
+project/target/
+target/scala-*/
+target/streams/
+
+# Metals / Bloop / IDE
+.metals/
+.bloop/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Misc
+*.log
+*.tmp
+.DS_Store
