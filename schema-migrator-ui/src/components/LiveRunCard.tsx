@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Square } from "lucide-react";
+import { SquareIcon } from "@phosphor-icons/react/dist/csr/Square";
 import type { Run } from "../types";
 import { useRunStream } from "../hooks/useRunStream";
 import { StatusBadge } from "./StatusBadge";
+import { Icon } from "./ui/Icon";
+import { ProgressBar } from "./ui/ProgressBar";
 
 interface LiveRunCardProps {
   run: Run;
@@ -29,7 +31,6 @@ export const LiveRunCard = ({ run, onAbort, aborting = false }: LiveRunCardProps
   const completedScripts = stream.orderedScripts.filter((script) =>
     ["completed", "failed", "skipped"].includes(script.status)
   ).length;
-  const progress = totalScripts === 0 ? 0 : Math.round((completedScripts / totalScripts) * 100);
   const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(run.started_at)) / 1000));
 
   const activeScript = useMemo(
@@ -46,16 +47,23 @@ export const LiveRunCard = ({ run, onAbort, aborting = false }: LiveRunCardProps
         </div>
         <StatusBadge status={stream.runStatus} />
       </div>
-      <div className="progress-meter" aria-label={`${completedScripts} of ${totalScripts} scripts complete`}>
-        <div style={{ width: `${progress}%` }} />
-      </div>
+      <ProgressBar
+        label="Migration run progress"
+        liveText={
+          activeScript
+            ? `Applying migration ${completedScripts + 1} of ${Math.max(totalScripts, 1)}: ${activeScript.filename}`
+            : `${completedScripts} of ${totalScripts} scripts complete`
+        }
+        max={Math.max(totalScripts, 1)}
+        value={completedScripts}
+      />
       <div className="live-run__meta">
         <span>{completedScripts} / {totalScripts} scripts</span>
         <span>Elapsed {formatElapsed(elapsedSeconds)}</span>
         <span>{activeScript ? activeScript.filename : "Waiting for script event"}</span>
       </div>
       <button className="button button--danger" type="button" onClick={() => onAbort(run.id)} disabled={aborting}>
-        <Square size={16} aria-hidden="true" />
+        <Icon source={SquareIcon} size={16} weight="fill" />
         {aborting ? "Aborting" : "Abort"}
       </button>
     </section>

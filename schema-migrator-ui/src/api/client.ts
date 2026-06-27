@@ -61,7 +61,7 @@ const readErrorBody = async (response: Response): Promise<unknown> => {
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
   const headers = new Headers(options.headers);
   const token = getAuthToken();
-  const body = options.body;
+  const { body, ...requestOptions } = options;
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const isBlob = typeof Blob !== "undefined" && body instanceof Blob;
   const isUrlSearchParams = typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams;
@@ -74,17 +74,23 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(buildApiUrl(path), {
-    ...options,
+  const requestInit: RequestInit = {
+    ...requestOptions,
     credentials: options.credentials ?? "include",
-    headers,
-    body:
-      body === undefined
-        ? undefined
-        : isFormData || isBlob || isUrlSearchParams || typeof body === "string"
-          ? (body as BodyInit)
-          : JSON.stringify(body)
-  });
+    headers
+  };
+  const requestBody =
+    body === undefined
+      ? undefined
+      : isFormData || isBlob || isUrlSearchParams || typeof body === "string"
+        ? (body as BodyInit)
+        : JSON.stringify(body);
+
+  if (requestBody !== undefined) {
+    requestInit.body = requestBody;
+  }
+
+  const response = await fetch(buildApiUrl(path), requestInit);
 
   if (!response.ok) {
     const detail = await readErrorBody(response);

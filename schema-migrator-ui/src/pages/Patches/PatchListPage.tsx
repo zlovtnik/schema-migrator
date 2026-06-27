@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, Play, UploadCloud } from "lucide-react";
+import { ArrowDownIcon } from "@phosphor-icons/react/dist/csr/ArrowDown";
+import { ArrowUpIcon } from "@phosphor-icons/react/dist/csr/ArrowUp";
+import { PlayIcon } from "@phosphor-icons/react/dist/csr/Play";
+import { UploadSimpleIcon } from "@phosphor-icons/react/dist/csr/UploadSimple";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
+import { Icon } from "../../components/ui/Icon";
 import { useErrorGate } from "../../hooks/useErrorGate";
 import { usePatches, useTriggerRun, useUploadPatch } from "../../hooks/usePatches";
 import { useRuns } from "../../hooks/useRuns";
@@ -38,7 +42,13 @@ export const PatchListPage = () => {
       if (target < 0 || target >= next.length) {
         return previous;
       }
-      [next[index], next[target]] = [next[target], next[index]];
+      const current = next[index];
+      const swap = next[target];
+      if (!current || !swap) {
+        return previous;
+      }
+      next[index] = swap;
+      next[target] = current;
       return next;
     });
   };
@@ -64,15 +74,15 @@ export const PatchListPage = () => {
     <section className="page">
       <header className="page-header">
         <div>
-          <span className="eyebrow">Patches</span>
-          <h1>Patch sets</h1>
+          <span className="eyebrow">Migrations</span>
+          <h1>Migration files</h1>
         </div>
         <TargetSelector />
       </header>
 
       {isGateBlocked ? (
         <div className="status-banner status-banner--error">
-          Apply is disabled by failed run {failedRun?.id}. Resolve it before applying patches.
+          Apply is disabled by failed run {failedRun?.id}. Resolve it before applying migrations.
         </div>
       ) : null}
       {isRunning ? <div className="status-banner">Apply is disabled while this target has an active run.</div> : null}
@@ -89,9 +99,9 @@ export const PatchListPage = () => {
             onFileSelect(event.dataTransfer.files);
           }}
         >
-          <UploadCloud size={22} aria-hidden="true" />
+          <Icon source={UploadSimpleIcon} size={24} />
           <div>
-            <strong>Upload SQL patch files</strong>
+            <strong>Upload SQL migration files</strong>
             <span>Drop files here or select from disk, then order and confirm.</span>
           </div>
           <input type="file" accept=".sql" multiple onChange={(event) => onFileSelect(event.target.files)} />
@@ -112,10 +122,10 @@ export const PatchListPage = () => {
                 <span>{file.name}</span>
                 <div className="row-actions">
                   <button className="icon-button" type="button" onClick={() => moveFile(index, -1)} aria-label="Move up">
-                    <ArrowUp size={15} />
+                    <Icon source={ArrowUpIcon} size={16} weight="bold" />
                   </button>
                   <button className="icon-button" type="button" onClick={() => moveFile(index, 1)} aria-label="Move down">
-                    <ArrowDown size={15} />
+                    <Icon source={ArrowDownIcon} size={16} weight="bold" />
                   </button>
                 </div>
               </li>
@@ -125,7 +135,7 @@ export const PatchListPage = () => {
       ) : null}
 
       {selectedTarget && !isLoading && sortedPatches.length === 0 ? (
-        <div className="empty-state">No patches registered for this target.</div>
+        <div className="empty-state">No migrations registered for this target.</div>
       ) : null}
 
       {sortedPatches.length > 0 ? (
@@ -133,19 +143,19 @@ export const PatchListPage = () => {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Version</th>
-                <th>Label</th>
-                <th>Scripts</th>
-                <th>Status</th>
-                <th>Applied at</th>
-                <th>Actions</th>
+                <th scope="col">Version</th>
+                <th scope="col">Label</th>
+                <th scope="col">Scripts</th>
+                <th scope="col">Status</th>
+                <th scope="col">Applied at</th>
+                <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
               {sortedPatches.map((patch) => (
                 <tr key={patch.id}>
                   <td>
-                    <Link to={`/patches/${patch.id}`}>{patch.version}</Link>
+                    <Link to={`/migrations/${patch.id}`}>{patch.version}</Link>
                   </td>
                   <td>{patch.label}</td>
                   <td>{patch.scripts.length}</td>
@@ -160,7 +170,7 @@ export const PatchListPage = () => {
                       disabled={!canApply || patch.status !== "pending"}
                       onClick={() => triggerRun.mutate({ patch_id: patch.id, target_id: patch.target_id })}
                     >
-                      <Play size={14} aria-hidden="true" />
+                      <Icon source={PlayIcon} size={16} weight="fill" />
                       Apply
                     </button>
                   </td>

@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Trash2, Zap } from "lucide-react";
+import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
+import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
+import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ConnectionForm } from "../../components/ConnectionForm";
 import { StatusBadge } from "../../components/StatusBadge";
+import { Icon } from "../../components/ui/Icon";
 import { useRuns } from "../../hooks/useRuns";
 import { useCreateTarget, useDeleteTarget, useTargets, useTestConnection } from "../../hooks/useTargets";
 import type { ConnectionTestResult, Target, TargetFormValues } from "../../types";
@@ -73,7 +76,7 @@ export const TargetListPage = () => {
           <h1>Database targets</h1>
         </div>
         <button className="button button--primary" type="button" onClick={() => setCreateOpen(true)}>
-          <Plus size={16} aria-hidden="true" />
+          <Icon source={PlusIcon} size={16} weight="bold" />
           Create
         </button>
       </header>
@@ -90,12 +93,12 @@ export const TargetListPage = () => {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Label</th>
-                <th>App</th>
-                <th>Env</th>
-                <th>Host/db</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th scope="col">Label</th>
+                <th scope="col">App</th>
+                <th scope="col">Env</th>
+                <th scope="col">Host/db</th>
+                <th scope="col">Status</th>
+                <th scope="col">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -131,7 +134,7 @@ export const TargetListPage = () => {
                           onClick={() => runConnectionTest(target)}
                           disabled={testingTargetId === target.id}
                         >
-                          <Zap size={14} aria-hidden="true" />
+                          <Icon source={LightningIcon} size={16} />
                           {testingTargetId === target.id ? "Testing" : "Test"}
                         </button>
                         <button
@@ -142,7 +145,7 @@ export const TargetListPage = () => {
                           disabled={hasActiveRuns}
                           title={hasActiveRuns ? "Delete disabled while active runs exist" : undefined}
                         >
-                          <Trash2 size={16} />
+                          <Icon source={TrashIcon} size={16} label={`Delete ${target.label}`} />
                         </button>
                       </div>
                     </td>

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Trash2 } from "lucide-react";
+import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { StatusBadge } from "../../components/StatusBadge";
+import { Icon } from "../../components/ui/Icon";
 import { useDeletePatch, usePatch } from "../../hooks/usePatches";
 
 export const PatchDetailPage = () => {
@@ -22,7 +23,7 @@ export const PatchDetailPage = () => {
 
   const confirmDelete = () => {
     deletePatch.mutate(patch.id, {
-      onSuccess: () => navigate(`/patches?target=${patch.target_id}`)
+      onSuccess: () => navigate(`/migrations?target=${patch.target_id}`)
     });
   };
 
@@ -30,7 +31,7 @@ export const PatchDetailPage = () => {
     <section className="page">
       <header className="page-header">
         <div>
-          <span className="eyebrow">Patch detail</span>
+        <span className="eyebrow">Migration detail</span>
           <h1>{patch.version}</h1>
           <p>{patch.label}</p>
         </div>
@@ -38,8 +39,8 @@ export const PatchDetailPage = () => {
           <StatusBadge status={patch.status} />
           {patch.status === "pending" ? (
             <button className="button button--danger" type="button" onClick={() => setConfirmOpen(true)} disabled={deletePatch.isPending}>
-              <Trash2 size={16} aria-hidden="true" />
-              Delete patch
+              <Icon source={TrashIcon} size={16} />
+              Delete migration
             </button>
           ) : null}
         </div>
@@ -60,10 +61,10 @@ export const PatchDetailPage = () => {
         <table className="data-table">
           <thead>
             <tr>
-              <th>Order</th>
-              <th>Filename</th>
-              <th>Checksum</th>
-              <th>Status</th>
+              <th scope="col">Order</th>
+              <th scope="col">Filename</th>
+              <th scope="col">Checksum</th>
+              <th scope="col">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -85,7 +86,7 @@ export const PatchDetailPage = () => {
 
       <ConfirmDialog
         open={confirmOpen}
-        title="Delete patch"
+        title="Delete migration"
         message={`Delete ${patch.version}? This cannot be undone.`}
         confirmLabel="Delete"
         destructive

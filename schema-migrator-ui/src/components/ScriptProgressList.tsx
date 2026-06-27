@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { CaretDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
+import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 import type { ScriptRun } from "../types";
 import { ErrorDetail } from "./ErrorDetail";
 import { StatusBadge } from "./StatusBadge";
+import { Icon } from "./ui/Icon";
 
 interface ScriptProgressListProps {
   scripts: ScriptRun[];
@@ -31,7 +33,7 @@ export const ScriptProgressList = ({ scripts }: ScriptProgressListProps) => {
               disabled={!canExpand}
               onClick={() => setExpandedId(isExpanded ? null : script.script_id)}
             >
-              {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              <Icon source={isExpanded ? CaretDownIcon : CaretRightIcon} size={16} weight="bold" />
             </button>
             <div className="script-row__order">{script.order}</div>
             <div className="script-row__file">

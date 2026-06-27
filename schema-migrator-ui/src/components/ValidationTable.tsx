@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { DownloadIcon } from "@phosphor-icons/react/dist/csr/Download";
 import { objectTypeOptions, type InvalidObject, type ObjectType, type ValidationResult } from "../types";
 import { StatusBadge } from "./StatusBadge";
+import { Icon } from "./ui/Icon";
 
 interface ValidationTableProps {
   result: ValidationResult;
@@ -59,7 +60,7 @@ export const ValidationTable = ({ result }: ValidationTableProps) => {
           </select>
         </label>
         <button className="button button--secondary" type="button" onClick={exportCsv}>
-          <Download size={16} aria-hidden="true" />
+          <Icon source={DownloadIcon} size={16} />
           Export CSV
         </button>
       </div>
@@ -69,17 +70,17 @@ export const ValidationTable = ({ result }: ValidationTableProps) => {
         <table className="data-table">
           <thead>
             <tr>
-              <th>
+              <th aria-sort={sortKey === "object_type" ? "ascending" : undefined} scope="col">
                 <button type="button" onClick={() => setSortKey("object_type")}>Object type</button>
               </th>
-              <th>
+              <th aria-sort={sortKey === "schema" ? "ascending" : undefined} scope="col">
                 <button type="button" onClick={() => setSortKey("schema")}>Schema</button>
               </th>
-              <th>
+              <th aria-sort={sortKey === "name" ? "ascending" : undefined} scope="col">
                 <button type="button" onClick={() => setSortKey("name")}>Name</button>
               </th>
-              <th>Error</th>
-              <th>
+              <th scope="col">Error</th>
+              <th aria-sort={sortKey === "severity" ? "ascending" : undefined} scope="col">
                 <button type="button" onClick={() => setSortKey("severity")}>Severity</button>
               </th>
             </tr>

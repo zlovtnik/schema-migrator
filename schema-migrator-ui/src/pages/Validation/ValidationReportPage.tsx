@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
-import { RotateCcw } from "lucide-react";
+import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowClockwise";
 import { StatusBadge } from "../../components/StatusBadge";
+import { Icon } from "../../components/ui/Icon";
 import { ValidationTable } from "../../components/ValidationTable";
 import { useRerunValidation, useValidation } from "../../hooks/useValidation";
 
@@ -38,7 +39,7 @@ export const ValidationReportPage = () => {
         <div className="row-actions">
           <StatusBadge status={result.status} />
           <button className="button button--secondary" type="button" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
-            <RotateCcw size={16} aria-hidden="true" />
+            <Icon source={ArrowClockwiseIcon} size={16} />
             {rerun.isPending ? "Re-validating" : "Re-validate"}
           </button>
         </div>

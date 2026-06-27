@@ -1,15 +1,12 @@
 import { apiRequest } from "./client";
-import type { Patch, UploadPatchPayload } from "../types";
+import { parsePatch, parsePatchList, type Patch, type UploadPatchPayload } from "../types";
 
 export const listPatches = async (targetId: string): Promise<Patch[]> => {
-  const response = await apiRequest<Patch[] | { patches: Patch[] }>(
-    `/patches?target_id=${encodeURIComponent(targetId)}`
-  );
-  if (Array.isArray(response)) return response;
-  return (response as { patches: Patch[] }).patches ?? [];
+  const response = await apiRequest<unknown>(`/patches?target_id=${encodeURIComponent(targetId)}`);
+  return parsePatchList(response);
 };
 
-export const getPatch = (id: string): Promise<Patch> => apiRequest<Patch>(`/patches/${id}`);
+export const getPatch = async (id: string): Promise<Patch> => parsePatch(await apiRequest<unknown>(`/patches/${id}`));
 
 export const uploadPatch = ({ target_id, files }: UploadPatchPayload): Promise<Patch> => {
   const formData = new FormData();
@@ -19,10 +16,10 @@ export const uploadPatch = ({ target_id, files }: UploadPatchPayload): Promise<P
     formData.append("order[]", String(index + 1));
   });
 
-  return apiRequest<Patch>("/patches", {
+  return apiRequest<unknown>("/patches", {
     method: "POST",
     body: formData
-  });
+  }).then(parsePatch);
 };
 
 export const deletePatch = (id: string): Promise<void> =>

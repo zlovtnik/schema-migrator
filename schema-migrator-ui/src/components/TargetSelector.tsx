@@ -1,8 +1,9 @@
 import { useEffect } from "react";
-import { Database } from "lucide-react";
+import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
 import { useSearchParams } from "react-router-dom";
 import { useTargets } from "../hooks/useTargets";
 import { StatusBadge } from "./StatusBadge";
+import { Icon } from "./ui/Icon";
 
 interface TargetSelectorProps {
   compact?: boolean;
@@ -37,7 +38,7 @@ export const TargetSelector = ({ compact = false, paramName = "target" }: Target
   return (
     <label className={compact ? "target-selector target-selector--compact" : "target-selector"}>
       <span>
-        <Database size={15} aria-hidden="true" />
+        <Icon source={DatabaseIcon} size={16} />
         Target
       </span>
       <select value={selectedId} onChange={(event) => updateTarget(event.target.value)} disabled={isLoading}>

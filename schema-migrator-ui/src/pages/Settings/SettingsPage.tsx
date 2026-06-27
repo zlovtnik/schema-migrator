@@ -6,7 +6,7 @@ const THEME_KEY = "schemaMigrator.theme";
 export const SettingsPage = () => {
   const [apiBase, setApiBase] = useState(getApiBaseUrl());
   const [token, setToken] = useState(getAuthToken());
-  const [theme, setTheme] = useState(() => window.localStorage.getItem(THEME_KEY) || "light");
+  const [theme, setTheme] = useState(() => window.localStorage.getItem(THEME_KEY) || "dark");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -31,19 +31,33 @@ export const SettingsPage = () => {
       </header>
 
       <div className="settings-form">
-        <label>
+        <label htmlFor="settings-api-base">
           API base URL
-          <input value={apiBase} onChange={(event) => setApiBase(event.target.value)} placeholder="/api" />
+          <input
+            autoComplete="off"
+            id="settings-api-base"
+            name="api-base-url"
+            value={apiBase}
+            onChange={(event) => setApiBase(event.target.value)}
+            placeholder="/api"
+          />
         </label>
-        <label>
+        <label htmlFor="settings-bearer-token">
           Bearer token
-          <input value={token} onChange={(event) => setToken(event.target.value)} type="password" autoComplete="off" />
+          <input
+            autoComplete="current-password"
+            id="settings-bearer-token"
+            name="bearer-token"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            type="password"
+          />
         </label>
-        <label>
+        <label htmlFor="settings-theme">
           Theme
-          <select value={theme} onChange={(event) => setTheme(event.target.value)}>
-            <option value="light">Light</option>
+          <select id="settings-theme" name="theme" value={theme} onChange={(event) => setTheme(event.target.value)}>
             <option value="dark">Dark</option>
+            <option value="light">Light</option>
           </select>
         </label>
         <div className="form-actions">

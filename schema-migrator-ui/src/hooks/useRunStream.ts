@@ -150,18 +150,19 @@ export const useRunStream = (runId?: string, initialRun?: Run, options: UseRunSt
         const data = parseEventData<ScriptErrorEvent>(event as MessageEvent<string>);
         setState((previous) => {
           const current = previous.scriptEvents.get(data.script_id);
+          const error: ScriptError = {
+            pg_code: data.pg_code,
+            message: data.message,
+            ...(data.hint !== undefined ? { hint: data.hint } : {}),
+            ...(data.context !== undefined ? { context: data.context } : {}),
+            ...(data.line !== undefined ? { line: data.line } : {})
+          };
           const scriptEvents = new Map(previous.scriptEvents).set(data.script_id, {
             script_id: data.script_id,
             filename: current?.filename ?? data.script_id,
             order: current?.order ?? previous.scriptEvents.size + 1,
             status: "failed",
-            error: {
-              pg_code: data.pg_code,
-              message: data.message,
-              hint: data.hint,
-              context: data.context,
-              line: data.line
-            }
+            error
           });
           return { ...previous, scriptEvents, runStatus: "failed" };
         });

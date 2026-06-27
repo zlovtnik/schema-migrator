@@ -1,9 +1,10 @@
-import { AlertTriangle } from "lucide-react";
+import { WarningIcon } from "@phosphor-icons/react/dist/csr/Warning";
 import { Link } from "react-router-dom";
 import type { Run } from "../types";
+import { Icon } from "./ui/Icon";
 
 interface ErrorGateBannerProps {
-  failedRun?: Run;
+  failedRun?: Run | undefined;
 }
 
 export const ErrorGateBanner = ({ failedRun }: ErrorGateBannerProps) => {
@@ -13,7 +14,7 @@ export const ErrorGateBanner = ({ failedRun }: ErrorGateBannerProps) => {
 
   return (
     <div className="error-gate" role="alert">
-      <AlertTriangle size={18} aria-hidden="true" />
+      <Icon source={WarningIcon} size={20} weight="bold" />
       <div>
         <strong>Apply is blocked by a failed run.</strong>
         <span>Resolve run {failedRun.id} before applying more patches.</span>

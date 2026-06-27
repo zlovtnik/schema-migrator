@@ -13,7 +13,21 @@ export type ValidationStatus = "clean" | "warnings" | "errors";
 export const envOptions = ["production", "staging", "dev"] as const;
 export const sslModeOptions = ["disable", "require", "verify-ca", "verify-full"] as const;
 export const runStatusOptions = ["pending", "running", "completed", "failed", "aborted"] as const;
+export const patchStatusOptions = ["pending", "applied", "failed", "partial"] as const;
+export const scriptStatusOptions = ["pending", "running", "completed", "failed", "skipped"] as const;
+export const severityOptions = ["warning", "error"] as const;
+export const validationStatusOptions = ["clean", "warnings", "errors"] as const;
 export const objectTypeOptions = ["view", "function", "procedure", "trigger", "index", "other"] as const;
+
+const rfc3339TimestampSchema = z.string().min(1).transform((value) => value as Rfc3339Timestamp);
+const envSchema = z.enum(envOptions);
+const sslModeSchema = z.enum(sslModeOptions);
+const runStatusSchema = z.enum(runStatusOptions);
+const patchStatusSchema = z.enum(patchStatusOptions);
+const scriptStatusSchema = z.enum(scriptStatusOptions);
+const severitySchema = z.enum(severityOptions);
+const validationStatusSchema = z.enum(validationStatusOptions);
+const objectTypeSchema = z.enum(objectTypeOptions);
 
 export interface Target {
   id: string;
@@ -114,6 +128,103 @@ export const scriptErrorSchema = z.object({
   line: z.coerce.number().int().positive().optional()
 });
 
+export const targetSchema = z.object({
+  id: z.string().min(1),
+  label: z.string(),
+  app_name: z.string(),
+  env: envSchema,
+  host: z.string(),
+  port: z.number().int(),
+  dbname: z.string(),
+  user: z.string(),
+  schema: z.string(),
+  ssl_mode: sslModeSchema,
+  created_at: rfc3339TimestampSchema
+});
+
+export const connectionTestResultSchema = z.object({
+  ok: z.boolean(),
+  latency_ms: z.number().optional(),
+  error: z.string().optional()
+});
+
+export const scriptSchema = z.object({
+  id: z.string().min(1),
+  patch_id: z.string().min(1),
+  order: z.number().int(),
+  filename: z.string(),
+  checksum: z.string(),
+  status: scriptStatusSchema,
+  error: scriptErrorSchema.optional(),
+  duration_ms: z.number().optional()
+});
+
+export const patchSchema = z.object({
+  id: z.string().min(1),
+  target_id: z.string().min(1),
+  version: z.string(),
+  label: z.string(),
+  scripts: z.array(scriptSchema),
+  status: patchStatusSchema,
+  applied_at: rfc3339TimestampSchema.optional()
+});
+
+export const scriptRunSchema = z.object({
+  script_id: z.string().min(1),
+  filename: z.string(),
+  order: z.number().int(),
+  status: scriptStatusSchema,
+  error: scriptErrorSchema.optional(),
+  duration_ms: z.number().optional()
+});
+
+export const runSchema = z.object({
+  id: z.string().min(1),
+  target_id: z.string().min(1),
+  patch_id: z.string().min(1),
+  status: runStatusSchema,
+  scripts: z.array(scriptRunSchema),
+  started_at: rfc3339TimestampSchema,
+  ended_at: rfc3339TimestampSchema.optional(),
+  triggered_by: z.string()
+});
+
+export const invalidObjectSchema = z.object({
+  object_type: objectTypeSchema,
+  schema: z.string(),
+  name: z.string(),
+  error: z.string(),
+  severity: severitySchema
+});
+
+export const validationResultSchema = z.object({
+  run_id: z.string().min(1),
+  target_id: z.string().min(1),
+  checked_at: rfc3339TimestampSchema,
+  invalid: z.array(invalidObjectSchema),
+  status: validationStatusSchema
+});
+
+export const parseTarget = (value: unknown): Target => targetSchema.parse(value) as Target;
+export const parseTargetList = (value: unknown): Target[] => {
+  const parsed = z.union([z.array(targetSchema), z.object({ targets: z.array(targetSchema) })]).parse(value);
+  return (Array.isArray(parsed) ? parsed : parsed.targets) as Target[];
+};
+export const parseConnectionTestResult = (value: unknown): ConnectionTestResult =>
+  connectionTestResultSchema.parse(value) as ConnectionTestResult;
+export const parsePatch = (value: unknown): Patch => patchSchema.parse(value) as Patch;
+export const parsePatchList = (value: unknown): Patch[] => {
+  const parsed = z.union([z.array(patchSchema), z.object({ patches: z.array(patchSchema) })]).parse(value);
+  return (Array.isArray(parsed) ? parsed : parsed.patches) as Patch[];
+};
+export const parseRun = (value: unknown): Run => runSchema.parse(value) as Run;
+export const parseRunList = (value: unknown): Run[] => {
+  const parsed = z.union([z.array(runSchema), z.object({ runs: z.array(runSchema) })]).parse(value);
+  return (Array.isArray(parsed) ? parsed : parsed.runs) as Run[];
+};
+export const parseValidationResult = (value: unknown): ValidationResult =>
+  validationResultSchema.parse(value) as ValidationResult;
+
 export const targetFormSchema = z.object({
   label: z.string().trim().min(1, "Label is required"),
   app_name: z.string().trim().min(1, "Application is required"),
@@ -130,7 +241,7 @@ export const targetFormSchema = z.object({
 export type TargetFormValues = z.infer<typeof targetFormSchema>;
 
 export type TargetPayload = Omit<TargetFormValues, "password"> & {
-  password?: string;
+  password?: string | undefined;
 };
 
 export const normalizeTargetPayload = (values: TargetFormValues): TargetPayload => {

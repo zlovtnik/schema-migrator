@@ -1,22 +1,21 @@
 import { apiRequest } from "./client";
-import type { Run, TriggerRunPayload } from "../types";
+import { parseRun, parseRunList, type Run, type TriggerRunPayload } from "../types";
 
 export const triggerRun = (payload: TriggerRunPayload): Promise<Run> =>
-  apiRequest<Run>("/runs", {
+  apiRequest<unknown>("/runs", {
     method: "POST",
     body: payload
-  });
+  }).then(parseRun);
 
 export const listRuns = async (targetId?: string | null): Promise<Run[]> => {
   const query = targetId ? `?target_id=${encodeURIComponent(targetId)}` : "";
-  const response = await apiRequest<Run[] | { runs: Run[] }>(`/runs${query}`);
-  if (Array.isArray(response)) return response;
-  return (response as { runs: Run[] }).runs ?? [];
+  const response = await apiRequest<unknown>(`/runs${query}`);
+  return parseRunList(response);
 };
 
-export const getRun = (id: string): Promise<Run> => apiRequest<Run>(`/runs/${id}`);
+export const getRun = async (id: string): Promise<Run> => parseRun(await apiRequest<unknown>(`/runs/${id}`));
 
 export const abortRun = (id: string): Promise<Run> =>
-  apiRequest<Run>(`/runs/${id}/abort`, {
+  apiRequest<unknown>(`/runs/${id}/abort`, {
     method: "POST"
-  });
+  }).then(parseRun);

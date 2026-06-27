@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Trash2 } from "lucide-react";
+import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ConnectionForm } from "../../components/ConnectionForm";
+import { Icon } from "../../components/ui/Icon";
 import { useRuns } from "../../hooks/useRuns";
 import { useDeleteTarget, useTarget, useTestConnection, useUpdateTarget } from "../../hooks/useTargets";
 import type { ConnectionTestResult, TargetFormValues } from "../../types";
@@ -66,7 +67,7 @@ export const TargetFormPage = () => {
           title={hasActiveRuns ? "Delete disabled while active runs exist" : undefined}
           onClick={() => setConfirmOpen(true)}
         >
-          <Trash2 size={16} aria-hidden="true" />
+          <Icon source={TrashIcon} size={16} />
           Delete
         </button>
       </header>

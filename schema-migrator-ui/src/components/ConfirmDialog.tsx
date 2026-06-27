@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle } from "lucide-react";
+import { WarningIcon } from "@phosphor-icons/react/dist/csr/Warning";
+import { Icon } from "./ui/Icon";
 
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
   message: string;
-  confirmLabel?: string;
-  requireText?: string;
-  destructive?: boolean;
-  busy?: boolean;
+  confirmLabel?: string | undefined;
+  requireText?: string | undefined;
+  destructive?: boolean | undefined;
+  busy?: boolean | undefined;
   onCancel: () => void;
   onConfirm: () => void;
 }
@@ -27,6 +28,9 @@ export const ConfirmDialog = ({
 }: ConfirmDialogProps) => {
   const [typed, setTyped] = useState("");
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const titleId = useId();
+  const descriptionId = useId();
+  const confirmationId = useId();
 
   useEffect(() => {
     if (!open) {
@@ -57,6 +61,9 @@ export const ConfirmDialog = ({
 
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
+      if (!first || !last) {
+        return;
+      }
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
@@ -81,16 +88,30 @@ export const ConfirmDialog = ({
 
   return createPortal(
     <div className="modal-backdrop" role="presentation">
-      <div className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" ref={dialogRef}>
+      <div
+        className="confirm-dialog"
+        role="dialog"
+        aria-describedby={descriptionId}
+        aria-modal="true"
+        aria-labelledby={titleId}
+        ref={dialogRef}
+      >
         <div className={destructive ? "dialog-icon dialog-icon--danger" : "dialog-icon"}>
-          <AlertTriangle size={20} aria-hidden="true" />
+          <Icon source={WarningIcon} size={20} weight="bold" />
         </div>
-        <h2 id="confirm-title">{title}</h2>
-        <p>{message}</p>
+        <h2 id={titleId}>{title}</h2>
+        <p id={descriptionId}>{message}</p>
         {requireText ? (
-          <label>
+          <label htmlFor={confirmationId}>
             Type <strong>{requireText}</strong> to confirm
-            <input value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus />
+            <input
+              autoComplete="off"
+              autoFocus
+              id={confirmationId}
+              name="typed-confirmation"
+              value={typed}
+              onChange={(event) => setTyped(event.target.value)}
+            />
           </label>
         ) : null}
         <div className="form-actions">

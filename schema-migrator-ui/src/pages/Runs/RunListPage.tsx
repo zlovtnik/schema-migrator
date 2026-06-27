@@ -79,11 +79,11 @@ export const RunListPage = () => {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Target</th>
-                <th>Patch</th>
-                <th>Started</th>
-                <th>Duration</th>
-                <th>Status</th>
+                <th scope="col">Target</th>
+                <th scope="col">Patch</th>
+                <th scope="col">Started</th>
+                <th scope="col">Duration</th>
+                <th scope="col">Status</th>
               </tr>
             </thead>
             <tbody>

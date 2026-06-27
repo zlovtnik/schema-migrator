@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { Download, Square } from "lucide-react";
+import { DownloadIcon } from "@phosphor-icons/react/dist/csr/Download";
+import { SquareIcon } from "@phosphor-icons/react/dist/csr/Square";
 import { LogViewer } from "../../components/LogViewer";
 import { ScriptProgressList } from "../../components/ScriptProgressList";
 import { StatusBadge } from "../../components/StatusBadge";
+import { Icon } from "../../components/ui/Icon";
 import { useRunStream } from "../../hooks/useRunStream";
 import { runKeys, useAbortRun, useRun } from "../../hooks/useRuns";
 
@@ -67,12 +69,12 @@ export const RunDetailPage = () => {
           <StatusBadge status={stream.runStatus} />
           {canAbort ? (
             <button className="button button--danger" type="button" onClick={() => abortRun.mutate(run.id)}>
-              <Square size={16} aria-hidden="true" />
+              <Icon source={SquareIcon} size={16} weight="fill" />
               Abort
             </button>
           ) : null}
           <button className="button button--secondary" type="button" onClick={downloadLog} disabled={stream.logLines.length === 0}>
-            <Download size={16} aria-hidden="true" />
+            <Icon source={DownloadIcon} size={16} />
             Download log
           </button>
           {stream.runStatus === "completed" ? (

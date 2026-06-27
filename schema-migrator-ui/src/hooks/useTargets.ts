@@ -62,7 +62,7 @@ export const useDeleteTarget = () => {
 
 export const useTestConnection = () =>
   useMutation({
-    mutationFn: ({ id, values }: { id?: string; values?: TargetFormValues | TargetPayload }) => {
+    mutationFn: ({ id, values }: { id?: string | undefined; values?: TargetFormValues | TargetPayload | undefined }) => {
       if (values) {
         return testUnsavedTargetConnection("password" in values ? normalizeTargetPayload(values as TargetFormValues) : values);
       }

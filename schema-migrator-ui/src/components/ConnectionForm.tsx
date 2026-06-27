@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, PlugZap } from "lucide-react";
+import { EyeIcon } from "@phosphor-icons/react/dist/csr/Eye";
+import { EyeSlashIcon } from "@phosphor-icons/react/dist/csr/EyeSlash";
+import { PlugsConnectedIcon } from "@phosphor-icons/react/dist/csr/PlugsConnected";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import {
@@ -11,12 +13,13 @@ import {
   type Target,
   type TargetFormValues
 } from "../types";
+import { Icon } from "./ui/Icon";
 
 interface ConnectionFormProps {
-  initialTarget?: Target;
-  submitting?: boolean;
-  testResult?: ConnectionTestResult;
-  testing?: boolean;
+  initialTarget?: Target | undefined;
+  submitting?: boolean | undefined;
+  testResult?: ConnectionTestResult | undefined;
+  testing?: boolean | undefined;
   onSubmit: (values: TargetFormValues) => void;
   onCancel?: () => void;
   onTest?: (values: TargetFormValues) => Promise<ConnectionTestResult> | void;
@@ -34,6 +37,19 @@ const defaultsFromTarget = (target?: Target): TargetFormValues => ({
   schema: target?.schema ?? "public",
   ssl_mode: target?.ssl_mode ?? "require"
 });
+
+const fieldIds = {
+  label: "target-label",
+  app_name: "target-app-name",
+  env: "target-env",
+  host: "target-host",
+  port: "target-port",
+  dbname: "target-dbname",
+  user: "target-user",
+  password: "target-password",
+  schema: "target-schema",
+  ssl_mode: "target-ssl-mode"
+} satisfies Record<keyof TargetFormValues, string>;
 
 export const ConnectionForm = ({
   initialTarget,
@@ -84,25 +100,37 @@ export const ConnectionForm = ({
     await onTest?.(changePassword ? values : { ...values, password: "" });
   };
 
+  const errorId = (name: keyof TargetFormValues) => `${fieldIds[name]}-error`;
+  const fieldState = (name: keyof TargetFormValues) => ({
+    "aria-describedby": errors[name] ? errorId(name) : undefined,
+    "aria-invalid": Boolean(errors[name]) || undefined,
+    "aria-required": true
+  });
+  const renderRequired = () => <span aria-hidden="true"> *</span>;
   const renderError = (name: keyof TargetFormValues) =>
-    errors[name] ? <span className="field-error">{errors[name]?.message}</span> : null;
+    errors[name] ? (
+      <span className="field-error" id={errorId(name)} role="alert">
+        {errors[name]?.message}
+      </span>
+    ) : null;
 
   return (
     <form className="connection-form" onSubmit={handleSubmit(submit)}>
+      <p className="form-hint">Fields marked with * are required.</p>
       <div className="form-grid">
-        <label>
-          Label
-          <input {...register("label")} autoComplete="off" />
+        <label htmlFor={fieldIds.label}>
+          Label{renderRequired()}
+          <input id={fieldIds.label} {...register("label")} autoComplete="off" {...fieldState("label")} />
           {renderError("label")}
         </label>
-        <label>
-          App
-          <input {...register("app_name")} autoComplete="off" />
+        <label htmlFor={fieldIds.app_name}>
+          App{renderRequired()}
+          <input id={fieldIds.app_name} {...register("app_name")} autoComplete="off" {...fieldState("app_name")} />
           {renderError("app_name")}
         </label>
-        <label>
-          Environment
-          <select {...register("env")}>
+        <label htmlFor={fieldIds.env}>
+          Environment{renderRequired()}
+          <select id={fieldIds.env} {...register("env")} {...fieldState("env")}>
             {envOptions.map((env) => (
               <option value={env} key={env}>
                 {env}
@@ -111,34 +139,34 @@ export const ConnectionForm = ({
           </select>
           {renderError("env")}
         </label>
-        <label>
-          Host
-          <input {...register("host")} autoComplete="off" />
+        <label htmlFor={fieldIds.host}>
+          Host{renderRequired()}
+          <input id={fieldIds.host} {...register("host")} autoComplete="off" {...fieldState("host")} />
           {renderError("host")}
         </label>
-        <label>
-          Port
-          <input {...register("port")} inputMode="numeric" />
+        <label htmlFor={fieldIds.port}>
+          Port{renderRequired()}
+          <input id={fieldIds.port} {...register("port")} inputMode="numeric" {...fieldState("port")} />
           {renderError("port")}
         </label>
-        <label>
-          Database
-          <input {...register("dbname")} autoComplete="off" />
+        <label htmlFor={fieldIds.dbname}>
+          Database{renderRequired()}
+          <input id={fieldIds.dbname} {...register("dbname")} autoComplete="off" {...fieldState("dbname")} />
           {renderError("dbname")}
         </label>
-        <label>
-          User
-          <input {...register("user")} autoComplete="off" />
+        <label htmlFor={fieldIds.user}>
+          User{renderRequired()}
+          <input id={fieldIds.user} {...register("user")} autoComplete="off" {...fieldState("user")} />
           {renderError("user")}
         </label>
-        <label>
-          Schema
-          <input {...register("schema")} autoComplete="off" />
+        <label htmlFor={fieldIds.schema}>
+          Schema{renderRequired()}
+          <input id={fieldIds.schema} {...register("schema")} autoComplete="off" {...fieldState("schema")} />
           {renderError("schema")}
         </label>
-        <label>
-          SSL mode
-          <select {...register("ssl_mode")}>
+        <label htmlFor={fieldIds.ssl_mode}>
+          SSL mode{renderRequired()}
+          <select id={fieldIds.ssl_mode} {...register("ssl_mode")} {...fieldState("ssl_mode")}>
             {sslModeOptions.map((mode) => (
               <option value={mode} key={mode}>
                 {mode}
@@ -157,12 +185,18 @@ export const ConnectionForm = ({
       ) : null}
 
       {changePassword ? (
-        <label>
-          Password
+        <label htmlFor={fieldIds.password}>
+          Password{renderRequired()}
           <span className="password-input">
-            <input {...register("password")} type={showPassword ? "text" : "password"} autoComplete="new-password" />
+            <input
+              id={fieldIds.password}
+              {...register("password")}
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              {...fieldState("password")}
+            />
             <button className="icon-button" type="button" onClick={() => setShowPassword((value) => !value)}>
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              <Icon source={showPassword ? EyeSlashIcon : EyeIcon} size={16} />
               <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
             </button>
           </span>
@@ -180,7 +214,7 @@ export const ConnectionForm = ({
 
       <div className="form-actions">
         <button className="button button--secondary" type="button" onClick={handleSubmit(test)} disabled={!onTest || testing}>
-          <PlugZap size={16} aria-hidden="true" />
+          <Icon source={PlugsConnectedIcon} size={16} />
           {testing ? "Testing" : "Test connection"}
         </button>
         {onCancel ? (
