@@ -4,47 +4,51 @@ import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.validation.RollbackValidator
-import com.sslproxy.schema.db.{ApplyLog, DbProvider, DbSession, JdbcConnectionConfig, JdbcSupport, LockManager, SchemaControlStore}
+import com.sslproxy.schema.db.{ApplyLog, DbProvider, DbSession, DoobieSupport, JdbcConnectionConfig, JdbcSupport, LockManager, SchemaControlStore}
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.engine.*
 import com.sslproxy.schema.error.MigratorError
+import doobie.*
+import doobie.free.FS
+import doobie.hi.HC
+import doobie.implicits.*
+import doobie.util.transactor.Transactor
 
 import java.net.{URI, URLDecoder}
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
-import java.sql.{Connection, ResultSet, SQLException}
-import scala.jdk.CollectionConverters.*
+import java.sql.SQLException
 
 final class PostgresProvider(config: JdbcConnectionConfig) extends DbProvider:
   override val dialect: SqlDialect = SqlDialect.Postgres
 
   override def session: Resource[IO, DbSession] =
-    JdbcSupport.connection(config).map(PostgresSession(_))
+    DoobieSupport.postgresSessionTransactor(config).map(PostgresSession(_))
 
-final class PostgresSession(connection: Connection) extends DbSession:
-  import JdbcSupport.*
+final class PostgresSession(transactor: Transactor[IO]) extends DbSession:
+  private val nonTransactionalTransactor = DoobieSupport.withoutTransaction(transactor)
 
-  private val lockManager  = LockManager.postgres(connection, PostgresSession.applyLockKey, PostgresSession.applyLockNamespace)
-  private val store        = SchemaControlStore.postgres(connection)
-  private val applyLog     = ApplyLog.postgres(connection, appliedBy)
+  private val lockManager  = LockManager.postgres(PostgresSession.applyLockKey, PostgresSession.applyLockNamespace)
+  private val store        = SchemaControlStore.postgres
+  private val applyLog     = ApplyLog.postgres(appliedBy)
 
   override def checkConnection: IO[Unit] =
-    IO.blocking(queryOne(connection, "select 1")(_.getInt(1))).void
+    sql"select 1".query[Int].unique.transact(transactor).void
 
   override def bootstrap: IO[Unit] =
-    IO.blocking(executeStatement(connection, PostgresStatements.bootstrapSql)).adaptError {
+    executeStatement(PostgresStatements.bootstrapSql).transact(transactor).adaptError {
       case error: SQLException => MigratorError.Apply(s"schema_control bootstrap failed: ${error.getMessage}", error)
     }
 
-  override def acquireLock: IO[Unit]           = lockManager.acquire
-  override def releaseLock: IO[Unit]           = lockManager.release
-  override def prepare(objects: List[SchemaObject]): IO[List[PreparedObject]] = store.prepare(objects)
-  override def fetchStatus: IO[List[ObjectStatus]]         = store.fetchStatus
-  override def fetchReady: IO[SchemaReadyStatus]           = store.fetchReady
+  override def acquireLock: IO[Unit]           = lockManager.acquire.transact(transactor)
+  override def releaseLock: IO[Unit]           = lockManager.release.transact(transactor)
+  override def prepare(objects: List[SchemaObject]): IO[List[PreparedObject]] = store.prepare(objects).transact(transactor)
+  override def fetchStatus: IO[List[ObjectStatus]]         = store.fetchStatus.transact(transactor)
+  override def fetchReady: IO[SchemaReadyStatus]           = store.fetchReady.transact(transactor)
   override def checkReady: IO[Boolean]                     = fetchReady.map(_.ready)
 
   override def recordSkipped(prepared: PreparedObject): IO[Unit] =
-    applyLog.recordSkipped(prepared.objectDef, prepared.oldSha256)
+    applyLog.recordSkipped(prepared.objectDef, prepared.oldSha256).transact(transactor)
 
   override def executeObject(prepared: PreparedObject): IO[Unit] =
     if prepared.objectDef.transactional then executeTransactional(prepared)
@@ -52,59 +56,42 @@ final class PostgresSession(connection: Connection) extends DbSession:
 
   private def executeTransactional(prepared: PreparedObject): IO[Unit] =
     IO(System.nanoTime()).flatMap { started =>
-      IO.blocking(connection.setAutoCommit(false)) *>
-        IO.blocking(executeStatement(connection, prepared.objectDef.rawSql))
-          .attempt
-          .flatMap {
-              case Right(()) =>
-                (applyLog.recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started)) *>
-                  IO.blocking(connection.commit()))
-                  .handleErrorWith(failure =>
-                    IO.blocking(connection.rollback()).attempt.flatMap {
-                      case Right(())                          => IO.raiseError(failure)
-                      case Left(rollbackErr: SQLException)    => failure.addSuppressed(rollbackErr); IO.raiseError(failure)
-                      case Left(rollbackErr)                  => IO.raiseError(new RuntimeException("rollback failed", rollbackErr).initCause(failure))
-                    }
-                  )
-             case Left(error: SQLException) =>
-               val formatted = JdbcSupport.sqlError(prepared.objectDef.sourceFile, error, "postgres")
-               IO.blocking(connection.rollback()) *>
-                 applyLog.recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
-                   .handleError(logError => { error.addSuppressed(logError); IO.unit }) *>
-                 IO.raiseError(MigratorError.Apply(formatted, error))
-            case Left(other) =>
-              IO.blocking(connection.rollback()) *>
-                IO.raiseError(other)
-          }
-          .guarantee(IO.blocking(connection.setAutoCommit(true)))
+      val action =
+        sqlExecution(prepared.objectDef.rawSql) *>
+          applyLog.recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started))
+
+      action.transact(transactor).handleErrorWith {
+        case failure: SqlExecutionFailure =>
+          recordFailedThenRaise(prepared, started, failure.error)
+        case other =>
+          IO.raiseError(other)
+      }
     }
 
   private def executeNonTransactional(prepared: PreparedObject): IO[Unit] =
     IO(System.nanoTime()).flatMap { started =>
-      IO.blocking(connection.setAutoCommit(true)) *>
-        IO.blocking(executeStatement(connection, prepared.objectDef.rawSql))
-          .attempt
-          .flatMap {
-             case Right(()) =>
-               applyLog.recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started))
-                 .adaptError { case error: SQLException =>
-                   MigratorError.NonRetryableApply(
-                     s"${prepared.objectDef.sourceFile}: applied SQL but failed to record migration state: ${error.getMessage}",
-                     error
-                   )
-                 }
-             case Left(error: SQLException) =>
-               val formatted = JdbcSupport.sqlError(prepared.objectDef.sourceFile, error, "postgres")
-               applyLog.recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
-                 .handleError(logError => { error.addSuppressed(logError); IO.unit }) *>
-                 IO.raiseError(MigratorError.Apply(formatted, error))
-            case Left(other) =>
-              IO.raiseError(other)
-          }
+      executeStatement(prepared.objectDef.rawSql)
+        .transact(nonTransactionalTransactor)
+        .attempt
+        .flatMap {
+          case Right(()) =>
+            applyLog.recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started))
+              .transact(transactor)
+              .adaptError { case error: SQLException =>
+                MigratorError.NonRetryableApply(
+                  s"${prepared.objectDef.sourceFile}: applied SQL but failed to record migration state: ${error.getMessage}",
+                  error
+                )
+              }
+          case Left(error: SQLException) =>
+            recordFailedThenRaise(prepared, started, error)
+          case Left(other) =>
+            IO.raiseError(other)
+        }
     }
 
   override def rollbackObject(sqlDir: Path, objectName: String): IO[Unit] =
-    store.fetchRollbackTarget(objectName).flatMap { target =>
+    store.fetchRollbackTarget(objectName).transact(transactor).flatMap { target =>
       val pseudoFile = com.sslproxy.schema.discovery.SqlFile(
         folder = target.kind,
         path = sqlDir.resolve(target.sourceFile),
@@ -120,34 +107,48 @@ final class PostgresSession(connection: Connection) extends DbSession:
           IO.raiseError(MigratorError.Apply(s"$rollbackPath: rollback SQL file is empty"))
         else
           IO(System.nanoTime()).flatMap { started =>
-            IO.blocking(connection.setAutoCommit(false)) *>
-              IO.blocking(executeStatement(connection, sql))
-                .attempt
-                .flatMap {
-                    case Right(()) =>
-                      (applyLog.recordRolledBack(target, JdbcSupport.durationMs(started)) *>
-                        IO.blocking(connection.commit()))
-                        .handleErrorWith(failure =>
-                          IO.blocking(connection.rollback()).attempt.flatMap {
-                            case Right(())                        => IO.raiseError(failure)
-                            case Left(rollbackErr: SQLException)  => failure.addSuppressed(rollbackErr); IO.raiseError(failure)
-                            case Left(rollbackErr)                => IO.raiseError(new RuntimeException("rollback failed", rollbackErr).initCause(failure))
-                          }
-                        )
-                   case Left(error: SQLException) =>
-                     IO.blocking(connection.rollback()) *>
-                       IO.raiseError(MigratorError.Apply(JdbcSupport.sqlError(rollbackPath.toString, error, "postgres"), error))
-                  case Left(other) =>
-                    IO.blocking(connection.rollback()) *>
-                      IO.raiseError(other)
-                }
-                .guarantee(IO.blocking(connection.setAutoCommit(true)))
+            val action =
+              sqlExecution(sql) *>
+                applyLog.recordRolledBack(target, JdbcSupport.durationMs(started))
+
+            action.transact(transactor).handleErrorWith {
+              case failure: SqlExecutionFailure =>
+                IO.raiseError(MigratorError.Apply(JdbcSupport.sqlError(rollbackPath.toString, failure.error, "postgres"), failure.error))
+              case other =>
+                IO.raiseError(other)
+            }
           }
       }
     }
 
   private def appliedBy: String =
     JdbcSupport.appliedBy()
+
+  private def executeStatement(sql: String): ConnectionIO[Unit] =
+    HC.createStatement(FS.execute(sql)).void
+
+  private def sqlExecution(sql: String): ConnectionIO[Unit] =
+    executeStatement(sql).adaptError { case error: SQLException =>
+      SqlExecutionFailure(error)
+    }
+
+  private def recordFailedThenRaise[A](
+      prepared: PreparedObject,
+      started: Long,
+      error: SQLException
+  ): IO[A] =
+    val formatted = JdbcSupport.sqlError(prepared.objectDef.sourceFile, error, "postgres")
+    applyLog.recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
+      .transact(transactor)
+      .attempt
+      .flatMap {
+        case Right(()) =>
+          IO.raiseError(MigratorError.Apply(formatted, error))
+        case Left(logError) =>
+          IO(error.addSuppressed(logError)) *> IO.raiseError(MigratorError.Apply(formatted, error))
+      }
+
+  private final case class SqlExecutionFailure(error: SQLException) extends RuntimeException(error)
 
 object PostgresProvider:
   def fromConfig(config: MigratorConfig): IO[PostgresProvider] =

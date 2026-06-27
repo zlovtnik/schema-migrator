@@ -1,53 +1,52 @@
 package com.sslproxy.schema.db
 
 import cats.effect.IO
-import cats.effect.kernel.Sync
+import cats.syntax.all.*
 import com.sslproxy.schema.db.oracle.OracleStatements
-import com.sslproxy.schema.db.postgres.PostgresStatements
 import com.sslproxy.schema.error.MigratorError
+import doobie.*
+import doobie.implicits.*
 
 import java.sql.{Connection, SQLException}
-import scala.concurrent.duration.*
 
 trait LockManager[F[_]]:
   def acquire: F[Unit]
   def release: F[Unit]
 
 object LockManager:
-  def postgres(connection: Connection, lockKey: Long, lockNamespace: String): LockManager[IO] =
-    new PostgresLockManager(connection, lockKey, lockNamespace)
+  def postgres(lockKey: Long, lockNamespace: String): PostgresLockManager =
+    new PostgresLockManager(lockKey, lockNamespace)
 
   def oracle(connection: Connection): LockManager[IO] =
     new OracleLockManager(connection)
 
 final class PostgresLockManager(
-    connection: Connection,
     lockKey: Long,
     lockNamespace: String
-) extends LockManager[IO]:
-  import JdbcSupport.*
+):
+  def acquire: ConnectionIO[Unit] =
+    sql"select pg_try_advisory_lock($lockKey)"
+      .query[Boolean]
+      .unique
+      .flatMap { acquired =>
+        if acquired then ().pure[ConnectionIO]
+        else
+          MigratorError.Apply(
+            s"schema apply lock $lockKey ($lockNamespace) is already held"
+          ).raiseError[ConnectionIO, Unit]
+      }
 
-  override def acquire: IO[Unit] =
-    IO.blocking {
-      val rows = queryPrepared(connection, PostgresStatements.advisoryLockTry) { statement =>
-        statement.setLong(1, lockKey)
-      }(_.getBoolean(1))
-      if !rows.headOption.contains(true) then
-        throw MigratorError.Apply(
-          s"schema apply lock $lockKey ($lockNamespace) is already held"
-        )
-    }
-
-  override def release: IO[Unit] =
-    IO.blocking {
-      val rows = queryPrepared(connection, PostgresStatements.advisoryLockRelease) { statement =>
-        statement.setLong(1, lockKey)
-      }(_.getBoolean(1))
-      if !rows.headOption.contains(true) then
-        throw MigratorError.LockNotHeld(
-          s"schema apply lock $lockKey ($lockNamespace) was not held"
-        )
-    }
+  def release: ConnectionIO[Unit] =
+    sql"select pg_advisory_unlock($lockKey)"
+      .query[Boolean]
+      .unique
+      .flatMap { released =>
+        if released then ().pure[ConnectionIO]
+        else
+          MigratorError.LockNotHeld(
+            s"schema apply lock $lockKey ($lockNamespace) was not held"
+          ).raiseError[ConnectionIO, Unit]
+      }
 
 final class OracleLockManager(connection: Connection) extends LockManager[IO]:
   import JdbcSupport.*
@@ -60,13 +59,8 @@ final class OracleLockManager(connection: Connection) extends LockManager[IO]:
         executePrepared(connection, OracleStatements.lockAcquireSql)(_.setString(1, appliedBy(connection)))
       catch
         case error: SQLException if error.getErrorCode == 1 =>
-          val stale = queryLockStale()
-          if stale then
-            releaseOwned()
-            executePrepared(connection, OracleStatements.lockAcquireSql)(_.setString(1, appliedBy(connection)))
-          else
-            val info = queryLockInfo().map(info => s" held by ${info._1} since ${info._2}").getOrElse("")
-            throw MigratorError.Apply(s"Oracle schema apply lock $lockName is already held$info", error)
+          val info = queryLockInfo().map(info => s" held by ${info._1} since ${info._2}").getOrElse("")
+          throw MigratorError.Apply(s"Oracle schema apply lock $lockName is already held$info", error)
     }
 
   override def release: IO[Unit] =
@@ -83,9 +77,6 @@ final class OracleLockManager(connection: Connection) extends LockManager[IO]:
     executePrepared(connection, s"${OracleStatements.lockDeleteSql} and locked_by = ?") { statement =>
       statement.setString(1, appliedBy(connection))
     }
-
-  private def queryLockStale(): Boolean =
-    queryOne(connection, OracleStatements.lockQueryStaleSql) { row => row.getInt(1) == 1 }.getOrElse(false)
 
   private def queryLockInfo(): Option[(String, String)] =
     queryOne(connection, OracleStatements.lockQueryInfoSql) { row =>

@@ -10,7 +10,7 @@ import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.validation.RollbackValidator
 
 import java.nio.file.{Files, Path}
-import java.sql.{Connection, ResultSet, SQLException}
+import java.sql.{Connection, SQLException}
 
 final class OracleProvider(config: JdbcConnectionConfig) extends DbProvider:
   override val dialect: SqlDialect = SqlDialect.Oracle
@@ -46,26 +46,46 @@ final class OracleSession(connection: Connection) extends DbSession:
     applyLog.recordSkipped(prepared.objectDef, prepared.oldSha256)
 
   override def executeObject(prepared: PreparedObject): IO[Unit] =
+    if prepared.objectDef.transactional then executeTransactional(prepared)
+    else executeNonTransactional(prepared)
+
+  private def executeTransactional(prepared: PreparedObject): IO[Unit] =
     IO(System.nanoTime()).flatMap { started =>
-      IO.blocking(OracleDdlHelper.executeSql(connection, prepared.objectDef.rawSql))
-        .attempt
-        .flatMap {
-          case Right(()) =>
-            applyLog.recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started))
-              .adaptError { case error: SQLException =>
-                MigratorError.NonRetryableApply(
-                  s"${prepared.objectDef.sourceFile}: applied Oracle SQL but failed to record migration state: ${error.getMessage}",
-                  error
-                )
-              }
-          case Left(error: SQLException) =>
-            val formatted = JdbcSupport.sqlError(prepared.objectDef.sourceFile, error, "oracle")
-            applyLog.recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
-              .handleError(logError => logError.addSuppressed(error)) *>
-              IO.raiseError(MigratorError.Apply(formatted, error))
-          case Left(other) =>
-            IO.raiseError(other)
-        }
+      withAutoCommit(false) {
+        IO.blocking(OracleDdlHelper.executeSql(connection, prepared.objectDef.rawSql))
+          .attempt
+          .flatMap {
+            case Right(()) =>
+              (recordApplied(prepared, started) *> IO.blocking(connection.commit()))
+                .handleErrorWith(rollbackThenRaise)
+            case Left(error: SQLException) =>
+              val formatted = JdbcSupport.sqlError(prepared.objectDef.sourceFile, error, "oracle")
+              rollbackSuppressing(error) *>
+                recordFailedAndCommit(prepared, started, formatted, error) *>
+                IO.raiseError(MigratorError.Apply(formatted, error))
+            case Left(other) =>
+              rollbackThenRaise(other)
+          }
+      }
+    }
+
+  private def executeNonTransactional(prepared: PreparedObject): IO[Unit] =
+    IO(System.nanoTime()).flatMap { started =>
+      withAutoCommit(true) {
+        IO.blocking(OracleDdlHelper.executeSql(connection, prepared.objectDef.rawSql))
+          .attempt
+          .flatMap {
+            case Right(()) =>
+              recordApplied(prepared, started)
+            case Left(error: SQLException) =>
+              val formatted = JdbcSupport.sqlError(prepared.objectDef.sourceFile, error, "oracle")
+              applyLog.recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
+                .handleErrorWith(logError => IO(error.addSuppressed(logError))) *>
+                IO.raiseError(MigratorError.Apply(formatted, error))
+            case Left(other) =>
+              IO.raiseError(other)
+          }
+      }
     }
 
   override def rollbackObject(sqlDir: Path, objectName: String): IO[Unit] =
@@ -85,20 +105,91 @@ final class OracleSession(connection: Connection) extends DbSession:
           IO.raiseError(MigratorError.Apply(s"$rollbackPath: rollback SQL file is empty"))
         else
           IO(System.nanoTime()).flatMap { started =>
-            IO.blocking(OracleDdlHelper.executeSql(connection, sql))
-              .adaptError { case error: SQLException =>
-                MigratorError.Apply(JdbcSupport.sqlError(rollbackPath.toString, error, "oracle"), error)
-              } *>
-              applyLog.recordRolledBack(target, JdbcSupport.durationMs(started))
-                .adaptError { case error: SQLException =>
-                  MigratorError.NonRetryableApply(
-                    s"${rollbackPath}: rolled back Oracle SQL but failed to record migration state: ${error.getMessage}",
-                    error
-                  )
+            withAutoCommit(false) {
+              IO.blocking(OracleDdlHelper.executeSql(connection, sql))
+                .attempt
+                .flatMap {
+                  case Right(()) =>
+                    (recordRolledBack(target, rollbackPath, started) *> IO.blocking(connection.commit()))
+                      .handleErrorWith(rollbackThenRaise)
+                  case Left(error: SQLException) =>
+                    IO.blocking(connection.rollback()) *>
+                      IO.raiseError(MigratorError.Apply(JdbcSupport.sqlError(rollbackPath.toString, error, "oracle"), error))
+                  case Left(other) =>
+                    rollbackThenRaise(other)
                 }
+            }
           }
       }
     }
+
+  private def withAutoCommit[A](autoCommit: Boolean)(fa: IO[A]): IO[A] =
+    IO.blocking {
+      val saved = connection.getAutoCommit
+      if saved != autoCommit then connection.setAutoCommit(autoCommit)
+      saved
+    }.flatMap { saved =>
+      fa.guarantee(IO.blocking {
+        if connection.getAutoCommit != saved then connection.setAutoCommit(saved)
+      })
+    }
+
+  private def rollbackThenRaise[A](failure: Throwable): IO[A] =
+    IO.blocking(connection.rollback()).attempt.flatMap {
+      case Right(()) => IO.raiseError(failure)
+      case Left(rollbackErr: SQLException) =>
+        IO(failure.addSuppressed(rollbackErr)) *> IO.raiseError(failure)
+      case Left(rollbackErr) =>
+        val wrapped = RuntimeException("rollback failed", rollbackErr)
+        IO(wrapped.addSuppressed(failure)) *> IO.raiseError(wrapped)
+    }
+
+  private def recordApplied(prepared: PreparedObject, started: Long): IO[Unit] =
+    applyLog.recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started))
+      .adaptError { case error: SQLException =>
+        MigratorError.NonRetryableApply(
+          s"${prepared.objectDef.sourceFile}: applied Oracle SQL but failed to record migration state: ${error.getMessage}",
+          error
+        )
+      }
+
+  private def recordFailedAndCommit(
+      prepared: PreparedObject,
+      started: Long,
+      formatted: String,
+      error: SQLException
+  ): IO[Unit] =
+    applyLog.recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
+      .attempt
+      .flatMap {
+        case Right(()) =>
+          IO.blocking(connection.commit()).handleErrorWith { commitError =>
+            IO(error.addSuppressed(commitError)) *>
+              IO.raiseError(
+                MigratorError.NonRetryableApply(
+                  s"${prepared.objectDef.sourceFile}: failed to commit Oracle failure state: ${commitError.getMessage}",
+                  error
+                )
+              )
+          }
+        case Left(logError) =>
+          IO(error.addSuppressed(logError)) *>
+            IO.blocking(connection.rollback()).handleErrorWith(rollbackError => IO(error.addSuppressed(rollbackError))).void
+      }
+
+  private def rollbackSuppressing(original: SQLException): IO[Unit] =
+    IO.blocking(connection.rollback())
+      .handleErrorWith(rollbackError => IO(original.addSuppressed(rollbackError)))
+      .void
+
+  private def recordRolledBack(target: RollbackTarget, rollbackPath: Path, started: Long): IO[Unit] =
+    applyLog.recordRolledBack(target, JdbcSupport.durationMs(started))
+      .adaptError { case error: SQLException =>
+        MigratorError.NonRetryableApply(
+          s"${rollbackPath}: rolled back Oracle SQL but failed to record migration state: ${error.getMessage}",
+          error
+        )
+      }
 
   private def appliedBy: String =
     JdbcSupport.appliedBy()
