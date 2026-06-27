@@ -18,21 +18,21 @@ object FolderOrder:
 
   val oracle: List[String] =
     List(
+      "session",
       "types",
       "tables",
-      "indexes",
+      "seed_data",
       "functions",
-      "procedures",
       "packages",
+      "contexts",
       "triggers",
+      "ilm_policies",
+      "security",
       "views",
-      "materialized_views",
-      "cron",
-      "policies"
+      "scheduler"
     )
 
   def forDb(kind: DbKind): List[String] =
     kind match
       case DbKind.Postgres => postgres
       case DbKind.Oracle   => oracle
-

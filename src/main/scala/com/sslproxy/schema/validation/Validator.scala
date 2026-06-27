@@ -65,8 +65,8 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
               s"$path: table has $count columns; prefer <= $tableColumnWarningLimit columns and vertical partitioning for hot-path schemas"
             )
           case _ => withTableWarning
-      case "functions" if !lower.contains("create or replace function") =>
-        report.addWarning(s"$path: expected 'CREATE OR REPLACE FUNCTION' for idempotency")
+      case "functions" if !lower.contains("create or replace function") && !lower.contains("create or replace procedure") =>
+        report.addWarning(s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency")
       case "views" =>
         val replace = lower.contains("create or replace view")
         val dropCreate = lower.contains("drop view if exists") && lower.contains("create view")
@@ -88,8 +88,8 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
         report.addWarning(s"$path: Oracle CREATE TABLE should be wrapped with ORA-00955 idempotency handling")
       case "indexes" if lower.contains("create index") && !lower.contains("sqlcode = -955") =>
         report.addWarning(s"$path: Oracle CREATE INDEX should be wrapped with ORA-00955 idempotency handling")
-      case "functions" if !lower.contains("create or replace function") =>
-        report.addWarning(s"$path: expected 'CREATE OR REPLACE FUNCTION' for idempotency")
+      case "functions" if !lower.contains("create or replace function") && !lower.contains("create or replace procedure") =>
+        report.addWarning(s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency")
       case "procedures" if !lower.contains("create or replace procedure") =>
         report.addWarning(s"$path: expected 'CREATE OR REPLACE PROCEDURE' for idempotency")
       case "packages" if !lower.contains("create or replace package") =>
@@ -173,4 +173,3 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
   private def isColumnDefinition(part: String): Boolean =
     val first = part.split("\\s+").headOption.getOrElse("").stripPrefix("\"").stripSuffix("\"").toLowerCase
     !Set("", "constraint", "primary", "foreign", "unique", "check", "exclude").contains(first)
-

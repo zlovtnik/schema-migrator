@@ -28,7 +28,7 @@ final class ManifestBuilder[F[_]: Sync](dialect: SqlDialect):
     val sha256 = Canonicalizer.sha256Hex(canonicalSql)
 
     SchemaObject(
-      kind = kindForFolder(file.folder, file.name),
+      kind = kindForFolder(file.folder, file.name, rawSql),
       objectName = objectName,
       sourceFile = file.relativePath,
       dependsOn = dependsOn,
@@ -40,22 +40,31 @@ final class ManifestBuilder[F[_]: Sync](dialect: SqlDialect):
       oracleHeaders = HeaderParser.oracleHeaders(rawSql)
     )
 
-  private def kindForFolder(folder: String, name: String): String =
+  private def kindForFolder(folder: String, name: String, sql: String): String =
     folder match
+      case "session"                          => "session"
       case "extensions"                       => "extension"
       case "schemas"                          => "schema"
       case "types"                            => "type"
       case "tables"                           => "table"
       case "indexes"                          => "index"
-      case "functions"                        => "function"
+      case "functions"                        => routineKind(sql)
       case "procedures"                       => "procedure"
       case "packages"                         => "package"
+      case "contexts"                         => "context"
       case "triggers"                         => "trigger"
+      case "ilm_policies"                     => "ilm_policy"
+      case "security"                         => "security_policy"
       case "views"                            => "view"
       case "materialized_views"               => "materialized_view"
       case "cron" if name.startsWith("000_")  => "pre_apply_hook"
       case "cron"                             => "cron_job"
       case "policies"                         => "policy"
+      case "scheduler"                        => "scheduler_job"
+      case "seed_data"                        => "seed_data"
       case "baseline"                         => "baseline"
       case _                                  => "sql_file"
 
+  private def routineKind(sql: String): String =
+    val lower = sql.toLowerCase(java.util.Locale.ROOT)
+    if lower.contains("create or replace procedure") then "procedure" else "function"
