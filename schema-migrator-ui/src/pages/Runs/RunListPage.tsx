@@ -1,0 +1,109 @@
+import { useMemo } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { LiveRunCard } from "../../components/LiveRunCard";
+import { StatusBadge } from "../../components/StatusBadge";
+import { TargetSelector } from "../../components/TargetSelector";
+import { useAbortRun, useRuns } from "../../hooks/useRuns";
+import { runStatusOptions, type RunStatus } from "../../types";
+
+const formatDuration = (startedAt: string, endedAt?: string) => {
+  if (!endedAt) {
+    return "-";
+  }
+  const duration = Math.max(0, Date.parse(endedAt) - Date.parse(startedAt));
+  return `${Math.round(duration / 1000)} s`;
+};
+
+export const RunListPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const targetId = searchParams.get("target");
+  const statusFilter = searchParams.get("status") as RunStatus | null;
+  const { data: runs = [], isLoading, error } = useRuns(targetId);
+  const abortRun = useAbortRun();
+
+  const filteredRuns = useMemo(
+    () =>
+      runs
+        .filter((run) => !statusFilter || run.status === statusFilter)
+        .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at)),
+    [runs, statusFilter]
+  );
+
+  const activeRun =
+    filteredRuns.find((run) => run.status === "running") ??
+    filteredRuns.find((run) => run.status === "pending");
+
+  const setStatus = (status: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (status) {
+      next.set("status", status);
+    } else {
+      next.delete("status");
+    }
+    setSearchParams(next);
+  };
+
+  return (
+    <section className="page">
+      <header className="page-header">
+        <div>
+          <span className="eyebrow">Runs</span>
+          <h1>Run manager</h1>
+        </div>
+        <div className="toolbar">
+          <TargetSelector />
+          <label>
+            Status
+            <select value={statusFilter ?? ""} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">All statuses</option>
+              {runStatusOptions.map((status) => (
+                <option value={status} key={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </header>
+
+      {activeRun ? (
+        <LiveRunCard run={activeRun} onAbort={(runId) => abortRun.mutate(runId)} aborting={abortRun.isPending} />
+      ) : null}
+
+      {error ? <div className="status-banner status-banner--error">Unable to load runs.</div> : null}
+      {isLoading ? <div className="empty-state">Loading runs...</div> : null}
+      {!isLoading && filteredRuns.length === 0 ? <div className="empty-state">No runs match this filter.</div> : null}
+
+      {filteredRuns.length > 0 ? (
+        <div className="table-panel">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Target</th>
+                <th>Patch</th>
+                <th>Started</th>
+                <th>Duration</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRuns.map((run) => (
+                <tr className={run.status === "failed" ? "row--failed" : undefined} key={run.id}>
+                  <td>{run.target_id}</td>
+                  <td>
+                    <Link to={`/runs/${run.id}`}>{run.patch_id}</Link>
+                  </td>
+                  <td>{new Date(run.started_at).toLocaleString()}</td>
+                  <td>{formatDuration(run.started_at, run.ended_at)}</td>
+                  <td>
+                    <StatusBadge status={run.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+};

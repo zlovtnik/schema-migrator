@@ -31,6 +31,7 @@ lazy val root = (project in file("."))
       "com.oracle.database.security" % "oraclepki" % oracleJdbcVersion,
       "com.oracle.database.security" % "osdt_core" % oracleOsdtVersion,
       "com.oracle.database.security" % "osdt_cert" % oracleOsdtVersion,
+      "com.h2database" % "h2" % "2.4.240" % Test,
       "org.scalameta" %% "munit" % "1.1.1" % Test
     ),
     Compile / mainClass := Some("com.sslproxy.schema.Main"),
