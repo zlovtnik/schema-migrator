@@ -49,7 +49,9 @@ final class PostgresApplyLog(
     setStatus("failed", error, obj, oldSha)
 
   private def setStatusSkipped(obj: SchemaObject, oldSha: Option[String]): ConnectionIO[Unit] =
-    setStatus("skipped", null, obj, oldSha)
+    Update[(String, String)](PostgresStatements.updateStatusSkippedSql)
+      .run((obj.kind, obj.objectName))
+      .void
 
   private def setStatus(status: String, error: String, obj: SchemaObject, oldSha: Option[String]): ConnectionIO[Unit] =
     Update[(String, Option[Timestamp], Option[String], String, String)](PostgresStatements.updateStatusSql)
@@ -163,7 +165,10 @@ final class OracleApplyLog(
     setStatus("failed", error, obj, oldSha)
 
   private def setStatusSkipped(obj: SchemaObject, oldSha: Option[String]): Unit =
-    setStatus("skipped", null, obj, oldSha)
+    executePrepared(connection, OracleStatements.updateStatusSkippedSql) { statement =>
+      statement.setString(1, obj.kind)
+      statement.setString(2, obj.objectName)
+    }
 
   private def setStatus(status: String, error: String, obj: SchemaObject, oldSha: Option[String]): Unit =
     executePrepared(connection, OracleStatements.updateStatusSql) { statement =>

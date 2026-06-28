@@ -32,7 +32,7 @@ class DiscoveryServiceSuite extends FunSuite:
 
       val discovered = DiscoveryService[IO]().discover(dir, DbKind.Postgres).unsafeRunSync()
       assertEquals(
-        discovered.files.map(_.relativePath),
+        normalizePaths(discovered.files.map(_.relativePath)),
         List(
           "cron/000_unschedule.sql",
           "materialized_views/001_view.sql",
@@ -54,7 +54,7 @@ class DiscoveryServiceSuite extends FunSuite:
       val discovered = DiscoveryService[IO]().discover(dir, DbKind.Oracle).unsafeRunSync()
 
       assertEquals(
-        discovered.files.map(_.relativePath),
+        normalizePaths(discovered.files.map(_.relativePath)),
         List(
           "session/000_session.sql",
           "tables/001_table.sql",
@@ -70,6 +70,9 @@ class DiscoveryServiceSuite extends FunSuite:
     val dir = Files.createTempDirectory("schema-migrator-discovery")
     try run(dir)
     finally deleteRecursively(dir)
+
+  private def normalizePaths(paths: List[String]): List[String] =
+    paths.map(_.replace(java.io.File.separatorChar, '/'))
 
   private def deleteRecursively(path: Path): Unit =
     if Files.exists(path) then

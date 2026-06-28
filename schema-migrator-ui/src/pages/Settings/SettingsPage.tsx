@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { getApiBaseUrl, getAuthToken, setApiBaseUrl, setAuthToken } from "../../api/client";
 
 const THEME_KEY = "schemaMigrator.theme";
 
 export const SettingsPage = () => {
+  const queryClient = useQueryClient();
   const [apiBase, setApiBase] = useState(getApiBaseUrl());
   const [token, setToken] = useState(getAuthToken());
   const [theme, setTheme] = useState(() => window.localStorage.getItem(THEME_KEY) || "dark");
@@ -17,6 +19,7 @@ export const SettingsPage = () => {
   const save = () => {
     setApiBaseUrl(apiBase);
     setAuthToken(token);
+    queryClient.clear();
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
   };

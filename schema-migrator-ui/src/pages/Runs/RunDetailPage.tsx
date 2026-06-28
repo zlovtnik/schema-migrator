@@ -27,6 +27,12 @@ export const RunDetailPage = () => {
       if (event.validation_triggered) {
         navigate(`/validation/${event.run_id}`);
       }
+    },
+    onRunFailed: () => {
+      if (id) {
+        void queryClient.invalidateQueries({ queryKey: runKeys.detail(id) });
+        void queryClient.invalidateQueries({ queryKey: runKeys.all });
+      }
     }
   });
 

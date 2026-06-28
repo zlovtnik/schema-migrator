@@ -77,7 +77,7 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
 
   const requestInit: RequestInit = {
     ...requestOptions,
-    credentials: options.credentials ?? "include",
+    credentials: options.credentials ?? "same-origin",
     headers
   };
   const requestBody =

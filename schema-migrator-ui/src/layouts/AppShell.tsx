@@ -9,12 +9,14 @@ import { ListBulletsIcon } from "@phosphor-icons/react/dist/csr/ListBullets";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { UploadSimpleIcon } from "@phosphor-icons/react/dist/csr/UploadSimple";
+import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { ErrorGateBanner } from "../components/ErrorGateBanner";
 import { TargetSelector } from "../components/TargetSelector";
 import { Icon } from "../components/ui/Icon";
 import { useErrorGate } from "../hooks/useErrorGate";
 
 const SIDEBAR_KEY = "schemaMigrator.sidebarCollapsed";
+const NAV_ID = "primary-navigation";
 
 const navItems = [
   { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
@@ -29,6 +31,7 @@ const navItems = [
 
 export const AppShell = () => {
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem(SIDEBAR_KEY) === "true");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { failedRun } = useErrorGate();
   const queryClient = useQueryClient();
 
@@ -38,6 +41,11 @@ export const AppShell = () => {
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+        return;
+      }
+
       const modifier = event.metaKey || event.ctrlKey;
       if (!modifier) {
         return;
@@ -58,37 +66,84 @@ export const AppShell = () => {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [queryClient]);
 
+  const closeMobileMenu = () => setMobileMenuOpen(false);
+
   return (
     <>
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
+      {mobileMenuOpen ? (
+        <button
+          aria-label="Close navigation"
+          className="mobile-menu-backdrop"
+          type="button"
+          onClick={closeMobileMenu}
+        />
+      ) : null}
       <div className={collapsed ? "app-shell app-shell--collapsed" : "app-shell"}>
-        <aside className="sidebar" aria-label="Primary navigation">
-        <div className="sidebar__brand">
-          <div className="brand-mark">SM</div>
-          <div className="brand-copy">
-            <strong>Schema Migrator</strong>
-            <span>Patch operations</span>
+        <header className="mobile-topbar">
+          <div className="mobile-topbar__brand">
+            <div className="brand-mark" aria-hidden="true">
+              SM
+            </div>
+            <div className="brand-copy">
+              <strong>Schema Migrator</strong>
+              <span>Patch operations</span>
+            </div>
           </div>
-        </div>
-        <nav className="sidebar__nav">
-          {navItems.map((item) => {
-            return (
-              <NavLink className="nav-link" to={item.to} key={item.to}>
-                <Icon source={item.icon} size={20} />
-                <span>{item.label}</span>
-              </NavLink>
-            );
-          })}
-        </nav>
-        <div className="sidebar__selector">
-          <TargetSelector compact />
-        </div>
-        <button className="sidebar__collapse" type="button" onClick={() => setCollapsed((value) => !value)}>
-          <Icon source={collapsed ? ListIcon : SidebarSimpleIcon} size={20} />
-          <span>{collapsed ? "Expand" : "Collapse"}</span>
-        </button>
+          <button
+            aria-controls={NAV_ID}
+            aria-expanded={mobileMenuOpen}
+            aria-label={mobileMenuOpen ? "Close navigation" : "Open navigation"}
+            className="mobile-menu-toggle"
+            type="button"
+            onClick={() => setMobileMenuOpen((value) => !value)}
+          >
+            <Icon source={mobileMenuOpen ? XIcon : ListIcon} size={20} weight="bold" />
+          </button>
+        </header>
+        <aside className={mobileMenuOpen ? "sidebar sidebar--open" : "sidebar"} aria-label="Primary navigation">
+          <div className="sidebar__brand">
+            <div className="brand-mark" aria-hidden="true">
+              SM
+            </div>
+            <div className="brand-copy">
+              <strong>Schema Migrator</strong>
+              <span>Patch operations</span>
+            </div>
+          </div>
+          <nav className="sidebar__nav" id={NAV_ID}>
+            {navItems.map((item) => {
+              return (
+                <NavLink
+                  aria-label={item.label}
+                  className="nav-link"
+                  key={item.to}
+                  title={collapsed ? item.label : undefined}
+                  to={item.to}
+                  onClick={closeMobileMenu}
+                >
+                  <Icon source={item.icon} size={20} />
+                  <span>{item.label}</span>
+                </NavLink>
+              );
+            })}
+          </nav>
+          <div className="sidebar__selector">
+            <TargetSelector compact />
+          </div>
+          <button
+            aria-controls={NAV_ID}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="sidebar__collapse"
+            type="button"
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            <Icon source={collapsed ? ListIcon : SidebarSimpleIcon} size={20} />
+            <span>{collapsed ? "Expand" : "Collapse"}</span>
+          </button>
         </aside>
         <div className="app-main">
           <ErrorGateBanner failedRun={failedRun} />

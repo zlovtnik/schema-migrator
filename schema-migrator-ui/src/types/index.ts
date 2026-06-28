@@ -19,7 +19,7 @@ export const severityOptions = ["warning", "error"] as const;
 export const validationStatusOptions = ["clean", "warnings", "errors"] as const;
 export const objectTypeOptions = ["view", "function", "procedure", "trigger", "index", "other"] as const;
 
-const rfc3339TimestampSchema = z.string().min(1).transform((value) => value as Rfc3339Timestamp);
+const rfc3339TimestampSchema = z.string().datetime({ offset: true }).transform((value) => value as Rfc3339Timestamp);
 const envSchema = z.enum(envOptions);
 const sslModeSchema = z.enum(sslModeOptions);
 const runStatusSchema = z.enum(runStatusOptions);

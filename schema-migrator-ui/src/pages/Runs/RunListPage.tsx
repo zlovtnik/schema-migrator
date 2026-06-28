@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { LiveRunCard } from "../../components/LiveRunCard";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -17,9 +17,19 @@ const formatDuration = (startedAt: string, endedAt?: string) => {
 export const RunListPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const targetId = searchParams.get("target");
-  const statusFilter = searchParams.get("status") as RunStatus | null;
+  const rawStatusFilter = searchParams.get("status");
+  const statusFilter = runStatusOptions.includes(rawStatusFilter as RunStatus) ? (rawStatusFilter as RunStatus) : null;
   const { data: runs = [], isLoading, error } = useRuns(targetId);
   const abortRun = useAbortRun();
+
+  useEffect(() => {
+    if (!rawStatusFilter || statusFilter) {
+      return;
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("status");
+    setSearchParams(next, { replace: true });
+  }, [rawStatusFilter, searchParams, setSearchParams, statusFilter]);
 
   const filteredRuns = useMemo(
     () =>

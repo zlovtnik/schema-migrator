@@ -1,16 +1,38 @@
-import { useParams } from "react-router-dom";
+import { Navigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowClockwise";
+import { listRuns } from "../../api/runs";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Icon } from "../../components/ui/Icon";
 import { ValidationTable } from "../../components/ValidationTable";
+import { runKeys } from "../../hooks/useRuns";
 import { useRerunValidation, useValidation } from "../../hooks/useValidation";
 
 export const ValidationReportPage = () => {
   const { runId } = useParams();
-  const { data: result, isLoading, error } = useValidation(runId);
-  const rerun = useRerunValidation(runId ?? "");
+  const validationRunId = runId === "latest" ? undefined : runId;
+  const runsQuery = useQuery({
+    queryKey: runKeys.list(),
+    queryFn: () => listRuns(),
+    enabled: runId === "latest"
+  });
+  const { data: result, isLoading, error } = useValidation(validationRunId);
+  const rerun = useRerunValidation(validationRunId ?? "");
 
   if (runId === "latest") {
+    if (runsQuery.isLoading) {
+      return <div className="page empty-state">Loading validation report...</div>;
+    }
+
+    const latestCompletedRun = runsQuery.data
+      ?.filter((run) => run.status === "completed")
+      .slice()
+      .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))[0];
+
+    if (latestCompletedRun) {
+      return <Navigate to={`/validation/${latestCompletedRun.id}`} replace />;
+    }
+
     return (
       <section className="page">
         <div className="empty-state">Open a completed run to view its validation report.</div>

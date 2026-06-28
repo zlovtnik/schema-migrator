@@ -44,21 +44,25 @@ export const OverviewPage = () => {
         </div>
       </section>
 
-      {failedRuns.length > 0 ? (
-        <div className="status-banner status-banner--error">
-          <Icon source={WarningIcon} size={20} weight="bold" />
-          {failedRuns.length} failed run{failedRuns.length === 1 ? "" : "s"} need resolution before more applies.
-        </div>
-      ) : (
-        <div className="status-banner status-banner--ok">
-          <Icon source={ShieldCheckIcon} size={20} weight="bold" />
-          No failed runs are blocking apply operations.
-        </div>
-      )}
+      {!runsLoading ? (
+        failedRuns.length > 0 ? (
+          <div className="status-banner status-banner--error">
+            <Icon source={WarningIcon} size={20} weight="bold" />
+            {failedRuns.length} failed run{failedRuns.length === 1 ? "" : "s"} need resolution before more applies.
+          </div>
+        ) : (
+          <div className="status-banner status-banner--ok">
+            <Icon source={ShieldCheckIcon} size={20} weight="bold" />
+            No failed runs are blocking apply operations.
+          </div>
+        )
+      ) : null}
 
       <section className="section-block">
         <h2>Recent activity</h2>
-        {recentRuns.length === 0 ? (
+        {runsLoading ? (
+          <div className="empty-state">Loading run history...</div>
+        ) : recentRuns.length === 0 ? (
           <EmptyState icon={<Icon source={DatabaseIcon} size={24} />} title="No migration runs yet">
             Run history will appear here after a migration is started.
           </EmptyState>

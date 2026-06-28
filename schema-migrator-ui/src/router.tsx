@@ -1,4 +1,4 @@
-import { Navigate, createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter, useParams } from "react-router-dom";
 import { AppShell } from "./layouts/AppShell";
 import { DriftPage } from "./pages/Drift/DriftPage";
 import { OverviewPage } from "./pages/Overview/OverviewPage";
@@ -11,6 +11,11 @@ import { RunDetailPage } from "./pages/Runs/RunDetailPage";
 import { SchemaPage } from "./pages/Schema/SchemaPage";
 import { ValidationReportPage } from "./pages/Validation/ValidationReportPage";
 import { SettingsPage } from "./pages/Settings/SettingsPage";
+
+const PatchDetailRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={id ? `/migrations/${id}` : "/migrations"} replace />;
+};
 
 export const router = createBrowserRouter([
   {
@@ -25,7 +30,7 @@ export const router = createBrowserRouter([
       { path: "migrations", element: <PatchListPage /> },
       { path: "migrations/:id", element: <PatchDetailPage /> },
       { path: "patches", element: <Navigate to="/migrations" replace /> },
-      { path: "patches/:id", element: <Navigate to="/migrations" replace /> },
+      { path: "patches/:id", element: <PatchDetailRedirect /> },
       { path: "runs", element: <RunListPage /> },
       { path: "runs/:id", element: <RunDetailPage /> },
       { path: "drift", element: <DriftPage /> },

@@ -18,7 +18,8 @@ class ManifestBuilderSuite extends FunSuite:
         |-- folder: functions
         |-- depends_on: -
         |
-        |CREATE OR REPLACE PROCEDURE DEMO_PROCEDURE AS
+        |CREATE OR REPLACE
+        |PROCEDURE DEMO_PROCEDURE AS
         |BEGIN
         |    NULL;
         |END DEMO_PROCEDURE;

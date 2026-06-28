@@ -1,5 +1,5 @@
 import { forwardRef, type InputHTMLAttributes, type ReactNode, useId } from "react";
-import { XIcon } from "@phosphor-icons/react/dist/csr/X";
+import { XIcon } from "@phosphor-icons/react";
 import { Icon } from "./Icon";
 import styles from "./Input.module.css";
 
@@ -12,10 +12,11 @@ interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "prefix
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, error, id, label, name, onClear, prefix, suffix, value, ...props }, ref) => {
+  ({ className, error, id, label, name, onClear, prefix, suffix, value, "aria-describedby": ariaDescribedBy, ...props }, ref) => {
     const generatedId = useId();
     const inputId = id ?? generatedId;
     const errorId = error ? `${inputId}-error` : undefined;
+    const describedBy = [ariaDescribedBy, errorId].filter(Boolean).join(" ") || undefined;
 
     return (
       <label className={[styles.field, className].filter(Boolean).join(" ")} htmlFor={inputId}>
@@ -24,7 +25,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           {prefix ? <span className={styles.slot}>{prefix}</span> : null}
           <input
             {...props}
-            aria-describedby={errorId}
+            aria-describedby={describedBy}
             aria-invalid={Boolean(error) || undefined}
             className={styles.input}
             id={inputId}

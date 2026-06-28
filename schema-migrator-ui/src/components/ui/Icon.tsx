@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import type { IconProps as PhosphorIconProps, IconWeight } from "@phosphor-icons/react/dist/lib/types";
+import type { IconProps as PhosphorIconProps, IconWeight } from "@phosphor-icons/react";
 
 export type IconSize = 16 | 20 | 24;
 export type IconSource = ComponentType<PhosphorIconProps>;

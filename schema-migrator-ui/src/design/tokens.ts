@@ -91,6 +91,11 @@ export const scaleTokens = {
   "--radius-sm": "4px",
   "--radius-md": "6px",
   "--radius-lg": "8px",
+  "--motion-fast": "160ms",
+  "--motion-base": "220ms",
+  "--motion-slow": "280ms",
+  "--ease-standard": "cubic-bezier(0.2, 0, 0, 1)",
+  "--ease-emphasized": "cubic-bezier(0.16, 1, 0.3, 1)",
   "--sidebar-width": "280px",
   "--sidebar-collapsed-width": "76px"
 } satisfies TokenMap;
@@ -143,6 +148,14 @@ const serializeTokens = (tokens: TokenMap): string =>
     .map(([name, value]) => `  ${name}: ${value};`)
     .join("\n");
 
+const readStoredTheme = (): string => {
+  try {
+    return window.localStorage.getItem("schemaMigrator.theme") || "dark";
+  } catch {
+    return "dark";
+  }
+};
+
 export const createTokenStyleSheet = (): string => {
   const rootTokens = {
     ...primitiveTokens,
@@ -172,7 +185,7 @@ export const installDesignTokens = (): void => {
   }
 
   if (!document.documentElement.dataset.theme) {
-    document.documentElement.dataset.theme = window.localStorage.getItem("schemaMigrator.theme") || "dark";
+    document.documentElement.dataset.theme = readStoredTheme();
   }
 
   const existing = document.getElementById(STYLE_ELEMENT_ID);

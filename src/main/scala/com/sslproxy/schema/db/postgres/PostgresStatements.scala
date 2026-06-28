@@ -114,6 +114,15 @@ object PostgresStatements:
      where kind = ? and object_name = ?
     """
 
+  val updateStatusSkippedSql: String =
+    """
+    update schema_control.schema_objects
+       set apply_status = 'skipped',
+           last_error = null,
+           updated_at = now()
+     where kind = ? and object_name = ?
+    """
+
   val rollbackStatusSql: String =
     """
     update schema_control.schema_objects
