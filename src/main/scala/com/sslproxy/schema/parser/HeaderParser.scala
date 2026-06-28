@@ -34,4 +34,3 @@ object HeaderParser:
     List("oracle_tablespace", "oracle_partitioning", "oracle_pdb")
       .flatMap(key => value(sql, key).map(key -> _))
       .toMap
-

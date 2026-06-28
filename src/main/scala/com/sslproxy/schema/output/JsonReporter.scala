@@ -13,7 +13,9 @@ object JsonReporter:
       Json
         .obj(
           "warnings" -> discovery.warnings.asJson,
-          "files" -> discovery.files.map(file => Json.obj("folder" -> file.folder.asJson, "path" -> file.relativePath.asJson)).asJson
+          "files" -> discovery.files
+            .map(file => Json.obj("folder" -> file.folder.asJson, "path" -> file.relativePath.asJson))
+            .asJson
         )
         .noSpaces
     )
@@ -67,4 +69,3 @@ object JsonReporter:
       "last_updated_at" -> ready.lastUpdatedAt.asJson,
       "last_applied_at" -> ready.lastAppliedAt.asJson
     )
-

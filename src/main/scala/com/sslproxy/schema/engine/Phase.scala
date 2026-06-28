@@ -9,4 +9,3 @@ object Phase:
       case "extension" | "schema" | "type" | "table" | "index" | "sql_file" | "baseline" =>
         Structural
       case _ => Behavioral
-

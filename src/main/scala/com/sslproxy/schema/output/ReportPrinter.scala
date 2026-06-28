@@ -27,7 +27,8 @@ object ReportPrinter:
     )
 
   def status(statuses: List[ObjectStatus], ready: SchemaReadyStatus): IO[Unit] =
-    val header = IO.println(f"${"KIND"}%-18s ${"OBJECT"}%-44s ${"STATUS"}%-10s ${"APPLIED_AT"}%-19s ${"SHA256"}%-12s SOURCE")
+    val header =
+      IO.println(f"${"KIND"}%-18s ${"OBJECT"}%-44s ${"STATUS"}%-10s ${"APPLIED_AT"}%-19s ${"SHA256"}%-12s SOURCE")
     val rows = statuses.traverse_ { status =>
       val sha = if status.contentSha256.length > 12 then status.contentSha256.take(12) else status.contentSha256
       val row = IO.println(
@@ -35,7 +36,7 @@ object ReportPrinter:
       )
       status.lastError match
         case Some(error) => row *> IO.println(s"  error: ${truncate(error, 140)}")
-        case None        => row
+        case None => row
     }
     header *> rows *> readySummary(ready)
 

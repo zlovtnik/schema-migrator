@@ -26,9 +26,10 @@ object Commands:
     val (config, command) = input
     execute(config, command).handleErrorWith { error =>
       if config.json then
-        IO.blocking(System.out.println(Json.obj("error" -> Json.fromString(error.getMessage)).noSpaces)) *> IO.pure(exitCodeFor(error))
-      else
-        IO.println(s"error: ${error.getMessage}") *> IO.pure(exitCodeFor(error))
+        IO.blocking(System.out.println(Json.obj("error" -> Json.fromString(error.getMessage)).noSpaces)) *> IO.pure(
+          exitCodeFor(error)
+        )
+      else IO.println(s"error: ${error.getMessage}") *> IO.pure(exitCodeFor(error))
     }
 
   private def execute(config: MigratorConfig, command: CliCommand): IO[ExitCode] =
@@ -36,9 +37,11 @@ object Commands:
       command match
         case CliCommand.ListFiles =>
           val discovery = DiscoveryService[IO]().discover(config.sqlDir, config.dbKind)
-          discovery.flatMap { result =>
-            if config.json then JsonReporter.discovery(result) else ReportPrinter.discovery(result)
-          }.as(success)
+          discovery
+            .flatMap { result =>
+              if config.json then JsonReporter.discovery(result) else ReportPrinter.discovery(result)
+            }
+            .as(success)
 
         case CliCommand.Validate =>
           for
@@ -49,8 +52,7 @@ object Commands:
           yield if report.hasErrors then partialFailure else success
 
         case CliCommand.Apply =>
-          if config.dryRun then
-            dryRun(config).as(success)
+          if config.dryRun then dryRun(config).as(success)
           else
             withProvider(config) { provider =>
               val engine = MigrationEngine(provider, DiscoveryService[IO]())
@@ -72,7 +74,8 @@ object Commands:
         case CliCommand.Rollback(objectName) =>
           withSession(config) { session =>
             session.bootstrap *>
-              Lock.fromAcquireRelease(session.acquireLock, session.releaseLock)
+              Lock
+                .fromAcquireRelease(session.acquireLock, session.releaseLock)
                 .withLock(session.rollbackObject(config.sqlDir, objectName))
                 .as(success)
           }
@@ -106,7 +109,7 @@ object Commands:
   private def providerFor(config: MigratorConfig): IO[DbProvider] =
     config.dbKind match
       case DbKind.Postgres => PostgresProvider.fromConfig(config)
-      case DbKind.Oracle   => OracleProvider.fromConfig(config)
+      case DbKind.Oracle => OracleProvider.fromConfig(config)
 
   private def exitCodeFor(error: Throwable): ExitCode =
     if MigratorError.isConnectionFailure(error) then connectionFailure

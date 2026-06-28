@@ -65,9 +65,10 @@ object BalanceChecker:
     if inSingle then Left("unterminated single-quoted string")
     else if inDouble then Left("unterminated double-quoted identifier")
     else if inBlockComment then Left("unterminated block comment")
-    else dollarTag match
-      case Some(tag) => Left(s"unterminated dollar-quoted block with tag $tag")
-      case None      => Right(())
+    else
+      dollarTag match
+        case Some(tag) => Left(s"unterminated dollar-quoted block with tag $tag")
+        case None => Right(())
 
   private def parseDollarTag(sql: String, start: Int): Option[String] =
     if start >= sql.length || sql.charAt(start) != '$' then None

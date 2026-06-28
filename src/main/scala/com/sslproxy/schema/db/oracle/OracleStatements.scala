@@ -1,6 +1,20 @@
 package com.sslproxy.schema.db.oracle
 
 object OracleStatements:
+  private def ignoreOracleErrorBlock(errorCode: Int, sql: String): String =
+    s"""
+    declare
+      expected_error exception;
+      pragma exception_init(expected_error, -$errorCode);
+    begin
+      execute immediate q'[
+${sql.trim}
+]';
+    exception
+      when expected_error then null;
+    end;
+    """
+
   val tableSchemaObjects: String =
     """
     create table schema_control.schema_objects (
@@ -44,10 +58,22 @@ object OracleStatements:
   val tableMigrationLocks: String =
     """
     create table schema_control.migration_locks (
-      lock_name varchar2(128) primary key,
+      lock_name varchar2(128) not null,
       locked_at timestamp with time zone not null,
-      locked_by varchar2(128) not null
+      locked_by varchar2(128) not null,
+      constraint migration_locks_pk primary key (lock_name)
     )
+    """
+
+  val indexApplyLogObject: String =
+    """
+    create index schema_apply_log_object_idx
+      on schema_control.schema_apply_log(kind, object_name, applied_at desc)
+    """
+
+  val addRollbackFileColumn: String =
+    """
+    alter table schema_control.schema_objects add (rollback_file varchar2(512))
     """
 
   val viewSchemaReady: String =
@@ -73,7 +99,14 @@ object OracleStatements:
     """
 
   val bootstrapBlocks: List[String] =
-    List(tableSchemaObjects, tableApplyLog, tableMigrationLocks, viewSchemaReady)
+    List(
+      ignoreOracleErrorBlock(955, tableSchemaObjects),
+      ignoreOracleErrorBlock(1430, addRollbackFileColumn),
+      ignoreOracleErrorBlock(955, tableApplyLog),
+      ignoreOracleErrorBlock(955, tableMigrationLocks),
+      ignoreOracleErrorBlock(955, indexApplyLogObject),
+      viewSchemaReady
+    )
 
   val prepareSql: String =
     """
@@ -117,7 +150,7 @@ object OracleStatements:
     """
     update schema_control.schema_objects
        set apply_status = ?,
-           applied_at = systimestamp,
+           applied_at = case when ? = 'applied' then systimestamp else null end,
            last_error = ?,
            updated_at = systimestamp
      where kind = ? and object_name = ?
@@ -168,13 +201,6 @@ object OracleStatements:
 
   val lockDeleteSql: String =
     "delete from schema_control.migration_locks where lock_name = 'schema_migrate'"
-
-  val lockQueryStaleSql: String =
-    """
-    select case when locked_at < systimestamp - numtodsinterval(10, 'MINUTE') then 1 else 0 end as stale
-      from schema_control.migration_locks
-     where lock_name = 'schema_migrate'
-    """
 
   val lockQueryInfoSql: String =
     """

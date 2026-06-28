@@ -21,14 +21,22 @@ final class DiscoveryService[F[_]: Sync]:
     val extraFolderWarnings =
       if Files.isDirectory(sqlDir) then
         scala.util.Using.resource(Files.list(sqlDir)) { stream =>
-          stream.iterator().asScala.filter(Files.isDirectory(_)).flatMap { dir =>
-            val name = dir.getFileName.toString
-            if !allowed.contains(name) && !Files.list(dir).iterator().asScala.exists(_.getFileName.toString.endsWith(".sql")) then
-              Nil
-            else if !allowed.contains(name) then
-              List(s"unrecognized sql subdirectory '$name' contains .sql files but is not part of $dbKind folder order")
-            else Nil
-          }.toList
+          stream
+            .iterator()
+            .asScala
+            .filter(Files.isDirectory(_))
+            .flatMap { dir =>
+              val name = dir.getFileName.toString
+              if !allowed
+                  .contains(name) && !Files.list(dir).iterator().asScala.exists(_.getFileName.toString.endsWith(".sql"))
+              then Nil
+              else if !allowed.contains(name) then
+                List(
+                  s"unrecognized sql subdirectory '$name' contains .sql files but is not part of $dbKind folder order"
+                )
+              else Nil
+            }
+            .toList
         }
       else Nil
 
@@ -54,10 +62,8 @@ final class DiscoveryService[F[_]: Sync]:
 
   private def collectFolder(sqlDir: Path, folder: String): (List[SqlFile], List[String]) =
     val folderPath = sqlDir.resolve(folder)
-    if !Files.exists(folderPath) then
-      Nil -> List(s"folder '$folderPath' is missing; skipping")
-    else if !Files.isDirectory(folderPath) then
-      Nil -> List(s"path '$folderPath' is not a directory; skipping")
+    if !Files.exists(folderPath) then Nil -> List(s"folder '$folderPath' is missing; skipping")
+    else if !Files.isDirectory(folderPath) then Nil -> List(s"path '$folderPath' is not a directory; skipping")
     else
       val files =
         scala.util.Using.resource(Files.list(folderPath)) { stream =>
@@ -73,5 +79,6 @@ final class DiscoveryService[F[_]: Sync]:
 
   private def collectOracleBaseline(sqlDir: Path): List[SqlFile] =
     val baseline = sqlDir.resolve("000_baseline.sql")
-    if Files.isRegularFile(baseline) then List(SqlFile("baseline", baseline, "000_baseline.sql", sqlDir.relativize(baseline).toString))
+    if Files.isRegularFile(baseline) then
+      List(SqlFile("baseline", baseline, "000_baseline.sql", sqlDir.relativize(baseline).toString))
     else Nil

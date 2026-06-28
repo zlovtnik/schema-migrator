@@ -1,6 +1,44 @@
 ThisBuild / organization := "com.sslproxy"
 ThisBuild / version := "0.1.0"
-ThisBuild / scalaVersion := "3.3.6"
+ThisBuild / scalaVersion := "3.3.8"
+ThisBuild / semanticdbEnabled := true
+ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
+ThisBuild / wartremoverErrors ++= Warts.allBut(
+  Wart.Any,
+  Wart.Nothing,
+  Wart.ImplicitParameter,
+  Wart.DefaultArguments,
+  Wart.NonUnitStatements,
+  Wart.Null,
+  Wart.ToString,
+  Wart.AsInstanceOf,
+  Wart.IsInstanceOf,
+  Wart.MutableDataStructures,
+  Wart.Overloading,
+  Wart.Var,
+  Wart.While,
+  Wart.Throw,
+  Wart.Return,
+  Wart.OptionPartial,
+  Wart.EitherProjectionPartial,
+  Wart.StringPlusAny,
+  Wart.FinalCaseClass,
+  Wart.ArrayEquals,
+  Wart.JavaSerializable,
+  Wart.Serializable,
+  Wart.Product,
+  Wart.SortedMaxMin,
+  Wart.LeakingSealed,
+  Wart.PlatformDefault,
+  Wart.Equals,
+  Wart.ListAppend,
+  Wart.Recursion,
+  Wart.Option2Iterable,
+  Wart.IterableOps,
+  Wart.SeqApply,
+  Wart.SizeIs,
+  Wart.RedundantIsInstanceOf
+)
 
 val catsEffectVersion = "3.6.3"
 val fs2Version = "3.12.2"
@@ -31,8 +69,10 @@ lazy val root = (project in file("."))
       "com.oracle.database.security" % "oraclepki" % oracleJdbcVersion,
       "com.oracle.database.security" % "osdt_core" % oracleOsdtVersion,
       "com.oracle.database.security" % "osdt_cert" % oracleOsdtVersion,
+      "com.h2database" % "h2" % "2.4.240" % Test,
       "org.scalameta" %% "munit" % "1.1.1" % Test
     ),
+    scalacOptions ++= Seq("-Yfuture-lazy-vals", "-java-output-version:11"),
     Compile / mainClass := Some("com.sslproxy.schema.Main"),
     Compile / run / fork := true,
     Test / fork := true

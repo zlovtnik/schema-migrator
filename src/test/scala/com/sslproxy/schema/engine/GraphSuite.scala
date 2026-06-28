@@ -30,4 +30,3 @@ class GraphSuite extends FunSuite:
       canonicalSql = s"create table if not exists $name(id int);",
       sha256 = name
     )
-

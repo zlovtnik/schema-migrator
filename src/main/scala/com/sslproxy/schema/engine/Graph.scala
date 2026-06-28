@@ -13,9 +13,9 @@ object Graph:
     ).map(indexes => indexes.map(objects))
 
   def findDependencyCycle[A](
-      count: Int,
-      objectName: Int => String,
-      dependencies: Int => List[String]
+    count: Int,
+    objectName: Int => String,
+    dependencies: Int => List[String]
   ): Option[List[String]] =
     topologicalIndexes(count, objectName, dependencies).left.toOption.collect {
       case MigratorError.Apply(message, _) if message.startsWith("dependency cycle detected among: ") =>
@@ -23,9 +23,9 @@ object Graph:
     }
 
   private def topologicalIndexes(
-      count: Int,
-      objectName: Int => String,
-      dependencies: Int => List[String]
+    count: Int,
+    objectName: Int => String,
+    dependencies: Int => List[String]
   ): Either[MigratorError, List[Int]] =
     val nameToIndex = (0 until count).map(index => objectName(index) -> index).toMap
     val inDegree = Array.fill(count)(0)
@@ -60,4 +60,3 @@ object Graph:
       val cycle = (0 until count).filterNot(sortedSet.contains).map(objectName).mkString(", ")
       Left(MigratorError.Apply(s"dependency cycle detected among: $cycle"))
     else Right(sorted.toList)
-

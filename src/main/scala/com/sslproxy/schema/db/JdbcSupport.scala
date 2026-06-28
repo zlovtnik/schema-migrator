@@ -9,13 +9,23 @@ import java.sql.{Connection, DriverManager, PreparedStatement, ResultSet, SQLExc
 import java.util.Properties
 import scala.concurrent.duration.FiniteDuration
 
+/** JDBC connection settings shared by provider configuration.
+  *
+  * Postgres consumes this through Doobie transactor construction; raw
+  * `Connection` handling is retained only for the Oracle path.
+  */
 final case class JdbcConnectionConfig(
-    driver: String,
-    url: String,
-    user: Option[String] = None,
-    password: Option[String] = None
+  driver: String,
+  url: String,
+  user: Option[String] = None,
+  password: Option[String] = None
 )
 
+/** Legacy raw JDBC helpers retained for Oracle support.
+  *
+  * New Postgres database code should use `DoobieSupport` and
+  * `ConnectionIO` instead of these statement/query helpers.
+  */
 object JdbcSupport:
   def connection(config: JdbcConnectionConfig): Resource[IO, Connection] =
     Resource.make {
@@ -51,7 +61,7 @@ object JdbcSupport:
     finally statement.close()
 
   def queryPrepared[A](connection: Connection, sql: String)(
-      bind: PreparedStatement => Unit
+    bind: PreparedStatement => Unit
   )(read: ResultSet => A): List[A] =
     val statement = connection.prepareStatement(sql)
     try
@@ -103,4 +113,3 @@ object JdbcSupport:
 
   def appliedBy(): String =
     s"${System.getenv().getOrDefault("HOSTNAME", "unknown-host")}:${ProcessHandle.current().pid()}"
-

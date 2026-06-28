@@ -142,14 +142,3 @@ object PostgresStatements:
            to_char(last_applied_at, 'YYYY-MM-DD HH24:MI:SS') as last_applied_at
       from schema_control.schema_ready
     """
-
-  val fetchRollbackTargetSql: String =
-    """
-    select kind, object_name, source_file, content_sha256, rollback_file
-      from schema_control.schema_objects
-     where object_name = ?
-     order by kind, object_name
-    """
-
-  val advisoryLockTry: String = "select pg_try_advisory_lock(?)"
-  val advisoryLockRelease: String = "select pg_advisory_unlock(?)"

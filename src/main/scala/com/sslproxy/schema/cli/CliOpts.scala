@@ -28,7 +28,8 @@ object CliOpts:
     Opts.option[String]("database-url", help = "JDBC or postgres:// database URL").orNone
 
   private val retriesOpt: Opts[Int] =
-    Opts.option[Int]("connect-retries", help = "Connection retry count")
+    Opts
+      .option[Int]("connect-retries", help = "Connection retry count")
       .withDefault(0)
       .validate("connect-retries must be >= 0")(_ >= 0)
 
@@ -67,19 +68,19 @@ object CliOpts:
       Opts.flag("json", help = "Print machine-readable JSON").orFalse
     ).mapN {
       (
-          dbKind,
-          databaseUrl,
-          sqlDir,
-          dryRun,
-          verbose,
-          continueOnError,
-          retries,
-          backoff,
-          oracleWallet,
-          oracleAlias,
-          oracleUser,
-          oraclePasswordFile,
-          json
+        dbKind,
+        databaseUrl,
+        sqlDir,
+        dryRun,
+        verbose,
+        continueOnError,
+        retries,
+        backoff,
+        oracleWallet,
+        oracleAlias,
+        oracleUser,
+        oraclePasswordFile,
+        json
       ) =>
         MigratorConfig(
           dbKind = dbKind,
@@ -99,7 +100,8 @@ object CliOpts:
     }
 
   private val commandOpts: Opts[CliCommand] =
-    Opts.subcommand("apply", "Apply pending objects")(Opts(CliCommand.Apply))
+    Opts
+      .subcommand("apply", "Apply pending objects")(Opts(CliCommand.Apply))
       .orElse(Opts.subcommand("validate", "Parse and validate SQL files")(Opts(CliCommand.Validate)))
       .orElse(Opts.subcommand("list", "Print discovered SQL files in apply order")(Opts(CliCommand.ListFiles)))
       .orElse(Opts.subcommand("status", "Print schema_control object status")(Opts(CliCommand.Status)))
@@ -113,7 +115,9 @@ object CliOpts:
           Opts.flag("strict", help = "Exit non-zero when schema is not ready").orFalse.map(CliCommand.Ready.apply)
         }
       )
-      .orElse(Opts.subcommand("check-connection", "Open and validate a database connection")(Opts(CliCommand.CheckConnection)))
+      .orElse(
+        Opts.subcommand("check-connection", "Open and validate a database connection")(Opts(CliCommand.CheckConnection))
+      )
       .orElse(Opts(CliCommand.Apply))
 
   val opts: Opts[(MigratorConfig, CliCommand)] =
@@ -122,7 +126,7 @@ object CliOpts:
   private def defaultSqlDir(dbKind: DbKind): Path =
     dbKind match
       case DbKind.Postgres => Paths.get("./sql")
-      case DbKind.Oracle   => Paths.get("./sql/oracle")
+      case DbKind.Oracle => Paths.get("./sql/oracle")
 
 sealed trait CliCommand
 

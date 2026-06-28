@@ -48,7 +48,8 @@ final class MigrationEngine(provider: DbProvider, discoveryService: DiscoverySer
         if structural.isEmpty then IO.pure(ApplyReport())
         else IO.println("-- Phase 1/2: Structural objects --") *> applyPhase(session, structural, config)
       behavioralReport <-
-        if behavioral.isEmpty || (structuralReport.failedFiles > 0 && !config.continueOnError) then IO.pure(ApplyReport())
+        if behavioral.isEmpty || (structuralReport.failedFiles > 0 && !config.continueOnError) then
+          IO.pure(ApplyReport())
         else IO.println("-- Phase 2/2: Behavioral objects --") *> applyPhase(session, behavioral, config)
     yield structuralReport.combine(behavioralReport)
 
@@ -62,7 +63,8 @@ final class MigrationEngine(provider: DbProvider, discoveryService: DiscoverySer
           IO.pure(report.copy(skippedFiles = report.skippedFiles + 1))
       else
         val echo =
-          if config.verbose then IO.println(s"executing ${prepared.objectDef.sourceFile}\n${prepared.objectDef.rawSql}\n")
+          if config.verbose then
+            IO.println(s"executing ${prepared.objectDef.sourceFile}\n${prepared.objectDef.rawSql}\n")
           else IO.unit
         echo *> IO.println(s"[$position/$total] running ${prepared.objectDef.sourceFile}") *>
           session.executeObject(prepared).attempt.flatMap {

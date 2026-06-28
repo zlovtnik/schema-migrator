@@ -10,23 +10,23 @@ object DbKind:
   def parse(value: String): Either[String, DbKind] =
     value.trim.toLowerCase match
       case "postgres" | "postgresql" => Right(Postgres)
-      case "oracle"                  => Right(Oracle)
-      case other                     => Left(s"unsupported db kind '$other'")
+      case "oracle" => Right(Oracle)
+      case other => Left(s"unsupported db kind '$other'")
 
 final case class MigratorConfig(
-    dbKind: DbKind,
-    databaseUrl: Option[String],
-    sqlDir: Path,
-    dryRun: Boolean,
-    verbose: Boolean,
-    continueOnError: Boolean,
-    connectRetries: Int,
-    connectRetryBackoff: FiniteDuration,
-    oracleWallet: Option[Path],
-    oracleTnsAlias: Option[String],
-    oracleUser: Option[String],
-    oraclePasswordFile: Option[Path],
-    json: Boolean
+  dbKind: DbKind,
+  databaseUrl: Option[String],
+  sqlDir: Path,
+  dryRun: Boolean,
+  verbose: Boolean,
+  continueOnError: Boolean,
+  connectRetries: Int,
+  connectRetryBackoff: FiniteDuration,
+  oracleWallet: Option[Path],
+  oracleTnsAlias: Option[String],
+  oracleUser: Option[String],
+  oraclePasswordFile: Option[Path],
+  json: Boolean
 ):
   /** Validate configuration at parse time, returning an error message
     * for invalid or missing combinations that would otherwise fail
@@ -51,8 +51,6 @@ final case class MigratorConfig(
       case _ => Right(())
 
   private def validateSqlDir(): Either[String, Unit] =
-    if Files.notExists(sqlDir) then
-      Left(s"sql directory '$sqlDir' does not exist or is not accessible")
-    else if !Files.isDirectory(sqlDir) then
-      Left(s"path '$sqlDir' is not a directory")
+    if Files.notExists(sqlDir) then Left(s"sql directory '$sqlDir' does not exist or is not accessible")
+    else if !Files.isDirectory(sqlDir) then Left(s"path '$sqlDir' is not a directory")
     else Right(())
