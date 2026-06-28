@@ -1,79 +1,79 @@
 # Schema Migrator
 
-**Unified schema migrator for Postgres and Oracle**
+**Introducing the Unified Schema Migrator for Postgres and Oracle**
 
-A deterministic, retry-safe, functional schema migration engine built on **Scala 3**, **Cats Effect**, and **Doobie**. It discovers ordered SQL files, validates dependencies, locks migrations, tracks an apply log, supports rollbacks, and emits machine-readable JSON—all without requiring a live database for validation.
+Experience a powerful, deterministic, retry-safe schema migration engine built with **Scala 3**, **Cats Effect**, and **Doobie**. This tool efficiently discovers ordered SQL files, validates dependencies, locks migrations, tracks application logs, supports rollbacks, and emits machine-readable JSON, all without the need for a live database for validation.
 
 ---
 
 ## Table of Contents
 
-1. [What it solves](#what-it-solves)
-2. [Who should use it](#who-should-use-it)
-3. [Key capabilities](#key-capabilities)
+1. [What It Solves](#what-it-solves)
+2. [Who Should Use It](#who-should-use-it)
+3. [Key Capabilities](#key-capabilities)
 4. [Benefits](#benefits)
-5. [Quick start](#quick-start)
+5. [Quick Start](#quick-start)
 6. [Commands](#commands)
 7. [Configuration](#configuration)
-8. [Deterministic ordering](#deterministic-ordering)
-9. [Validation without a database](#validation-without-a-database)
-10. [Oracle setup](#oracle-setup)
-11. [Building and testing](#building-and-testing)
+8. [Deterministic Ordering](#deterministic-ordering)
+9. [Validation Without a Database](#validation-without-a-database)
+10. [Oracle Setup](#oracle-setup)
+11. [Building and Testing](#building-and-testing)
 
 ---
 
-## What it solves
+## What It Solves
 
-Managing database schemas across heterogeneous environments (Postgres + Oracle) with large, evolving SQL trees is hard. Schema Migrator solves five concrete problems:
+Managing database schemas across diverse environments (Postgres and Oracle) with complex SQL trees is no small feat. Schema Migrator directly addresses five critical issues:
 
-1. **Unified interface** — one CLI for Postgres and Oracle, not two separate tools with divergent workflows.
-2. **Deterministic ordering** — migrations run in a guaranteed sequence, eliminating “works on my branch” failures caused by implicit file order.
-3. **Idempotent, retry-safe execution** — built-in locking, apply logs, and schema-control hashing make re-runs and restarts safe.
-4. **Early failure detection** — validate SQL parsing, dependency balance, and rollback completeness locally, before touching production.
-5. **Operational visibility** — status reporting, readiness checks, and JSON output integrate cleanly into CI/CD and runbooks.
-
----
-
-## Who should use it
-
-- **Backend & data platform engineers** deploying services backed by Postgres and/or Oracle.
-- **DevOps / platform teams** building shared migration infrastructure that spans multiple databases.
-- **Teams migrating from Oracle to Postgres (or vice versa)** who need a consistent workflow during the transition.
-- **Organizations with strict governance requirements** that need auditable apply logs, locks, and schema-control hashes.
+1. **Unified Interface** — Utilize a single CLI for both Postgres and Oracle, eliminating the hassle of juggling two different tools.
+2. **Deterministic Ordering** — Migrations execute in a guaranteed sequence, putting an end to unpredictable failures related to file order.
+3. **Idempotent, Retry-Safe Execution** — Built-in locking mechanisms, application logs, and schema-control hashing ensure that re-runs and restarts are entirely safe.
+4. **Early Failure Detection** — Validate SQL parsing, dependency balance, and rollback completeness locally, prior to impacting production environments.
+5. **Operational Visibility** — Enjoy seamless integration for status reporting, readiness checks, and JSON output into your CI/CD pipelines and runbooks.
 
 ---
 
-## Key capabilities
+## Who Should Use It
 
-| Capability | Details |
-|---|---|
-| **Multi-engine** | Postgres and Oracle via Doobie JDBC; can validate without a live database. |
-| **Deterministic file ordering** | Extensions → schemas → types → tables → indexes → functions → views → cron pre-apply hooks → materialized views → cron jobs. |
-| **Idempotent applies** | Schema-controlled object hashing + apply log + pessimistic locking. |
-| **Rollback support** | Execute tracked rollback SQL for any applied object. |
-| **Dependency validation** | Detects cross-object dependencies (e.g., views before tables, functions before use) before execution. |
-| **Rollback completeness** | Validates that every tracked object has a counterpart rollback. |
-| **Local validation** | Parse and verify SQL trees without a database connection. |
-| **Readiness checks** | Verify schema readiness; optionally fail the build when not ready. |
-| **Connection validation** | Test JDBC/TNS connectivity and fail fast. |
-| **Retry & backoff** | Configurable retries with backoff for transient connection failures. |
-| **JSON reporting** | Machine-readable output for CI, dashboards, and automation. |
-| **Oracle wallet/JDBC** | Native Oracle wallet support via TNS admin directories and password files. |
+- **Backend and Data Platform Engineers** deploying services with Postgres and/or Oracle.
+- **DevOps and Platform Teams** constructing a cohesive migration infrastructure that spans multiple databases.
+- **Teams Transitioning from Oracle to Postgres (or vice versa)** needing a consistent workflow throughout migration.
+- **Organizations with Stringent Governance Requirements** demanding auditable application logs, locks, and schema-control hashes.
+
+---
+
+## Key Capabilities
+
+| Capability                  | Details                                                                 |
+|-----------------------------|-------------------------------------------------------------------------|
+| **Multi-Engine**            | Effortlessly supports Postgres and Oracle via Doobie JDBC; validates without a live database. |
+| **Deterministic File Ordering** | Ensure a clear organization of migrations covering extensions, schemas, types, tables, indexes, functions, views, cron pre-apply hooks, materialized views, and cron jobs. |
+| **Idempotent Applies**      | Leverage schema-controlled object hashing, application logs, and pessimistic locking for error-free migrations. |
+| **Rollback Support**        | Execute tracked rollback SQL for any applied object with confidence.    |
+| **Dependency Validation**    | Automatically detect cross-object dependencies before execution to prevent failures. |
+| **Rollback Completeness**    | Guarantee that every tracked object has a corresponding rollback, maintaining consistency. |
+| **Local Validation**        | Assertively parse and verify SQL trees without relying on a database connection. |
+| **Readiness Checks**       | Validate schema readiness, with the flexibility to fail the build if not ready. |
+| **Connection Validation**   | Quickly test JDBC/TNS connectivity and fail fast upon errors.            |
+| **Retry and Backoff**      | Configurable retries with backoff cater for transient connection failures. |
+| **JSON Reporting**          | Provide machine-readable outputs for CI, dashboards, and automation integration. |
+| **Oracle Wallet/JDBC**     | Efficiently utilize native Oracle wallet support through TNS admin directories and password files. |
 
 ---
 
 ## Benefits
 
-- **Safety** — Locks, apply logs, and schema-control hashing prevent double-apply, lost migrations, and drift.
-- **Speed** — Catch syntax errors, missing rollbacks, and dependency cycles locally in seconds.
-- **Consistency** — The same ordered plan runs across dev, staging, and production.
-- **Observability** — Status, readiness, and JSON reporters give teams real-time visibility into schema state.
-- **Portability** — One tool, one model; switch databases without changing your migration workflow.
-- **Functional runtime** — Cats Effect gives referential transparency, structured concurrency, and predictable resource cleanup.
+- **Safety** — Built-in locks, application logs, and schema-control hashing thwart double applications, lost migrations, and schema drift.
+- **Speed** — Instantly identify syntax errors, missing rollbacks, and dependency cycles locally within seconds.
+- **Consistency** — Ensure that the same ordered migration plan is executed seamlessly across development, staging, and production environments.
+- **Observability** — Obtain real-time visibility into schema state through status updates, readiness checks, and JSON reports.
+- **Portability** — Use a single tool and approach that allow for effortless switching between databases without changing your migration workflow.
+- **Functional Runtime** — The use of Cats Effect guarantees referential transparency, structured concurrency, and reliable resource cleanup.
 
 ---
 
-## Quick start
+## Quick Start
 
 ```bash
 # List SQL files in apply order (no database required)
@@ -82,17 +82,17 @@ sbt "run --sql-dir ./sql list"
 # Validate without connecting to a database
 sbt "run --sql-dir ./sql validate"
 
-# Dry-run: print SQL that would be executed
+# Dry-run: output SQL that would be executed
 sbt "run --sql-dir ./sql --dry-run apply"
 
-# Check connection
+# Check database connection
 sbt "run --sql-dir ./sql check-connection"
 
 # Apply migrations
 sbt "run --sql-dir ./sql apply"
 ```
 
-For Oracle, set the database kind and supply credentials or environment variables:
+For Oracle, set the database type and provide the necessary credentials or environment variables:
 
 ```bash
 SCHEMA_MIGRATOR_DB_KIND=oracle \
@@ -106,109 +106,11 @@ ORACLE_PASS_FILE=/run/secrets/oracle_password \
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `apply` | Discover, validate, lock, and apply pending SQL objects in deterministic order. |
-| `validate` | Parse SQL files and validate dependencies and rollback completeness without executing. |
-| `list` | Print discovered SQL files and objects in the order they would be applied. |
-| `status` | Show current schema control object status (applied, pending, hashes). |
-| `rollback <object>` | Execute rollback SQL for a tracked, applied object. |
-| `ready [--strict]` | Check schema readiness; with `--strict`, exit non-zero if not ready. |
-| `check-connection` | Open and validate a database connection; useful for pre-flight checks. |
+| Command   | Description                                                               |
+|-----------|---------------------------------------------------------------------------|
+| `apply`   | Discover, validate, lock, and apply pending SQL objects in a guaranteed order. |
+| `validate`| Parse SQL files and validate dependencies and rollback completeness without executing them. |
+| `list`    | Print discovered SQL files and objects in the precise order they will be applied. |
+| `status`  | Display the current schema configuration status.                           |
 
-If no command is given, `apply` is used as the default.
-
----
-
-## Configuration
-
-### CLI flags
-
-| Flag | Default | Description |
-|---|---|---|
-| `--db-kind` | `postgres` | `postgres` or `oracle`. |
-| `--sql-dir` | `./sql` (or `./sql/oracle`) | Root directory containing SQL files. |
-| `--database-url` | — | JDBC URL (Oracle) or `postgres://` URL (Postgres). |
-| `--dry-run` | `false` | Print SQL without executing. |
-| `--verbose` | `false` | Echo each statement before running. |
-| `--continue-on-error` | `false` | Continue processing after SQL errors. |
-| `--connect-retries` | `0` | Number of connection retry attempts. |
-| `--connect-retry-backoff` | `2` | Base retry backoff in seconds. |
-| `--oracle-wallet` | — | Oracle wallet or TNS admin directory. |
-| `--oracle-tns-alias` | — | Oracle TNS alias. |
-| `--oracle-user` | — | Oracle username. |
-| `--oracle-pass-file` | — | File containing Oracle password. |
-| `--json` | `false` | Print machine-readable JSON output. |
-
-### Environment variables
-
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | Postgres database URL. |
-| `ORACLE_JDBC_URL` | Oracle JDBC URL. |
-| `SCHEMA_MIGRATOR_DB_KIND` | `postgres` or `oracle`. |
-| `ORACLE_USER` | Oracle username. |
-| `ORACLE_CONN` | Oracle TNS alias / connection name. |
-| `ORACLE_PASS_FILE` | File path for Oracle password. |
-| `TNS_ADMIN` | Oracle wallet / TNS admin directory. |
-
----
-
-## Deterministic ordering
-
-Schema Migrator discovers SQL files from the repository tree and applies them in a fixed, version-agnostic order. This eliminates non-determinism caused by filesystem traversal, developer machine differences, or OS-dependent path sorting. The standard order is:
-
-1. Extensions
-2. Schemas
-3. Types
-4. Tables
-5. Indexes
-6. Functions
-7. Views
-8. Cron pre-apply hooks
-9. Materialized views
-10. Cron jobs
-
-Custom phases can be added by extending the `Phase` set in the engine.
-
----
-
-## Validation without a database
-
-`validate` runs the full parser, canonicalizer, and dependency graph builder locally:
-
-- **Syntax & parsing** — detects malformed SQL and unsupported constructs.
-- **Dependency validation** — ensures references between objects are resolvable and ordered.
-- **Rollback completeness** — verifies every tracked object has a corresponding rollback path.
-
-This means teams can gate merges on validation alone, long before a shared database is available.
-
----
-
-## Oracle setup
-
-Oracle connections are JDBC-based and support wallet/TNS configurations:
-
-- `.wallet` or TNS admin directories via `--oracle-wallet` or `TNS_ADMIN`.
-- TNS alias via `--oracle-tns-alias` or `ORACLE_CONN`.
-- Username via `--oracle-user` or `ORACLE_USER`.
-- Password files via `--oracle-pass-file` or `ORACLE_PASS_FILE`.
-
-Required runtime JARs are included in the build (ojdbc11, oraclepki, osdt_core, osdt_cert).
-
----
-
-## Building and testing
-
-```bash
-# Build
-sbt compile
-
-# Run tests
-sbt test
-
-# Package
-sbt assembly
-```
-
-The project targets Scala 3.3.6 and uses Cats Effect 3.6.3, Doobie 1.0.0-RC10, and Decline 2.5.0.
+With Schema Migrator, streamline your migration processes and ensure a robust and efficient SQL environment.
