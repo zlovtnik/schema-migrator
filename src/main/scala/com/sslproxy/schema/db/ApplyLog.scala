@@ -25,7 +25,7 @@ object ApplyLog:
     new OracleApplyLog(connection, appliedBy)
 
 final class PostgresApplyLog(
-    appliedBy: String
+  appliedBy: String
 ):
   def recordApplied(obj: SchemaObject, oldSha: Option[String], durationMs: Int): ConnectionIO[Unit] =
     setStatusApplied(obj, oldSha) *>
@@ -53,13 +53,15 @@ final class PostgresApplyLog(
 
   private def setStatus(status: String, error: String, obj: SchemaObject, oldSha: Option[String]): ConnectionIO[Unit] =
     Update[(String, Option[Timestamp], Option[String], String, String)](PostgresStatements.updateStatusSql)
-      .run((
-        status,
-        Option.when(status == "applied")(Timestamp.from(java.time.Instant.now())),
-        Option(error),
-        obj.kind,
-        obj.objectName
-      ))
+      .run(
+        (
+          status,
+          Option.when(status == "applied")(Timestamp.from(java.time.Instant.now())),
+          Option(error),
+          obj.kind,
+          obj.objectName
+        )
+      )
       .void
 
   private def setRollbackStatus(target: RollbackTarget): ConnectionIO[Unit] =
@@ -68,44 +70,48 @@ final class PostgresApplyLog(
       .void
 
   private def insert(
-      obj: SchemaObject,
-      action: String,
-      oldSha: Option[String],
-      durationMs: Option[Int],
-      errorText: Option[String]
+    obj: SchemaObject,
+    action: String,
+    oldSha: Option[String],
+    durationMs: Option[Int],
+    errorText: Option[String]
   ): ConnectionIO[Unit] =
     Update[(String, String, String, String, Option[String], String, Option[Int], Option[String], String)](
       PostgresStatements.applyLogSql
-    ).run((
-      obj.kind,
-      obj.objectName,
-      obj.sourceFile,
-      action,
-      oldSha,
-      obj.sha256,
-      durationMs,
-      errorText,
-      appliedBy
-    )).void
+    ).run(
+      (
+        obj.kind,
+        obj.objectName,
+        obj.sourceFile,
+        action,
+        oldSha,
+        obj.sha256,
+        durationMs,
+        errorText,
+        appliedBy
+      )
+    ).void
 
   private def insertRollback(target: RollbackTarget, durationMs: Int): ConnectionIO[Unit] =
     Update[(String, String, String, String, String, String, Option[Int], Option[String], String)](
       PostgresStatements.applyLogSql
-    ).run((
-      target.kind,
-      target.objectName,
-      target.sourceFile,
-      "rolled_back",
-      target.contentSha256,
-      target.contentSha256,
-      Some(durationMs),
-      None,
-      appliedBy
-    )).void
+    ).run(
+      (
+        target.kind,
+        target.objectName,
+        target.sourceFile,
+        "rolled_back",
+        target.contentSha256,
+        target.contentSha256,
+        Some(durationMs),
+        None,
+        appliedBy
+      )
+    ).void
 
 final class OracleApplyLog(
-    connection: Connection,
-    appliedBy: String
+  connection: Connection,
+  appliedBy: String
 ) extends ApplyLog[IO]:
   import JdbcSupport.executePrepared
 
@@ -145,8 +151,7 @@ final class OracleApplyLog(
         catch
           case NonFatal(error) =>
             try connection.rollback()
-            catch
-              case NonFatal(rollbackError) => error.addSuppressed(rollbackError)
+            catch case NonFatal(rollbackError) => error.addSuppressed(rollbackError)
             throw error
         finally connection.setAutoCommit(true)
     }
@@ -176,11 +181,11 @@ final class OracleApplyLog(
     }
 
   private def insert(
-      obj: SchemaObject,
-      action: String,
-      oldSha: Option[String],
-      durationMs: Option[Int],
-      errorText: Option[String]
+    obj: SchemaObject,
+    action: String,
+    oldSha: Option[String],
+    durationMs: Option[Int],
+    errorText: Option[String]
   ): Unit =
     executePrepared(connection, OracleStatements.applyLogSql) { statement =>
       statement.setString(1, obj.kind)

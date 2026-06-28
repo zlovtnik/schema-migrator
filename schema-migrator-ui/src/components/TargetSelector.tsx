@@ -12,18 +12,18 @@ interface TargetSelectorProps {
 
 export const TargetSelector = ({ compact = false, paramName = "target" }: TargetSelectorProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data: targets = [], isLoading } = useTargets();
+  const { data: targets = [], isLoading, isSuccess } = useTargets();
   const selectedId = searchParams.get(paramName) || "";
   const selectedTarget = targets.find((target) => target.id === selectedId);
 
   useEffect(() => {
-    if (isLoading || !selectedId || selectedTarget) {
+    if (!isSuccess || isLoading || !selectedId || selectedTarget) {
       return;
     }
     const next = new URLSearchParams(searchParams);
     next.delete(paramName);
     setSearchParams(next, { replace: true });
-  }, [isLoading, paramName, searchParams, selectedId, selectedTarget, setSearchParams]);
+  }, [isSuccess, isLoading, paramName, searchParams, selectedId, selectedTarget, setSearchParams]);
 
   const updateTarget = (value: string) => {
     const next = new URLSearchParams(searchParams);

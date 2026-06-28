@@ -15,8 +15,8 @@ object Canonicalizer:
   def requiresNonTransactionalApply(sql: String, dialect: SqlDialect): Boolean =
     val canonical = canonicalize(sql, dialect).toLowerCase(java.util.Locale.ROOT)
     canonical.contains("create index concurrently") ||
-      canonical.contains("drop index concurrently") ||
-      (canonical.contains("reindex") && canonical.contains(" concurrently"))
+    canonical.contains("drop index concurrently") ||
+    (canonical.contains("reindex") && canonical.contains(" concurrently"))
 
   private def stripDialectTerminators(sql: String, dialect: SqlDialect): String =
     dialect match
@@ -52,8 +52,7 @@ object Canonicalizer:
           index = stop
         else
           index += 2
-          while index + 1 < sql.length && !(sql.charAt(index) == '*' && sql.charAt(index + 1) == '/') do
-            index += 1
+          while index + 1 < sql.length && !(sql.charAt(index) == '*' && sql.charAt(index + 1) == '/') do index += 1
           index = math.min(index + 2, sql.length)
           pendingSpace = true
       else if current == '\'' then
@@ -131,4 +130,3 @@ object Canonicalizer:
         else if !current.isLetterOrDigit && current != '_' then return None
         index += 1
       done
-

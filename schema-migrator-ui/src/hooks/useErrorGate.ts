@@ -4,13 +4,15 @@ import { useRuns } from "./useRuns";
 export const useErrorGate = () => {
   const runsQuery = useRuns();
 
-  const failedRun = useMemo(
+  const latestRun = useMemo(
     () =>
       runsQuery.data
-        ?.filter((run) => run.status === "failed")
+        ?.slice()
         .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))[0],
     [runsQuery.data]
   );
+
+  const failedRun = latestRun?.status === "failed" ? latestRun : undefined;
 
   return {
     ...runsQuery,

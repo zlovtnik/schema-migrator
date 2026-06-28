@@ -3,7 +3,15 @@ package com.sslproxy.schema.db.oracle
 import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import com.sslproxy.schema.config.MigratorConfig
-import com.sslproxy.schema.db.{ApplyLog, DbProvider, DbSession, JdbcConnectionConfig, JdbcSupport, LockManager, SchemaControlStore}
+import com.sslproxy.schema.db.{
+  ApplyLog,
+  DbProvider,
+  DbSession,
+  JdbcConnectionConfig,
+  JdbcSupport,
+  LockManager,
+  SchemaControlStore
+}
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.engine.*
 import com.sslproxy.schema.error.MigratorError
@@ -21,9 +29,9 @@ final class OracleProvider(config: JdbcConnectionConfig) extends DbProvider:
 final class OracleSession(connection: Connection) extends DbSession:
   import JdbcSupport.*
 
-  private val lockManager  = LockManager.oracle(connection)
-  private val store        = SchemaControlStore.oracle(connection)
-  private val applyLog     = ApplyLog.oracle(connection, appliedBy)
+  private val lockManager = LockManager.oracle(connection)
+  private val store = SchemaControlStore.oracle(connection)
+  private val applyLog = ApplyLog.oracle(connection, appliedBy)
 
   override def checkConnection: IO[Unit] =
     IO.blocking(queryOne(connection, "select 1 from dual")(_.getInt(1))).void
@@ -31,16 +39,16 @@ final class OracleSession(connection: Connection) extends DbSession:
   override def bootstrap: IO[Unit] =
     IO.blocking {
       OracleStatements.bootstrapBlocks.foreach(OracleDdlHelper.executeSql(connection, _))
-    }.adaptError {
-      case error: SQLException => MigratorError.Apply(s"Oracle schema_control bootstrap failed: ${error.getMessage}", error)
+    }.adaptError { case error: SQLException =>
+      MigratorError.Apply(s"Oracle schema_control bootstrap failed: ${error.getMessage}", error)
     }
 
-  override def acquireLock: IO[Unit]           = lockManager.acquire
-  override def releaseLock: IO[Unit]           = lockManager.release
+  override def acquireLock: IO[Unit] = lockManager.acquire
+  override def releaseLock: IO[Unit] = lockManager.release
   override def prepare(objects: List[SchemaObject]): IO[List[PreparedObject]] = store.prepare(objects)
-  override def fetchStatus: IO[List[ObjectStatus]]         = store.fetchStatus
-  override def fetchReady: IO[SchemaReadyStatus]           = store.fetchReady
-  override def checkReady: IO[Boolean]                     = fetchReady.map(_.ready)
+  override def fetchStatus: IO[List[ObjectStatus]] = store.fetchStatus
+  override def fetchReady: IO[SchemaReadyStatus] = store.fetchReady
+  override def checkReady: IO[Boolean] = fetchReady.map(_.ready)
 
   override def recordSkipped(prepared: PreparedObject): IO[Unit] =
     applyLog.recordSkipped(prepared.objectDef, prepared.oldSha256)
@@ -79,7 +87,8 @@ final class OracleSession(connection: Connection) extends DbSession:
               recordApplied(prepared, started)
             case Left(error: SQLException) =>
               val formatted = JdbcSupport.sqlError(prepared.objectDef.sourceFile, error, "oracle")
-              applyLog.recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
+              applyLog
+                .recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
                 .handleErrorWith(logError => IO(error.addSuppressed(logError))) *>
                 IO.raiseError(MigratorError.Apply(formatted, error))
             case Left(other) =>
@@ -97,12 +106,12 @@ final class OracleSession(connection: Connection) extends DbSession:
         relativePath = target.sourceFile
       )
       val rollbackPath = RollbackValidator.resolveExistingRollbackPath(pseudoFile, target.rollbackFile).getOrElse {
-        throw MigratorError.Apply(s"${target.objectName} declares rollback file '${target.rollbackFile}' but it was not found")
+        throw MigratorError
+          .Apply(s"${target.objectName} declares rollback file '${target.rollbackFile}' but it was not found")
       }
       val rollbackSql = IO.blocking(Files.readString(rollbackPath))
       rollbackSql.flatMap { sql =>
-        if sql.trim.isEmpty then
-          IO.raiseError(MigratorError.Apply(s"$rollbackPath: rollback SQL file is empty"))
+        if sql.trim.isEmpty then IO.raiseError(MigratorError.Apply(s"$rollbackPath: rollback SQL file is empty"))
         else
           IO(System.nanoTime()).flatMap { started =>
             withAutoCommit(false) {
@@ -114,7 +123,9 @@ final class OracleSession(connection: Connection) extends DbSession:
                       .handleErrorWith(rollbackThenRaise)
                   case Left(error: SQLException) =>
                     IO.blocking(connection.rollback()) *>
-                      IO.raiseError(MigratorError.Apply(JdbcSupport.sqlError(rollbackPath.toString, error, "oracle"), error))
+                      IO.raiseError(
+                        MigratorError.Apply(JdbcSupport.sqlError(rollbackPath.toString, error, "oracle"), error)
+                      )
                   case Left(other) =>
                     rollbackThenRaise(other)
                 }
@@ -145,7 +156,8 @@ final class OracleSession(connection: Connection) extends DbSession:
     }
 
   private def recordApplied(prepared: PreparedObject, started: Long): IO[Unit] =
-    applyLog.recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started))
+    applyLog
+      .recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started))
       .adaptError { case error: SQLException =>
         MigratorError.NonRetryableApply(
           s"${prepared.objectDef.sourceFile}: applied Oracle SQL but failed to record migration state: ${error.getMessage}",
@@ -154,12 +166,13 @@ final class OracleSession(connection: Connection) extends DbSession:
       }
 
   private def recordFailedAndCommit(
-      prepared: PreparedObject,
-      started: Long,
-      formatted: String,
-      error: SQLException
+    prepared: PreparedObject,
+    started: Long,
+    formatted: String,
+    error: SQLException
   ): IO[Unit] =
-    applyLog.recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
+    applyLog
+      .recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
       .attempt
       .flatMap {
         case Right(()) =>
@@ -174,7 +187,9 @@ final class OracleSession(connection: Connection) extends DbSession:
           }
         case Left(logError) =>
           IO(error.addSuppressed(logError)) *>
-            IO.blocking(connection.rollback()).handleErrorWith(rollbackError => IO(error.addSuppressed(rollbackError))).void
+            IO.blocking(connection.rollback())
+              .handleErrorWith(rollbackError => IO(error.addSuppressed(rollbackError)))
+              .void
       }
 
   private def rollbackSuppressing(original: SQLException): IO[Unit] =
@@ -183,7 +198,8 @@ final class OracleSession(connection: Connection) extends DbSession:
       .void
 
   private def recordRolledBack(target: RollbackTarget, rollbackPath: Path, started: Long): IO[Unit] =
-    applyLog.recordRolledBack(target, JdbcSupport.durationMs(started))
+    applyLog
+      .recordRolledBack(target, JdbcSupport.durationMs(started))
       .adaptError { case error: SQLException =>
         MigratorError.NonRetryableApply(
           s"${rollbackPath}: rolled back Oracle SQL but failed to record migration state: ${error.getMessage}",
@@ -205,16 +221,18 @@ object OracleProvider:
           .orElse(config.oracleTnsAlias.map(alias => s"jdbc:oracle:thin:@$alias"))
           .toRight("ORACLE_JDBC_URL or --oracle-tns-alias is required for Oracle")
 
-        jdbcUrl.map { url =>
-          OracleProvider(
-            JdbcConnectionConfig(
-              driver = "oracle.jdbc.OracleDriver",
-              url = url,
-              user = config.oracleUser,
-              password = password
+        jdbcUrl
+          .map { url =>
+            OracleProvider(
+              JdbcConnectionConfig(
+                driver = "oracle.jdbc.OracleDriver",
+                url = url,
+                user = config.oracleUser,
+                password = password
+              )
             )
-          )
-        }.leftMap(MigratorError.Connection(_))
+          }
+          .leftMap(MigratorError.Connection(_))
       }
     yield provider
 

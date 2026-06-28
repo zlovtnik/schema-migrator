@@ -19,7 +19,8 @@ const hasUrlScheme = (value: string) => /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
 const normalizeApiBaseUrl = (value: string): string => {
   const trimmed = value.trim() || "/api";
   const rooted = hasUrlScheme(trimmed) || trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  return trimTrailingSlash(rooted);
+  const trailingTrimmed = trimTrailingSlash(rooted);
+  return trailingTrimmed === "/" ? "" : trailingTrimmed;
 };
 
 export const getApiBaseUrl = (): string => {

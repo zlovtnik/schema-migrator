@@ -13,8 +13,9 @@ object RollbackValidator:
     files.foreach { file =>
       var sql: String = null
       try sql = Files.readString(file.path)
-      catch case error: Exception =>
-        results += s"${file.relativePath}: unreadable SQL file (${error.getMessage})"
+      catch
+        case error: Exception =>
+          results += s"${file.relativePath}: unreadable SQL file (${error.getMessage})"
 
       if sql != null then
         HeaderParser.value(sql, "rollback").toList.foreach { rollback =>
@@ -23,8 +24,9 @@ object RollbackValidator:
             case Some(path) =>
               var rollbackSql: String = null
               try rollbackSql = Files.readString(path)
-              catch case error: Exception =>
-                results += s"${file.relativePath}: rollback file '$path' is unreadable (${error.getMessage})"
+              catch
+                case error: Exception =>
+                  results += s"${file.relativePath}: rollback file '$path' is unreadable (${error.getMessage})"
               if rollbackSql != null && rollbackSql.trim.isEmpty then
                 results += s"${file.relativePath}: rollback file '$path' is empty"
         }

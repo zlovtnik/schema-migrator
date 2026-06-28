@@ -22,4 +22,3 @@ trait DbSession:
   def fetchStatus: IO[List[ObjectStatus]]
   def fetchReady: IO[SchemaReadyStatus]
   def checkReady: IO[Boolean]
-

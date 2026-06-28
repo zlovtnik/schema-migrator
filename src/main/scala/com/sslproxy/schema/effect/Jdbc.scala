@@ -49,8 +49,8 @@ object Jdbc:
     def timed[A](fa: F[A]): F[(A, FiniteDuration)] =
       for
         start <- monotonic
-        a     <- fa
-        end   <- monotonic
+        a <- fa
+        end <- monotonic
       yield (a, end - start)
 
     def monotonic: F[FiniteDuration] =

@@ -59,4 +59,3 @@ class ParserSuite extends FunSuite:
       Some("unterminated dollar-quoted block with tag $fn$")
     )
   }
-

@@ -21,13 +21,16 @@ object DoobieSupport:
 
   def postgresSessionTransactor(config: JdbcConnectionConfig): Resource[IO, Transactor[IO]] =
     val base = postgresDriverManagerTransactor(config)
-    base.connect(base.kernel)
+    base
+      .connect(base.kernel)
       .map(connection => Transactor.fromConnection[IO](connection, None))
       .handleErrorWith {
         case error: SQLException =>
-          Resource.eval(IO.raiseError[Transactor[IO]](
-            MigratorError.Connection(s"database connection failed: ${error.getMessage}", error)
-          ))
+          Resource.eval(
+            IO.raiseError[Transactor[IO]](
+              MigratorError.Connection(s"database connection failed: ${error.getMessage}", error)
+            )
+          )
         case error =>
           Resource.eval(IO.raiseError[Transactor[IO]](error))
       }

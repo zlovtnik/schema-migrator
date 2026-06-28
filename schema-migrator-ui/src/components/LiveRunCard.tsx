@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { SquareIcon } from "@phosphor-icons/react/dist/csr/Square";
 import type { Run } from "../types";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRunStream } from "../hooks/useRunStream";
+import { runKeys } from "../hooks/useRuns";
 import { StatusBadge } from "./StatusBadge";
 import { Icon } from "./ui/Icon";
 import { ProgressBar } from "./ui/ProgressBar";
@@ -19,7 +21,18 @@ const formatElapsed = (seconds: number) => {
 };
 
 export const LiveRunCard = ({ run, onAbort, aborting = false }: LiveRunCardProps) => {
-  const stream = useRunStream(run.id, run, { enabled: run.status === "running" || run.status === "pending" });
+  const queryClient = useQueryClient();
+  const stream = useRunStream(run.id, run, {
+    enabled: run.status === "running" || run.status === "pending",
+    onRunComplete: () => {
+      void queryClient.invalidateQueries({ queryKey: runKeys.all });
+      void queryClient.invalidateQueries({ queryKey: runKeys.detail(run.id) });
+    },
+    onRunFailed: () => {
+      void queryClient.invalidateQueries({ queryKey: runKeys.all });
+      void queryClient.invalidateQueries({ queryKey: runKeys.detail(run.id) });
+    }
+  });
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {

@@ -4,7 +4,16 @@ import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.validation.RollbackValidator
-import com.sslproxy.schema.db.{ApplyLog, DbProvider, DbSession, DoobieSupport, JdbcConnectionConfig, JdbcSupport, LockManager, SchemaControlStore}
+import com.sslproxy.schema.db.{
+  ApplyLog,
+  DbProvider,
+  DbSession,
+  DoobieSupport,
+  JdbcConnectionConfig,
+  JdbcSupport,
+  LockManager,
+  SchemaControlStore
+}
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.engine.*
 import com.sslproxy.schema.error.MigratorError
@@ -28,24 +37,25 @@ final class PostgresProvider(config: JdbcConnectionConfig) extends DbProvider:
 final class PostgresSession(transactor: Transactor[IO]) extends DbSession:
   private val nonTransactionalTransactor = DoobieSupport.withoutTransaction(transactor)
 
-  private val lockManager  = LockManager.postgres(PostgresSession.applyLockKey, PostgresSession.applyLockNamespace)
-  private val store        = SchemaControlStore.postgres
-  private val applyLog     = ApplyLog.postgres(appliedBy)
+  private val lockManager = LockManager.postgres(PostgresSession.applyLockKey, PostgresSession.applyLockNamespace)
+  private val store = SchemaControlStore.postgres
+  private val applyLog = ApplyLog.postgres(appliedBy)
 
   override def checkConnection: IO[Unit] =
     sql"select 1".query[Int].unique.transact(transactor).void
 
   override def bootstrap: IO[Unit] =
-    executeStatement(PostgresStatements.bootstrapSql).transact(transactor).adaptError {
-      case error: SQLException => MigratorError.Apply(s"schema_control bootstrap failed: ${error.getMessage}", error)
+    executeStatement(PostgresStatements.bootstrapSql).transact(transactor).adaptError { case error: SQLException =>
+      MigratorError.Apply(s"schema_control bootstrap failed: ${error.getMessage}", error)
     }
 
-  override def acquireLock: IO[Unit]           = lockManager.acquire.transact(transactor)
-  override def releaseLock: IO[Unit]           = lockManager.release.transact(transactor)
-  override def prepare(objects: List[SchemaObject]): IO[List[PreparedObject]] = store.prepare(objects).transact(transactor)
-  override def fetchStatus: IO[List[ObjectStatus]]         = store.fetchStatus.transact(transactor)
-  override def fetchReady: IO[SchemaReadyStatus]           = store.fetchReady.transact(transactor)
-  override def checkReady: IO[Boolean]                     = fetchReady.map(_.ready)
+  override def acquireLock: IO[Unit] = lockManager.acquire.transact(transactor)
+  override def releaseLock: IO[Unit] = lockManager.release.transact(transactor)
+  override def prepare(objects: List[SchemaObject]): IO[List[PreparedObject]] =
+    store.prepare(objects).transact(transactor)
+  override def fetchStatus: IO[List[ObjectStatus]] = store.fetchStatus.transact(transactor)
+  override def fetchReady: IO[SchemaReadyStatus] = store.fetchReady.transact(transactor)
+  override def checkReady: IO[Boolean] = fetchReady.map(_.ready)
 
   override def recordSkipped(prepared: PreparedObject): IO[Unit] =
     applyLog.recordSkipped(prepared.objectDef, prepared.oldSha256).transact(transactor)
@@ -75,7 +85,8 @@ final class PostgresSession(transactor: Transactor[IO]) extends DbSession:
         .attempt
         .flatMap {
           case Right(()) =>
-            applyLog.recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started))
+            applyLog
+              .recordApplied(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started))
               .transact(transactor)
               .adaptError { case error: SQLException =>
                 MigratorError.NonRetryableApply(
@@ -99,12 +110,12 @@ final class PostgresSession(transactor: Transactor[IO]) extends DbSession:
         relativePath = target.sourceFile
       )
       val rollbackPath = RollbackValidator.resolveExistingRollbackPath(pseudoFile, target.rollbackFile).getOrElse {
-        throw MigratorError.Apply(s"${target.objectName} declares rollback file '${target.rollbackFile}' but it was not found")
+        throw MigratorError
+          .Apply(s"${target.objectName} declares rollback file '${target.rollbackFile}' but it was not found")
       }
       val rollbackSql = IO.blocking(Files.readString(rollbackPath))
       rollbackSql.flatMap { sql =>
-        if sql.trim.isEmpty then
-          IO.raiseError(MigratorError.Apply(s"$rollbackPath: rollback SQL file is empty"))
+        if sql.trim.isEmpty then IO.raiseError(MigratorError.Apply(s"$rollbackPath: rollback SQL file is empty"))
         else
           IO(System.nanoTime()).flatMap { started =>
             val action =
@@ -113,7 +124,10 @@ final class PostgresSession(transactor: Transactor[IO]) extends DbSession:
 
             action.transact(transactor).handleErrorWith {
               case failure: SqlExecutionFailure =>
-                IO.raiseError(MigratorError.Apply(JdbcSupport.sqlError(rollbackPath.toString, failure.error, "postgres"), failure.error))
+                IO.raiseError(
+                  MigratorError
+                    .Apply(JdbcSupport.sqlError(rollbackPath.toString, failure.error, "postgres"), failure.error)
+                )
               case other =>
                 IO.raiseError(other)
             }
@@ -133,12 +147,13 @@ final class PostgresSession(transactor: Transactor[IO]) extends DbSession:
     }
 
   private def recordFailedThenRaise[A](
-      prepared: PreparedObject,
-      started: Long,
-      error: SQLException
+    prepared: PreparedObject,
+    started: Long,
+    error: SQLException
   ): IO[A] =
     val formatted = JdbcSupport.sqlError(prepared.objectDef.sourceFile, error, "postgres")
-    applyLog.recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
+    applyLog
+      .recordFailed(prepared.objectDef, prepared.oldSha256, JdbcSupport.durationMs(started), formatted)
       .transact(transactor)
       .attempt
       .flatMap {
@@ -162,16 +177,13 @@ object PostgresProvider:
     }
 
   def normalize(raw: String): Either[String, JdbcConnectionConfig] =
-    if raw.startsWith("jdbc:postgresql://") then
-      Right(JdbcConnectionConfig("org.postgresql.Driver", raw))
-    else if raw.startsWith("postgres://") || raw.startsWith("postgresql://") then
-      parsePostgresUri(raw)
+    if raw.startsWith("jdbc:postgresql://") then Right(JdbcConnectionConfig("org.postgresql.Driver", raw))
+    else if raw.startsWith("postgres://") || raw.startsWith("postgresql://") then parsePostgresUri(raw)
     else Left("Postgres URL must start with postgres://, postgresql://, or jdbc:postgresql://")
 
   private def parsePostgresUri(raw: String): Either[String, JdbcConnectionConfig] =
     Either.catchNonFatal(URI(raw)).leftMap(error => s"invalid Postgres URL: ${error.getMessage}").flatMap { uri =>
-      if uri.getHost == null then
-        Left("invalid Postgres URL: host is required")
+      if uri.getHost == null then Left("invalid Postgres URL: host is required")
       else
         val path = Option(uri.getRawPath).filter(_.nonEmpty).getOrElse("/")
         val port = if uri.getPort >= 0 then s":${uri.getPort}" else ""

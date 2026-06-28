@@ -24,8 +24,7 @@ object OracleDdlHelper:
     val blocks = scala.collection.mutable.ListBuffer.empty[String]
     val current = new StringBuilder
     sql.linesIterator.foreach { line =>
-      if line.trim == "/" then
-        appendCurrent(blocks, current)
+      if line.trim == "/" then appendCurrent(blocks, current)
       else current.append(line).append('\n')
     }
     appendCurrent(blocks, current)
@@ -44,9 +43,8 @@ object OracleDdlHelper:
       val withoutSemi = trimmed.dropRight(1).trim
       val withoutSemiLower = withoutSemi.toLowerCase
       if withoutSemiLower.startsWith("create or replace") ||
-         withoutSemiLower.startsWith("create") ||
-         withoutSemiLower.startsWith("replace") then
-        trimmed
-      else
-        withoutSemi
+        withoutSemiLower.startsWith("create") ||
+        withoutSemiLower.startsWith("replace")
+      then trimmed
+      else withoutSemi
     else trimmed

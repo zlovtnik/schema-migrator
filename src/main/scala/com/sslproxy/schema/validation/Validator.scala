@@ -48,7 +48,7 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
   private def applyFolderHeuristics(report: ValidationReport, file: SqlFile, sql: String): ValidationReport =
     dbKind match
       case DbKind.Postgres => postgresHeuristics(report, file, sql)
-      case DbKind.Oracle   => oracleHeuristics(report, file, sql)
+      case DbKind.Oracle => oracleHeuristics(report, file, sql)
 
   private def postgresHeuristics(report: ValidationReport, file: SqlFile, sql: String): ValidationReport =
     val lower = sql.toLowerCase
@@ -65,15 +65,19 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
               s"$path: table has $count columns; prefer <= $tableColumnWarningLimit columns and vertical partitioning for hot-path schemas"
             )
           case _ => withTableWarning
-      case "functions" if !lower.contains("create or replace function") && !lower.contains("create or replace procedure") =>
-        report.addWarning(s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency")
+      case "functions"
+          if !lower.contains("create or replace function") && !lower.contains("create or replace procedure") =>
+        report.addWarning(
+          s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency"
+        )
       case "views" =>
         val replace = lower.contains("create or replace view")
         val dropCreate = lower.contains("drop view if exists") && lower.contains("create view")
         if replace || dropCreate then report
         else report.addWarning(s"$path: expected 'CREATE OR REPLACE VIEW' or 'DROP VIEW IF EXISTS' + 'CREATE VIEW'")
       case "indexes" =>
-        val hasIndex = lower.contains("create index if not exists") || lower.contains("create unique index if not exists")
+        val hasIndex =
+          lower.contains("create index if not exists") || lower.contains("create unique index if not exists")
         if hasIndex then report
         else report.addWarning(s"$path: expected 'CREATE INDEX IF NOT EXISTS' or 'CREATE UNIQUE INDEX IF NOT EXISTS'")
       case "extensions" if !lower.contains("create extension if not exists") =>
@@ -88,8 +92,11 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
         report.addWarning(s"$path: Oracle CREATE TABLE should be wrapped with ORA-00955 idempotency handling")
       case "indexes" if lower.contains("create index") && !lower.contains("sqlcode = -955") =>
         report.addWarning(s"$path: Oracle CREATE INDEX should be wrapped with ORA-00955 idempotency handling")
-      case "functions" if !lower.contains("create or replace function") && !lower.contains("create or replace procedure") =>
-        report.addWarning(s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency")
+      case "functions"
+          if !lower.contains("create or replace function") && !lower.contains("create or replace procedure") =>
+        report.addWarning(
+          s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency"
+        )
       case "procedures" if !lower.contains("create or replace procedure") =>
         report.addWarning(s"$path: expected 'CREATE OR REPLACE PROCEDURE' for idempotency")
       case "packages" if !lower.contains("create or replace package") =>
@@ -105,9 +112,10 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
     else
       val open = sql.indexOf('(', createPos)
       if open < 0 then None
-      else matchingCloseParen(sql, open).map { close =>
-        splitTopLevelCommas(sql.substring(open + 1, close)).count(isColumnDefinition)
-      }
+      else
+        matchingCloseParen(sql, open).map { close =>
+          splitTopLevelCommas(sql.substring(open + 1, close)).count(isColumnDefinition)
+        }
 
   private def matchingCloseParen(sql: String, open: Int): Option[Int] =
     var index = open
@@ -128,8 +136,8 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
       else
         current match
           case '\'' => inSingle = true
-          case '"'  => inDouble = true
-          case '('  => depth += 1
+          case '"' => inDouble = true
+          case '(' => depth += 1
           case ')' =>
             depth -= 1
             if depth == 0 then return Some(index)
@@ -158,9 +166,9 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
       else
         current match
           case '\'' => inSingle = true
-          case '"'  => inDouble = true
-          case '('  => depth += 1
-          case ')'  => depth = math.max(0, depth - 1)
+          case '"' => inDouble = true
+          case '(' => depth += 1
+          case ')' => depth = math.max(0, depth - 1)
           case ',' if depth == 0 =>
             parts.append(body.substring(start, index).trim)
             start = index + 1

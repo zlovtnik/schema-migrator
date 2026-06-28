@@ -58,8 +58,9 @@ class ProviderSuite extends FunSuite:
     val program =
       for
         _ <- HC.createStatement(HS.executeUpdate("create schema if not exists schema_control"))
-        _ <- HC.createStatement(HS.executeUpdate(
-          """
+        _ <- HC.createStatement(
+          HS.executeUpdate(
+            """
           create table schema_control.schema_objects (
             kind varchar not null,
             object_name varchar not null,
@@ -72,9 +73,11 @@ class ProviderSuite extends FunSuite:
             primary key (kind, object_name)
           )
           """
-        ))
-        _ <- HC.createStatement(HS.executeUpdate(
-          """
+          )
+        )
+        _ <- HC.createStatement(
+          HS.executeUpdate(
+            """
           create table schema_control.schema_apply_log (
             kind varchar not null,
             object_name varchar not null,
@@ -88,7 +91,8 @@ class ProviderSuite extends FunSuite:
             applied_at timestamp default now()
           )
           """
-        ))
+          )
+        )
         _ <-
           sql"""
           insert into schema_control.schema_objects (

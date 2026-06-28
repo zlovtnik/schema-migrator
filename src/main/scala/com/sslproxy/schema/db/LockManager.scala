@@ -21,8 +21,8 @@ object LockManager:
     new OracleLockManager(connection)
 
 final class PostgresLockManager(
-    lockKey: Long,
-    lockNamespace: String
+  lockKey: Long,
+  lockNamespace: String
 ):
   def acquire: ConnectionIO[Unit] =
     sql"select pg_try_advisory_lock($lockKey)"
@@ -31,9 +31,11 @@ final class PostgresLockManager(
       .flatMap { acquired =>
         if acquired then ().pure[ConnectionIO]
         else
-          MigratorError.Apply(
-            s"schema apply lock $lockKey ($lockNamespace) is already held"
-          ).raiseError[ConnectionIO, Unit]
+          MigratorError
+            .Apply(
+              s"schema apply lock $lockKey ($lockNamespace) is already held"
+            )
+            .raiseError[ConnectionIO, Unit]
       }
 
   def release: ConnectionIO[Unit] =
@@ -43,9 +45,11 @@ final class PostgresLockManager(
       .flatMap { released =>
         if released then ().pure[ConnectionIO]
         else
-          MigratorError.LockNotHeld(
-            s"schema apply lock $lockKey ($lockNamespace) was not held"
-          ).raiseError[ConnectionIO, Unit]
+          MigratorError
+            .LockNotHeld(
+              s"schema apply lock $lockKey ($lockNamespace) was not held"
+            )
+            .raiseError[ConnectionIO, Unit]
       }
 
 final class OracleLockManager(connection: Connection) extends LockManager[IO]:
@@ -55,8 +59,7 @@ final class OracleLockManager(connection: Connection) extends LockManager[IO]:
 
   override def acquire: IO[Unit] =
     IO.blocking {
-      try
-        executePrepared(connection, OracleStatements.lockAcquireSql)(_.setString(1, appliedBy(connection)))
+      try executePrepared(connection, OracleStatements.lockAcquireSql)(_.setString(1, appliedBy(connection)))
       catch
         case error: SQLException if error.getErrorCode == 1 =>
           val info = queryLockInfo().map(info => s" held by ${info._1} since ${info._2}").getOrElse("")

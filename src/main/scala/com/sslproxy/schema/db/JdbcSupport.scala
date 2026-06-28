@@ -15,10 +15,10 @@ import scala.concurrent.duration.FiniteDuration
   * `Connection` handling is retained only for the Oracle path.
   */
 final case class JdbcConnectionConfig(
-    driver: String,
-    url: String,
-    user: Option[String] = None,
-    password: Option[String] = None
+  driver: String,
+  url: String,
+  user: Option[String] = None,
+  password: Option[String] = None
 )
 
 /** Legacy raw JDBC helpers retained for Oracle support.
@@ -61,7 +61,7 @@ object JdbcSupport:
     finally statement.close()
 
   def queryPrepared[A](connection: Connection, sql: String)(
-      bind: PreparedStatement => Unit
+    bind: PreparedStatement => Unit
   )(read: ResultSet => A): List[A] =
     val statement = connection.prepareStatement(sql)
     try

@@ -12,4 +12,3 @@ object Main
     ):
   override def main: Opts[IO[ExitCode]] =
     CliOpts.opts.map(Commands.run)
-

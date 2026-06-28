@@ -43,7 +43,8 @@ object SchemaControlStore:
       failedCount = row.getLong("failed_count"),
       appliedCount = row.getLong("applied_count"),
       ready = row.getString("ready") == "1",
-      failedObjects = Option(row.getString("failed_objects")).toList.flatMap(_.split(',').map(_.trim).filter(_.nonEmpty)),
+      failedObjects =
+        Option(row.getString("failed_objects")).toList.flatMap(_.split(',').map(_.trim).filter(_.nonEmpty)),
       lastUpdatedAt = Option(row.getString("last_updated_at")),
       lastAppliedAt = Option(row.getString("last_applied_at"))
     )
@@ -94,17 +95,19 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
         _ <- Update[
           (String, String, String, List[String], Option[String], String, String, String, String)
         ](PostgresStatements.prepareSql)
-          .run((
-            objectDef.kind,
-            objectDef.objectName,
-            objectDef.sourceFile,
-            objectDef.dependsOn,
-            objectDef.rollbackFile,
-            objectDef.canonicalSql,
-            objectDef.sha256,
-            status,
-            status
-          ))
+          .run(
+            (
+              objectDef.kind,
+              objectDef.objectName,
+              objectDef.sourceFile,
+              objectDef.dependsOn,
+              objectDef.rollbackFile,
+              objectDef.canonicalSql,
+              objectDef.sha256,
+              status,
+              status
+            )
+          )
       yield PreparedObject(objectDef, oldSha, needsApply)
 
     operation.adaptError { case error: SQLException =>
@@ -115,7 +118,8 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
     }
 
   override def fetchStatus: ConnectionIO[List[ObjectStatus]] =
-    Fragment.const(PostgresStatements.fetchStatusSql)
+    Fragment
+      .const(PostgresStatements.fetchStatusSql)
       .query[(String, String, String, String, String, Option[String], Option[String])]
       .to[List]
       .map(_.map { case (kind, objectName, sourceFile, applyStatus, contentSha256, appliedAt, lastError) =>
@@ -123,11 +127,14 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
       })
 
   override def fetchReady: ConnectionIO[SchemaReadyStatus] =
-    Fragment.const(PostgresStatements.fetchReadySql)
+    Fragment
+      .const(PostgresStatements.fetchReadySql)
       .query[(Long, Long, Long, Long, Boolean, List[String], Option[String], Option[String])]
       .option
       .map {
-        case Some((totalCount, pendingCount, failedCount, appliedCount, ready, failedObjects, lastUpdatedAt, lastAppliedAt)) =>
+        case Some(
+              (totalCount, pendingCount, failedCount, appliedCount, ready, failedObjects, lastUpdatedAt, lastAppliedAt)
+            ) =>
           SchemaReadyStatus(
             totalCount,
             pendingCount,
@@ -148,7 +155,8 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
       from schema_control.schema_objects
      where object_name = $objectName
      order by kind, object_name
-    """.query[(String, String, String, String, Option[String])]
+    """
+      .query[(String, String, String, String, Option[String])]
       .to[List]
       .map { rows =>
         SchemaControlStore.buildRollbackTarget(

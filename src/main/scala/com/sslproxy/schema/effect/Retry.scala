@@ -12,8 +12,8 @@ import scala.concurrent.duration.*
   * backoff and connection-failure-only filtering.
   */
 final case class RetryPolicy(
-    maxAttempts: Int,
-    baseDelay: FiniteDuration
+  maxAttempts: Int,
+  baseDelay: FiniteDuration
 ):
   require(maxAttempts >= 1, "maxAttempts must be >= 1")
   require(baseDelay >= 0.millis, "baseDelay must be non-negative")
@@ -36,9 +36,9 @@ object Retry:
     *                  (1-based).  Defaults to a no-op.
     */
   def withBackoff[F[_], A](
-      policy: RetryPolicy,
-      isRetryable: Throwable => Boolean,
-      onRetry: Int => F[Unit]
+    policy: RetryPolicy,
+    isRetryable: Throwable => Boolean,
+    onRetry: Int => F[Unit]
   )(fa: F[A])(using F: Temporal[F]): F[A] =
 
     def loop(remaining: Int, used: Int): F[A] =
@@ -53,7 +53,7 @@ object Retry:
 
   /** Convenience overload that omits the logging callback. */
   def withBackoff[F[_], A](
-      policy: RetryPolicy,
-      isRetryable: Throwable => Boolean
+    policy: RetryPolicy,
+    isRetryable: Throwable => Boolean
   )(fa: F[A])(using F: Temporal[F]): F[A] =
     withBackoff(policy, isRetryable, (_: Int) => F.unit)(fa)
