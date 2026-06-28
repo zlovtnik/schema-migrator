@@ -35,6 +35,32 @@ class ValidatorSuite extends FunSuite:
     }
   }
 
+  test("accepts multiline create or replace procedure in functions folder") {
+    withTempDir { dir =>
+      val path = dir.resolve("001_proc.sql")
+      Files.writeString(
+        path,
+        """-- object: demo_proc
+          |-- folder: functions
+          |-- depends_on: -
+          |CREATE OR REPLACE
+          |PROCEDURE demo_proc AS
+          |BEGIN
+          |  NULL;
+          |END;
+          |/
+          |""".stripMargin
+      )
+
+      val report = Validator[IO](DbKind.Oracle)
+        .validate(List(SqlFile("functions", path, "001_proc.sql", "001_proc.sql")))
+        .unsafeRunSync()
+
+      assert(!report.warnings.exists(_.contains("CREATE OR REPLACE FUNCTION")))
+      assert(!report.hasErrors)
+    }
+  }
+
   private def withTempDir[A](run: Path => A): A =
     val dir = Files.createTempDirectory("schema-migrator-validator")
     try run(dir)

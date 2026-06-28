@@ -1,0 +1,52 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      - BEDROCK_HTTP_HOST=0.0.0.0
+      - BEDROCK_HTTP_PORT=8080
+      - BEDROCK_CORS_ORIGINS=http://localhost:5173
+      - BEDROCK_JWT_SECRET=gpbEGk8AOtpfWZtir568o5r7J7JIMDAnG7TIr3ZhzvA
+      - BEDROCK_DEV_AUTH_SECRET=macacosmemordam
+      - BEDROCK_ENCRYPT_KEY
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    volumes:
+      - sbt-cache:/root/.sbt
+      - ivy-cache:/root/.ivy2
+      - coursier-cache:/root/.cache/coursier
+
+  ui:
+    build:
+      context: ./schema-migrator-ui
+      dockerfile: Dockerfile
+    command: sh -lc "rm -rf node_modules/.vite && bun run dev --host 0.0.0.0"
+    environment:
+      - VITE_API_BASE_URL=/api
+      - VITE_API_PROXY_TARGET=http://backend:8080
+      - VITE_DEV_AUTH_SECRET=macacosmemordam
+      - VITE_DEV_AUTH_SUBJECT=docker-dev
+      - VITE_USE_POLLING=true
+    ports:
+      - "5173:5173"
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./schema-migrator-ui/index.html:/app/index.html
+      - ./schema-migrator-ui/src:/app/src
+      - ./schema-migrator-ui/tsconfig.json:/app/tsconfig.json
+      - ./schema-migrator-ui/tsconfig.node.json:/app/tsconfig.node.json
+      - ./schema-migrator-ui/vite.config.ts:/app/vite.config.ts
+
+volumes:
+  sbt-cache:
+  ivy-cache:
+  coursier-cache:

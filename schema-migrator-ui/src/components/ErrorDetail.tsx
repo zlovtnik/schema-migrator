@@ -8,8 +8,8 @@ export const ErrorDetail = ({ error }: ErrorDetailProps) => (
   <div className="error-detail" role="region" aria-label="Script error detail">
     <dl>
       <div>
-        <dt>PG code</dt>
-        <dd>{error.pg_code}</dd>
+        <dt>DB code</dt>
+        <dd>{error.db_code}</dd>
       </div>
       <div>
         <dt>Message</dt>

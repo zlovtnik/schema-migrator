@@ -122,10 +122,9 @@ final class OracleSession(connection: Connection) extends DbSession:
                     (recordRolledBack(target, rollbackPath, started) *> IO.blocking(connection.commit()))
                       .handleErrorWith(rollbackThenRaise)
                   case Left(error: SQLException) =>
-                    IO.blocking(connection.rollback()) *>
-                      IO.raiseError(
-                        MigratorError.Apply(JdbcSupport.sqlError(rollbackPath.toString, error, "oracle"), error)
-                      )
+                    val failure =
+                      MigratorError.Apply(JdbcSupport.sqlError(rollbackPath.toString, error, "oracle"), error)
+                    rollbackSuppressing(error) *> IO.raiseError(failure)
                   case Left(other) =>
                     rollbackThenRaise(other)
                 }

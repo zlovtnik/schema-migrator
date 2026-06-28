@@ -1,11 +1,23 @@
 import { useEffect, useState } from "react";
-import { getApiBaseUrl, getAuthToken, setApiBaseUrl, setAuthToken } from "../../api/client";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  getApiBaseUrl,
+  getAuthToken,
+  getEncryptKey,
+  setApiBaseUrl,
+  setAuthToken,
+  setEncryptKey,
+  validateEncryptKey
+} from "../../api/client";
 
 const THEME_KEY = "schemaMigrator.theme";
 
 export const SettingsPage = () => {
+  const queryClient = useQueryClient();
   const [apiBase, setApiBase] = useState(getApiBaseUrl());
   const [token, setToken] = useState(getAuthToken());
+  const [encryptKey, setEncryptKeyValue] = useState(getEncryptKey());
+  const [encryptKeyError, setEncryptKeyError] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useState(() => window.localStorage.getItem(THEME_KEY) || "dark");
   const [saved, setSaved] = useState(false);
 
@@ -14,9 +26,24 @@ export const SettingsPage = () => {
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
+  const onEncryptKeyChange = (value: string) => {
+    setEncryptKeyValue(value);
+    setEncryptKeyError(validateEncryptKey(value));
+    setSaved(false);
+  };
+
   const save = () => {
+    const keyError = validateEncryptKey(encryptKey);
+    if (keyError) {
+      setEncryptKeyError(keyError);
+      setSaved(false);
+      return;
+    }
+
     setApiBaseUrl(apiBase);
     setAuthToken(token);
+    setEncryptKey(encryptKey);
+    queryClient.clear();
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
   };
@@ -52,6 +79,24 @@ export const SettingsPage = () => {
             onChange={(event) => setToken(event.target.value)}
             type="password"
           />
+        </label>
+        <label htmlFor="settings-encrypt-key">
+          AES-GCM key
+          <input
+            autoComplete="off"
+            id="settings-encrypt-key"
+            name="encrypt-key"
+            value={encryptKey}
+            onChange={(event) => onEncryptKeyChange(event.target.value)}
+            aria-describedby={encryptKeyError ? "settings-encrypt-key-error" : undefined}
+            aria-invalid={Boolean(encryptKeyError) || undefined}
+            type="password"
+          />
+          {encryptKeyError ? (
+            <span className="field-error" id="settings-encrypt-key-error" role="alert">
+              {encryptKeyError}
+            </span>
+          ) : null}
         </label>
         <label htmlFor="settings-theme">
           Theme

@@ -3,8 +3,8 @@ import { abortRun, getRun, listRuns } from "../api/runs";
 
 export const runKeys = {
   all: ["runs"] as const,
-  list: (targetId?: string | null) => ["runs", targetId || "all"] as const,
-  detail: (id: string) => ["runs", id] as const
+  list: (targetId?: string | null) => ["runs", "list", targetId || "all"] as const,
+  detail: (id: string) => ["runs", "detail", id] as const
 };
 
 export const useRuns = (targetId?: string | null) =>
@@ -15,7 +15,7 @@ export const useRuns = (targetId?: string | null) =>
 
 export const useRun = (id?: string) =>
   useQuery({
-    queryKey: id ? runKeys.detail(id) : ["runs", "missing"],
+    queryKey: id ? runKeys.detail(id) : ["runs", "detail", "missing"],
     queryFn: () => getRun(id as string),
     enabled: Boolean(id)
   });

@@ -15,11 +15,12 @@ export const TargetFormPage = () => {
   const updateTarget = useUpdateTarget(id ?? "");
   const deleteTarget = useDeleteTarget();
   const testConnection = useTestConnection();
-  const { data: runs = [] } = useRuns();
+  const { data: runs = [], isLoading: runsLoading, isSuccess: runsLoaded } = useRuns();
   const [testResult, setTestResult] = useState<ConnectionTestResult | undefined>();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const hasActiveRuns = runs.some((run) => run.target_id === id && (run.status === "running" || run.status === "pending"));
+  const deleteDisabled = !runsLoaded || runsLoading || hasActiveRuns;
 
   const submit = (values: TargetFormValues) => {
     updateTarget.mutate(values, {
@@ -28,16 +29,13 @@ export const TargetFormPage = () => {
   };
 
   const test = async (values: TargetFormValues) => {
-    const result = await testConnection.mutateAsync({ id, values });
+    const result = await testConnection.mutateAsync(values.password?.trim() ? { values } : { id });
     setTestResult(result);
     return result;
   };
 
   const confirmDelete = () => {
-    if (!id) {
-      return;
-    }
-    if (runs.some((run) => run.target_id === id && (run.status === "running" || run.status === "pending"))) {
+    if (!id || deleteDisabled) {
       return;
     }
     deleteTarget.mutate(id, {
@@ -63,8 +61,14 @@ export const TargetFormPage = () => {
         <button
           className="button button--danger"
           type="button"
-          disabled={hasActiveRuns}
-          title={hasActiveRuns ? "Delete disabled while active runs exist" : undefined}
+          disabled={deleteDisabled}
+          title={
+            !runsLoaded || runsLoading
+              ? "Delete disabled until run state loads"
+              : hasActiveRuns
+                ? "Delete disabled while active runs exist"
+                : undefined
+          }
           onClick={() => setConfirmOpen(true)}
         >
           <Icon source={TrashIcon} size={16} />

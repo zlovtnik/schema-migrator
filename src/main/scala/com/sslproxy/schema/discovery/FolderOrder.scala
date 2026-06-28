@@ -21,14 +21,19 @@ object FolderOrder:
       "session",
       "types",
       "tables",
+      "indexes",
       "seed_data",
       "functions",
+      "procedures",
       "packages",
       "contexts",
       "triggers",
       "ilm_policies",
       "security",
       "views",
+      "materialized_views",
+      "cron",
+      "policies",
       "scheduler"
     )
 

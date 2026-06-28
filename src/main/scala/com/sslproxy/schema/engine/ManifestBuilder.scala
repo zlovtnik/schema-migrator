@@ -10,6 +10,8 @@ import com.sslproxy.schema.parser.{Canonicalizer, HeaderParser}
 import java.nio.file.Files
 
 final class ManifestBuilder[F[_]: Sync](dialect: SqlDialect):
+  private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+procedure\b".r
+
   def build(files: List[SqlFile]): F[List[SchemaObject]] =
     files.traverse(file => Sync[F].blocking(fromFile(file)))
 
@@ -66,5 +68,4 @@ final class ManifestBuilder[F[_]: Sync](dialect: SqlDialect):
       case _ => "sql_file"
 
   private def routineKind(sql: String): String =
-    val lower = sql.toLowerCase(java.util.Locale.ROOT)
-    if lower.contains("create or replace procedure") then "procedure" else "function"
+    if createOrReplaceProcedure.findFirstIn(sql).nonEmpty then "procedure" else "function"

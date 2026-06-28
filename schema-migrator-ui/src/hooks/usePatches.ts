@@ -6,8 +6,8 @@ import type { TriggerRunPayload, UploadPatchPayload } from "../types";
 
 export const patchKeys = {
   all: ["patches"] as const,
-  list: (targetId?: string | null) => ["patches", targetId || "none"] as const,
-  detail: (id: string) => ["patches", id] as const
+  list: (targetId?: string | null) => ["patches", "list", targetId || "none"] as const,
+  detail: (id: string) => ["patches", "detail", id] as const
 };
 
 export const usePatches = (targetId?: string | null) =>
@@ -19,7 +19,7 @@ export const usePatches = (targetId?: string | null) =>
 
 export const usePatch = (id?: string) =>
   useQuery({
-    queryKey: id ? patchKeys.detail(id) : ["patches", "missing"],
+    queryKey: id ? patchKeys.detail(id) : ["patches", "detail", "missing"],
     queryFn: () => getPatch(id as string),
     enabled: Boolean(id)
   });

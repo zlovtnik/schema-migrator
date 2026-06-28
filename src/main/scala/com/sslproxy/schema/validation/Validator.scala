@@ -10,6 +10,8 @@ import java.nio.file.Files
 
 final class Validator[F[_]: Sync](dbKind: DbKind):
   private val tableColumnWarningLimit = 15
+  private val createOrReplaceRoutine = raw"(?is)\bcreate\s+or\s+replace\s+(function|procedure)\b".r
+  private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+procedure\b".r
 
   def validate(files: List[SqlFile]): F[ValidationReport] =
     Sync[F].blocking {
@@ -65,8 +67,7 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
               s"$path: table has $count columns; prefer <= $tableColumnWarningLimit columns and vertical partitioning for hot-path schemas"
             )
           case _ => withTableWarning
-      case "functions"
-          if !lower.contains("create or replace function") && !lower.contains("create or replace procedure") =>
+      case "functions" if !hasCreateOrReplaceRoutine(sql) =>
         report.addWarning(
           s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency"
         )
@@ -92,12 +93,11 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
         report.addWarning(s"$path: Oracle CREATE TABLE should be wrapped with ORA-00955 idempotency handling")
       case "indexes" if lower.contains("create index") && !lower.contains("sqlcode = -955") =>
         report.addWarning(s"$path: Oracle CREATE INDEX should be wrapped with ORA-00955 idempotency handling")
-      case "functions"
-          if !lower.contains("create or replace function") && !lower.contains("create or replace procedure") =>
+      case "functions" if !hasCreateOrReplaceRoutine(sql) =>
         report.addWarning(
           s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency"
         )
-      case "procedures" if !lower.contains("create or replace procedure") =>
+      case "procedures" if !hasCreateOrReplaceProcedure(sql) =>
         report.addWarning(s"$path: expected 'CREATE OR REPLACE PROCEDURE' for idempotency")
       case "packages" if !lower.contains("create or replace package") =>
         report.addWarning(s"$path: expected 'CREATE OR REPLACE PACKAGE' for idempotency")
@@ -116,6 +116,12 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
         matchingCloseParen(sql, open).map { close =>
           splitTopLevelCommas(sql.substring(open + 1, close)).count(isColumnDefinition)
         }
+
+  private def hasCreateOrReplaceRoutine(sql: String): Boolean =
+    createOrReplaceRoutine.findFirstIn(sql).nonEmpty
+
+  private def hasCreateOrReplaceProcedure(sql: String): Boolean =
+    createOrReplaceProcedure.findFirstIn(sql).nonEmpty
 
   private def matchingCloseParen(sql: String, open: Int): Option[Int] =
     var index = open

@@ -1,19 +1,29 @@
 package com.sslproxy.schema.db.oracle
 
 object OracleStatements:
-  private def ignoreOracleErrorBlock(errorCode: Int, sql: String): String =
+  private def ignoreOracleErrorsBlock(errorCodes: List[Int], sql: String): String =
+    val declarations = errorCodes.zipWithIndex
+      .map { case (errorCode, index) =>
+        s"""
+      expected_error_$index exception;
+      pragma exception_init(expected_error_$index, -$errorCode);"""
+      }
+      .mkString
+    val handlers = errorCodes.indices.map(index => s"expected_error_$index").mkString(" or ")
     s"""
     declare
-      expected_error exception;
-      pragma exception_init(expected_error, -$errorCode);
+${declarations}
     begin
       execute immediate q'[
 ${sql.trim}
 ]';
     exception
-      when expected_error then null;
+      when $handlers then null;
     end;
     """
+
+  private def ignoreOracleErrorBlock(errorCode: Int, sql: String): String =
+    ignoreOracleErrorsBlock(List(errorCode), sql)
 
   val tableSchemaObjects: String =
     """
@@ -65,6 +75,12 @@ ${sql.trim}
     )
     """
 
+  val addMigrationLocksPrimaryKey: String =
+    """
+    alter table schema_control.migration_locks
+      add constraint migration_locks_pk primary key (lock_name)
+    """
+
   val indexApplyLogObject: String =
     """
     create index schema_apply_log_object_idx
@@ -104,6 +120,7 @@ ${sql.trim}
       ignoreOracleErrorBlock(1430, addRollbackFileColumn),
       ignoreOracleErrorBlock(955, tableApplyLog),
       ignoreOracleErrorBlock(955, tableMigrationLocks),
+      ignoreOracleErrorsBlock(List(955, 2260), addMigrationLocksPrimaryKey),
       ignoreOracleErrorBlock(955, indexApplyLogObject),
       viewSchemaReady
     )
@@ -152,6 +169,15 @@ ${sql.trim}
        set apply_status = ?,
            applied_at = case when ? = 'applied' then systimestamp else null end,
            last_error = ?,
+           updated_at = systimestamp
+     where kind = ? and object_name = ?
+    """
+
+  val updateStatusSkippedSql: String =
+    """
+    update schema_control.schema_objects
+       set apply_status = 'skipped',
+           last_error = null,
            updated_at = systimestamp
      where kind = ? and object_name = ?
     """

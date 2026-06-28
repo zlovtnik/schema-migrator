@@ -12,6 +12,7 @@ import com.sslproxy.schema.effect.{Lock, Retry, RetryPolicy}
 import com.sslproxy.schema.engine.MigrationEngine
 import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.output.{JsonReporter, ReportPrinter}
+import com.sslproxy.schema.server.HttpServer
 import com.sslproxy.schema.validation.Validator
 import io.circe.Json
 
@@ -33,8 +34,15 @@ object Commands:
     }
 
   private def execute(config: MigratorConfig, command: CliCommand): IO[ExitCode] =
-    IO.fromEither(config.validate.leftMap(e => MigratorError.Validation(e))).flatMap { _ =>
+    val validation =
       command match
+        case CliCommand.Serve => config.validateServer
+        case _ => config.validate
+    IO.fromEither(validation.leftMap(e => MigratorError.Validation(e))).flatMap { _ =>
+      command match
+        case CliCommand.Serve =>
+          HttpServer.serve(config).as(success)
+
         case CliCommand.ListFiles =>
           val discovery = DiscoveryService[IO]().discover(config.sqlDir, config.dbKind)
           discovery

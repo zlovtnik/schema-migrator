@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
@@ -13,7 +13,7 @@ import type { ConnectionTestResult, Target, TargetFormValues } from "../../types
 
 export const TargetListPage = () => {
   const { data: targets = [], isLoading, error } = useTargets();
-  const { data: runs = [] } = useRuns();
+  const { data: runs = [], isLoading: runsLoading, isSuccess: runsLoaded } = useRuns();
   const createTarget = useCreateTarget();
   const deleteTarget = useDeleteTarget();
   const testConnection = useTestConnection();
@@ -28,16 +28,31 @@ export const TargetListPage = () => {
     [runs]
   );
 
+  const closeCreate = () => {
+    setCreateOpen(false);
+    setPreSaveTestResult(undefined);
+  };
+
   const create = (values: TargetFormValues) => {
     createTarget.mutate(values, {
       onSuccess: closeCreate
     });
   };
 
-  const closeCreate = () => {
-    setCreateOpen(false);
-    setPreSaveTestResult(undefined);
-  };
+  useEffect(() => {
+    if (!createOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeCreate();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [createOpen]);
 
   const runConnectionTest = (target: Target) => {
     setTestingTargetId(target.id);
@@ -57,10 +72,7 @@ export const TargetListPage = () => {
   };
 
   const confirmDelete = () => {
-    if (!targetToDelete) {
-      return;
-    }
-    if (activeRunTargetIds.has(targetToDelete.id)) {
+    if (!targetToDelete || !runsLoaded || runsLoading || activeRunTargetIds.has(targetToDelete.id)) {
       return;
     }
     deleteTarget.mutate(targetToDelete.id, {
@@ -106,6 +118,7 @@ export const TargetListPage = () => {
                 const result = testResults[target.id];
                 const status = result ? (result.ok ? "connected" : "error") : "untested";
                 const hasActiveRuns = activeRunTargetIds.has(target.id);
+                const deleteDisabled = !runsLoaded || runsLoading || hasActiveRuns;
                 return (
                   <tr key={target.id}>
                     <td>
@@ -141,9 +154,19 @@ export const TargetListPage = () => {
                           className="icon-button icon-button--danger"
                           type="button"
                           aria-label={`Delete ${target.label}`}
-                          onClick={() => setTargetToDelete(target)}
-                          disabled={hasActiveRuns}
-                          title={hasActiveRuns ? "Delete disabled while active runs exist" : undefined}
+                          onClick={() => {
+                            if (!deleteDisabled) {
+                              setTargetToDelete(target);
+                            }
+                          }}
+                          disabled={deleteDisabled}
+                          title={
+                            !runsLoaded || runsLoading
+                              ? "Delete disabled until run state loads"
+                              : hasActiveRuns
+                                ? "Delete disabled while active runs exist"
+                                : undefined
+                          }
                         >
                           <Icon source={TrashIcon} size={16} label={`Delete ${target.label}`} />
                         </button>
@@ -158,10 +181,10 @@ export const TargetListPage = () => {
       ) : null}
 
       {createOpen ? (
-        <aside className="slide-over" aria-label="Create target">
+        <aside className="slide-over" role="dialog" aria-modal="true" aria-labelledby="create-target-title">
           <div className="slide-over__panel">
             <div className="slide-over__header">
-              <h2>Create target</h2>
+              <h2 id="create-target-title">Create target</h2>
               <button className="button button--ghost button--small" type="button" onClick={closeCreate}>
                 Close
               </button>
