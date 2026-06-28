@@ -44,7 +44,7 @@ export interface Target {
 }
 
 export interface ScriptError {
-  pg_code: string;
+  db_code: string;
   message: string;
   hint?: string;
   context?: string;
@@ -121,7 +121,7 @@ export interface RunStreamState {
 }
 
 export const scriptErrorSchema = z.object({
-  pg_code: z.string().min(1, "PG code is required"),
+  db_code: z.string().min(1, "DB code is required"),
   message: z.string().min(1, "Message is required"),
   hint: z.string().optional(),
   context: z.string().optional(),

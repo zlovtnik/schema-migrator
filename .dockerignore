@@ -1,0 +1,12 @@
+.git
+.DS_Store
+target
+project/target
+project/project
+schema-migrator-ui/node_modules
+schema-migrator-ui/dist
+schema-migrator-ui/node_modules/.vite
+schema-migrator-ui/*.tsbuildinfo
+**/.env
+**/.env.*
+!**/.env.example

@@ -1,0 +1,89 @@
+package com.sslproxy.schema.server
+
+import cats.effect.IO
+import cats.syntax.all.*
+import com.sslproxy.schema.store.{Models, PatchStore, PatchUpload, TargetStore}
+import fs2.text
+import io.circe.Json
+import io.circe.syntax.*
+import org.http4s.HttpRoutes
+import org.http4s.circe.CirceEntityCodec.*
+import org.http4s.dsl.io.*
+import org.http4s.multipart.{Multipart, Part}
+
+object PatchRoutes:
+  import Models.given
+
+  private val maxUploadBytes = 10L * 1024L * 1024L
+
+  def routes(targetStore: TargetStore, patchStore: PatchStore): HttpRoutes[IO] =
+    HttpRoutes.of[IO] {
+      case request @ GET -> Root / "patches" =>
+        val targetId = request.uri.query.params.get("target_id").filter(_.nonEmpty)
+        patchStore.list(targetId).flatMap(patches => RouteJson.ok(Json.obj("patches" -> patches.asJson)))
+
+      case request @ POST -> Root / "patches" =>
+        request.as[Multipart[IO]].flatMap { multipart =>
+          for
+            targetId <- fieldValue(multipart, "target_id")
+            response <-
+              targetId match
+                case None => RouteJson.badRequest("target_id is required")
+                case Some(value) =>
+                  targetStore.get(value).flatMap {
+                    case None => RouteJson.notFound(s"target '$value' was not found")
+                    case Some(_) =>
+                      fileUploads(multipart).flatMap { uploads =>
+                        if uploads.isEmpty then RouteJson.badRequest("at least one SQL file is required")
+                        else patchStore.create(value, uploads).flatMap(patch => RouteJson.created(patch.asJson))
+                      }
+                  }
+          yield response
+        }
+
+      case GET -> Root / "patches" / id =>
+        patchStore.get(id).flatMap {
+          case Some(patch) => RouteJson.ok(patch.asJson)
+          case None => RouteJson.notFound(s"patch '$id' was not found")
+        }
+
+      case DELETE -> Root / "patches" / id =>
+        patchStore.delete(id).flatMap {
+          case true => NoContent()
+          case false => RouteJson.notFound(s"patch '$id' was not found")
+        }
+    }
+
+  private def fieldValue(multipart: Multipart[IO], name: String): IO[Option[String]] =
+    multipart.parts
+      .find(_.name.contains(name))
+      .traverse(part => part.body.through(text.utf8.decode).compile.string.map(_.trim))
+      .map(_.filter(_.nonEmpty))
+
+  private def fileUploads(multipart: Multipart[IO]): IO[List[PatchUpload]] =
+    multipart.parts.zipWithIndex.traverse { case (part, index) =>
+      if part.name.contains("files") then readUpload(part, index + 1).map(Some(_))
+      else IO.pure(Option.empty[PatchUpload])
+    }.map(_.flatten.toList)
+
+  private def readUpload(part: Part[IO], order: Int): IO[PatchUpload] =
+    part.body.take(maxUploadBytes + 1).compile.toVector.flatMap { bytes =>
+      if bytes.length.toLong > maxUploadBytes then IO.raiseError(IllegalArgumentException("uploaded SQL file exceeds 10 MiB limit"))
+      else
+        IO.pure(
+          PatchUpload(
+            filename = safeFilename(part.filename, order),
+            bytes = bytes.toArray,
+            order = order
+          )
+        )
+    }
+
+  private def safeFilename(filename: Option[String], order: Int): String =
+    filename
+      .flatMap { value =>
+        value.replace('\\', '/').split('/').toList.lastOption.map(_.trim)
+      }
+      .map(_.replaceAll("[^A-Za-z0-9._-]", "_"))
+      .filter(name => name.nonEmpty && name != "." && name != "..")
+      .getOrElse(s"script-$order.sql")

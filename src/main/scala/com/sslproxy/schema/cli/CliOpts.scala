@@ -2,7 +2,7 @@ package com.sslproxy.schema.cli
 
 import cats.syntax.all.*
 import com.monovore.decline.*
-import com.sslproxy.schema.config.{DbKind, MigratorConfig}
+import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
 
 import java.nio.file.{Path, Paths}
 import scala.concurrent.duration.*
@@ -51,6 +51,44 @@ object CliOpts:
   private val oraclePasswordFileOpt: Opts[Option[Path]] =
     Opts.option[Path]("oracle-pass-file", help = "File containing Oracle password").orNone
 
+  private val hostOpt: Opts[String] =
+    Opts
+      .option[String]("host", help = "HTTP server bind host")
+      .withDefault(env.getOrElse("BEDROCK_HTTP_HOST", "127.0.0.1"))
+
+  private val portOpt: Opts[Int] =
+    Opts
+      .option[Int]("port", help = "HTTP server bind port")
+      .withDefault(envInt("BEDROCK_HTTP_PORT", 8080))
+      .validate("port must be between 1 and 65535")(port => port >= 1 && port <= 65535)
+
+  private val corsOriginsOpt: Opts[Set[String]] =
+    Opts
+      .option[String]("cors-origins", help = "Comma-separated allowed CORS origins")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_CORS_ORIGINS")).fold(Set("http://localhost:5173"))(commaSet))
+
+  private val encryptKeyOpt: Opts[Option[String]] =
+    Opts.option[String]("encrypt-key", help = "Base64 AES-256-GCM response encryption key").orNone
+
+  private val jwtSecretOpt: Opts[String] =
+    Opts
+      .option[String]("jwt-secret", help = "JWT HS256 signing secret")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_JWT_SECRET")).flatMap(nonBlank).getOrElse(""))
+
+  private val devAuthSecretOpt: Opts[String] =
+    Opts
+      .option[String]("dev-auth-secret", help = "Development secret accepted by /api/auth/token")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_DEV_AUTH_SECRET")).flatMap(nonBlank).getOrElse(""))
+
+  private val patchStageDirOpt: Opts[Path] =
+    Opts
+      .option[Path]("patch-stage-dir", help = "Directory used to stage uploaded patch files")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_PATCH_STAGE_DIR").map(Paths.get(_))).getOrElse(defaultPatchStageDir))
+
   private val configOpts: Opts[MigratorConfig] =
     (
       dbKindOpt,
@@ -65,7 +103,14 @@ object CliOpts:
       oracleAliasOpt,
       oracleUserOpt,
       oraclePasswordFileOpt,
-      Opts.flag("json", help = "Print machine-readable JSON").orFalse
+      Opts.flag("json", help = "Print machine-readable JSON").orFalse,
+      hostOpt,
+      portOpt,
+      corsOriginsOpt,
+      encryptKeyOpt,
+      jwtSecretOpt,
+      devAuthSecretOpt,
+      patchStageDirOpt
     ).mapN {
       (
         dbKind,
@@ -80,7 +125,14 @@ object CliOpts:
         oracleAlias,
         oracleUser,
         oraclePasswordFile,
-        json
+        json,
+        host,
+        port,
+        corsOrigins,
+        encryptKey,
+        jwtSecret,
+        devAuthSecret,
+        patchStageDir
       ) =>
         MigratorConfig(
           dbKind = dbKind,
@@ -95,7 +147,16 @@ object CliOpts:
           oracleTnsAlias = oracleAlias.orElse(env.get("ORACLE_CONN")),
           oracleUser = oracleUser.orElse(env.get("ORACLE_USER")),
           oraclePasswordFile = oraclePasswordFile.orElse(env.get("ORACLE_PASS_FILE").map(Paths.get(_))),
-          json = json
+          json = json,
+          server = ServerConfig(
+            host = host,
+            port = port,
+            corsOrigins = corsOrigins,
+            encryptKeyBase64 = encryptKey.flatMap(nonBlank).orElse(env.get("BEDROCK_ENCRYPT_KEY").flatMap(nonBlank)),
+            jwtSecret = jwtSecret,
+            devAuthSecret = devAuthSecret,
+            patchStageDir = patchStageDir
+          )
         )
     }
 
@@ -118,15 +179,34 @@ object CliOpts:
       .orElse(
         Opts.subcommand("check-connection", "Open and validate a database connection")(Opts(CliCommand.CheckConnection))
       )
+      .orElse(Opts.subcommand("serve", "Start the schema migrator HTTP API")(Opts(CliCommand.Serve)))
       .orElse(Opts(CliCommand.Apply))
 
   val opts: Opts[(MigratorConfig, CliCommand)] =
-    (configOpts, commandOpts).tupled
+    (configOpts, Opts.flag("serve", help = "Start the schema migrator HTTP API").orFalse, commandOpts).mapN {
+      (config, serve, command) =>
+        (config, if serve then CliCommand.Serve else command)
+    }
 
   private def defaultSqlDir(dbKind: DbKind): Path =
     dbKind match
       case DbKind.Postgres => Paths.get("./sql")
       case DbKind.Oracle => Paths.get("./sql/oracle")
+
+  private def commaSet(value: String): Set[String] =
+    value.split(",").map(_.trim).filter(_.nonEmpty).toSet
+
+  private def nonBlank(value: String): Option[String] =
+    Option(value.trim).filter(_.nonEmpty)
+
+  private def envInt(name: String, defaultValue: Int): Int =
+    env
+      .get(name)
+      .flatMap(value => Either.catchNonFatal(value.toInt).toOption)
+      .getOrElse(defaultValue)
+
+  private def defaultPatchStageDir: Path =
+    Paths.get(sys.props.getOrElse("java.io.tmpdir", "."), "schema-migrator-patches")
 
 sealed trait CliCommand
 
@@ -138,3 +218,4 @@ object CliCommand:
   final case class Rollback(objectName: String) extends CliCommand
   final case class Ready(strict: Boolean) extends CliCommand
   case object CheckConnection extends CliCommand
+  case object Serve extends CliCommand
