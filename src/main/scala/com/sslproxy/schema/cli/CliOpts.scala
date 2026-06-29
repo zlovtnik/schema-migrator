@@ -5,6 +5,7 @@ import com.monovore.decline.*
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
 
 import java.nio.file.{Path, Paths}
+import java.util.Locale
 import scala.concurrent.duration.*
 
 object CliOpts:
@@ -89,6 +90,12 @@ object CliOpts:
       .orNone
       .map(_.orElse(env.get("BEDROCK_PATCH_STAGE_DIR").map(Paths.get(_))).getOrElse(defaultPatchStageDir))
 
+  private val dbTestAllowedHostsOpt: Opts[Set[String]] =
+    Opts
+      .option[String]("db-test-allowed-hosts", help = "Comma-separated JDBC hosts allowed for /targets/test")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_DB_TEST_ALLOWED_HOSTS")).fold(Set.empty[String])(commaSet).map(_.toLowerCase(Locale.ROOT)))
+
   private val configOpts: Opts[MigratorConfig] =
     (
       dbKindOpt,
@@ -110,6 +117,7 @@ object CliOpts:
       encryptKeyOpt,
       jwtSecretOpt,
       devAuthSecretOpt,
+      dbTestAllowedHostsOpt,
       patchStageDirOpt
     ).mapN {
       (
@@ -132,6 +140,7 @@ object CliOpts:
         encryptKey,
         jwtSecret,
         devAuthSecret,
+        dbTestAllowedHosts,
         patchStageDir
       ) =>
         MigratorConfig(
@@ -155,6 +164,7 @@ object CliOpts:
             encryptKeyBase64 = encryptKey.flatMap(nonBlank).orElse(env.get("BEDROCK_ENCRYPT_KEY").flatMap(nonBlank)),
             jwtSecret = jwtSecret,
             devAuthSecret = devAuthSecret,
+            dbTestAllowedHosts = dbTestAllowedHosts,
             patchStageDir = patchStageDir
           )
         )

@@ -7,9 +7,6 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
-    optimizeDeps: {
-      force: true
-    },
     server: {
       host: "0.0.0.0",
       port: 5173,
@@ -23,6 +20,10 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true
         }
       }
+    },
+    test: {
+      environment: "jsdom",
+      setupFiles: "./src/test/setup.ts"
     }
   };
 });

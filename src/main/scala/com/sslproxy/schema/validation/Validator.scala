@@ -10,8 +10,9 @@ import java.nio.file.Files
 
 final class Validator[F[_]: Sync](dbKind: DbKind):
   private val tableColumnWarningLimit = 15
-  private val createOrReplaceRoutine = raw"(?is)\bcreate\s+or\s+replace\s+(function|procedure)\b".r
-  private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+procedure\b".r
+  private val createOrReplaceRoutine =
+    raw"(?is)\bcreate\s+or\s+replace\s+(?:(?:non)?editionable\s+)?(function|procedure)\b".r
+  private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+(?:(?:non)?editionable\s+)?procedure\b".r
 
   def validate(files: List[SqlFile]): F[ValidationReport] =
     Sync[F].blocking {

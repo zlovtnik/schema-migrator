@@ -10,6 +10,8 @@ import org.http4s.dsl.io.*
 import org.typelevel.ci.CIString
 
 object CorsMiddleware:
+  private val vary = CIString("Vary")
+
   def apply(config: ServerConfig)(routes: HttpRoutes[IO]): HttpRoutes[IO] =
     HttpRoutes { request =>
       origin(request) match
@@ -28,12 +30,24 @@ object CorsMiddleware:
     origin match
       case None => response
       case Some(value) =>
-        response.putHeaders(
-          Header.Raw(CIString("Access-Control-Allow-Origin"), value),
-          Header.Raw(CIString("Access-Control-Allow-Credentials"), "true"),
-          Header.Raw(CIString("Access-Control-Allow-Methods"), "GET, POST, PUT, DELETE, OPTIONS"),
-          Header.Raw(CIString("Access-Control-Allow-Headers"), "Authorization, Content-Type"),
-          Header.Raw(CIString("Access-Control-Expose-Headers"), "X-Bedrock-Encrypted"),
-          Header.Raw(CIString("Access-Control-Max-Age"), "3600"),
-          Header.Raw(CIString("Vary"), "Origin")
-        )
+        val headersWithoutVary = response.headers.headers.filterNot(_.name == vary)
+        val varyValues = response.headers.headers
+          .filter(_.name == vary)
+          .flatMap(_.value.split(",").map(_.trim))
+          .filter(_.nonEmpty)
+        val nextVary = appendHeaderValue(varyValues, "Origin").mkString(", ")
+
+        response
+          .withHeaders(Headers(headersWithoutVary))
+          .putHeaders(
+            Header.Raw(CIString("Access-Control-Allow-Origin"), value),
+            Header.Raw(CIString("Access-Control-Allow-Credentials"), "true"),
+            Header.Raw(CIString("Access-Control-Allow-Methods"), "GET, POST, PUT, DELETE, OPTIONS"),
+            Header.Raw(CIString("Access-Control-Allow-Headers"), "Authorization, Content-Type"),
+            Header.Raw(CIString("Access-Control-Expose-Headers"), "X-Bedrock-Encrypted"),
+            Header.Raw(CIString("Access-Control-Max-Age"), "3600"),
+            Header.Raw(vary, nextVary)
+          )
+
+  private def appendHeaderValue(values: List[String], value: String): List[String] =
+    if values.exists(_.equalsIgnoreCase(value)) then values else values :+ value

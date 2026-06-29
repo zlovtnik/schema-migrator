@@ -216,6 +216,7 @@ class ProviderSuite extends FunSuite:
     assert(blocks.length >= 7)
     assert(joined.contains("pragma exception_init(expected_error_0, -955)"))
     assert(joined.contains("pragma exception_init(expected_error_0, -1430)"))
+    assert(joined.contains("pragma exception_init(expected_error_1, -2260)"))
     assert(joined.contains("create table schema_control.schema_objects"))
     assert(joined.contains("create table schema_control.schema_apply_log"))
     assert(joined.contains("create table schema_control.migration_locks"))
@@ -240,6 +241,12 @@ class ProviderSuite extends FunSuite:
     val sql = OracleStatements.lockDeleteSql.toLowerCase
     assert(sql.contains("delete from schema_control.migration_locks"))
     assert(sql.contains("where lock_name = 'schema_migrate'"))
+  }
+
+  test("oracle skipped status SQL preserves applied timestamp") {
+    val sql = OracleStatements.updateStatusSkippedSql.toLowerCase
+    assert(sql.contains("apply_status = 'skipped'"))
+    assert(!sql.contains("applied_at"), "skipped status update must not clear applied_at")
   }
 
   test("splits oracle slash-terminated PL/SQL blocks") {

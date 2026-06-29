@@ -10,6 +10,7 @@ services:
       - BEDROCK_JWT_SECRET=gpbEGk8AOtpfWZtir568o5r7J7JIMDAnG7TIr3ZhzvA
       - BEDROCK_DEV_AUTH_SECRET=macacosmemordam
       - BEDROCK_ENCRYPT_KEY
+      - BEDROCK_DB_TEST_ALLOWED_HOSTS=localhost
     ports:
       - "8080:8080"
     healthcheck:
@@ -19,9 +20,9 @@ services:
       retries: 30
       start_period: 20s
     volumes:
-      - sbt-cache:/root/.sbt
-      - ivy-cache:/root/.ivy2
-      - coursier-cache:/root/.cache/coursier
+      - sbt-cache:/home/schema/.sbt
+      - ivy-cache:/home/schema/.ivy2
+      - coursier-cache:/home/schema/.cache/coursier
 
   ui:
     build:

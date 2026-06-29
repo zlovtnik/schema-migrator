@@ -14,27 +14,38 @@ import org.http4s.server.Router
 object HttpServer:
   def serve(config: MigratorConfig): IO[Unit] =
     for
-      host <- IO.fromOption(Host.fromString(config.server.host))(IllegalArgumentException(s"invalid host '${config.server.host}'"))
-      port <- IO.fromOption(Port.fromInt(config.server.port))(IllegalArgumentException(s"invalid port '${config.server.port}'"))
+      host <- IO.fromOption(Host.fromString(config.server.host))(
+        IllegalArgumentException(s"invalid host '${config.server.host}'")
+      )
+      port <- IO.fromOption(Port.fromInt(config.server.port))(
+        IllegalArgumentException(s"invalid port '${config.server.port}'")
+      )
       encryptKey <- IO.fromEither(
-        config.server.encryptKeyBase64.traverse(AesGcm.keyFromBase64).leftMap(message => new IllegalArgumentException(message))
+        config.server.encryptKeyBase64
+          .traverse(AesGcm.keyFromBase64)
+          .leftMap(message => new IllegalArgumentException(message))
       )
       targetStore <- TargetStore.inMemory
       patchStore <- PatchStore.inMemory(config.server.patchStageDir)
       runStore <- RunStore.inMemory
       validationStore <- ValidationStore.inMemory
-      apiRoutes = Routes.all(config.server, targetStore, patchStore, runStore, validationStore)
+      apiRoutes = Routes.all(config, targetStore, patchStore, runStore, validationStore)
       routed = Router("/api" -> apiRoutes)
       authed = JwtMiddleware(config.server)(routed)
       encrypted = AesGcmMiddleware(encryptKey)(authed)
       compressed = Bzip2Middleware(encrypted)
       withCors = CorsMiddleware(config.server)(compressed)
-      httpApp = withCors.orNotFound
+      logged = LoggingMiddleware(withCors.orNotFound)
+      httpApp = logged
       _ <- EmberServerBuilder
         .default[IO]
         .withHost(host)
         .withPort(port)
         .withHttpApp(httpApp)
         .build
-        .use(_ => IO.println(s"schema-migrator API listening on http://${config.server.host}:${config.server.port}/api") *> IO.never)
+        .use(_ =>
+          IO.println(
+            s"schema-migrator API listening on http://${config.server.host}:${config.server.port}/api"
+          ) *> IO.never
+        )
     yield ()

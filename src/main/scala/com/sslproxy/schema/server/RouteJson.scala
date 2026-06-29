@@ -16,11 +16,17 @@ object RouteJson:
   def badRequest(message: String): IO[Response[IO]] =
     BadRequest(error(message))
 
+  def forbidden(message: String): IO[Response[IO]] =
+    Forbidden(error(message))
+
   def notFound(message: String): IO[Response[IO]] =
     NotFound(error(message))
 
   def conflict(message: String): IO[Response[IO]] =
     Conflict(error(message))
+
+  def payloadTooLarge(message: String): IO[Response[IO]] =
+    PayloadTooLarge(error(message))
 
   def error(message: String): Json =
     Json.obj("error" -> Json.fromString(message))

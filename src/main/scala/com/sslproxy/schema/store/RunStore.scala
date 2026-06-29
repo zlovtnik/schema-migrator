@@ -26,6 +26,7 @@ object RunStore:
 
 private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topic[IO, RunEvent]) extends RunStore:
   private val terminalStatuses = Set("completed", "failed", "aborted")
+  private val activeScriptStatuses = Set("pending", "running")
 
   override def list(targetId: Option[String]): IO[List[Run]] =
     ref.get.map { runs =>
@@ -72,7 +73,10 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topi
           case None => values -> Option.empty[(Run, Boolean)]
           case Some(run) if isTerminalStatus(run.status) => values -> Some(run -> false)
           case Some(run) =>
-            val next = run.copy(status = "aborted", ended_at = Some(ended))
+            val scripts = run.scripts.map { script =>
+              if activeScriptStatuses.contains(script.status) then script.copy(status = "skipped") else script
+            }
+            val next = run.copy(status = "aborted", scripts = scripts, ended_at = Some(ended))
             values.updated(id, next) -> Some(next -> true)
       }
       _ <- result.traverse_ { case (run, changed) =>
@@ -117,7 +121,9 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topi
                 case Some(status) if isTerminalStatus(status) => IO.unit
                 case _ =>
                   for
-                    _ <- updateScript(run.id, script.script_id)(_.copy(status = "completed", duration_ms = Some(elapsed)))
+                    _ <- updateScript(run.id, script.script_id)(
+                      _.copy(status = "completed", duration_ms = Some(elapsed))
+                    )
                     _ <- publish(
                       run.id,
                       "script:complete",
@@ -138,7 +144,9 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topi
       _ <- if started then runProgram else IO.unit
       completed <-
         if started then
-          nowString.flatMap(ended => completeRunning(run.id, ended).map(_.map { case (finished, changed) => (finished, changed, ended) }))
+          nowString.flatMap(ended =>
+            completeRunning(run.id, ended).map(_.map { case (finished, changed) => (finished, changed, ended) })
+          )
         else currentRun(run.id).map(_.map((_, false, "")))
       _ <- completed match
         case Some((finished, true, ended)) =>
@@ -155,7 +163,7 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topi
               )
             )
           yield ()
-        case Some((finished, false, _)) if finished.status == "aborted" || finished.status == "failed" =>
+        case Some((finished, false, _)) if finished.status == "failed" =>
           patchStore.markFailed(run.patch_id)
         case _ => IO.unit
     yield ()
@@ -225,5 +233,7 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topi
 
   private def durationMs(startedAt: String, endedAt: String): Long =
     Either
-      .catchNonFatal(java.time.Duration.between(java.time.Instant.parse(startedAt), java.time.Instant.parse(endedAt)).toMillis)
+      .catchNonFatal(
+        java.time.Duration.between(java.time.Instant.parse(startedAt), java.time.Instant.parse(endedAt)).toMillis
+      )
       .getOrElse(0L)

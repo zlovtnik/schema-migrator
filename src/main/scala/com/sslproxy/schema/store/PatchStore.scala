@@ -45,16 +45,27 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
     ref.get.map(_.get(id))
 
   override def delete(id: String): IO[Boolean] =
-    ref.modify(values => (values - id) -> values.contains(id)).flatMap {
-      case false => IO.pure(false)
-      case true => deleteStageDir(id).as(true)
+    ref
+      .modify { values =>
+        values.get(id) match
+          case Some(patch) => (values - id) -> Some(patch)
+          case None        => values -> None
+      }
+      .flatMap {
+        case None => IO.pure(false)
+        case Some(patch) =>
+          deleteStageDir(id).as(true).handleErrorWith { error =>
+            ref.update(_ + (id -> patch)) *> IO.raiseError(error)
+          }
     }
 
   override def markApplied(id: String, appliedAt: String): IO[Unit] =
     ref.update { values =>
       values.updatedWith(id) {
         _.map { patch =>
-          val scripts = patch.scripts.map(script => script.copy(status = "completed", duration_ms = script.duration_ms.orElse(Some(0L))))
+          val scripts = patch.scripts.map(script =>
+            script.copy(status = "completed", duration_ms = script.duration_ms.orElse(Some(0L)))
+          )
           patch.copy(status = "applied", scripts = scripts, applied_at = Some(appliedAt))
         }
       }

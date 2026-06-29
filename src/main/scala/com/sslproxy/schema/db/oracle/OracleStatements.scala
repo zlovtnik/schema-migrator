@@ -2,13 +2,11 @@ package com.sslproxy.schema.db.oracle
 
 object OracleStatements:
   private def ignoreOracleErrorsBlock(errorCodes: List[Int], sql: String): String =
-    val declarations = errorCodes.zipWithIndex
-      .map { case (errorCode, index) =>
-        s"""
+    val declarations = errorCodes.zipWithIndex.map { case (errorCode, index) =>
+      s"""
       expected_error_$index exception;
       pragma exception_init(expected_error_$index, -$errorCode);"""
-      }
-      .mkString
+    }.mkString
     val handlers = errorCodes.indices.map(index => s"expected_error_$index").mkString(" or ")
     s"""
     declare

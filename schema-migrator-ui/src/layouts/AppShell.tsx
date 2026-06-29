@@ -11,6 +11,7 @@ import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple"
 import { UploadSimpleIcon } from "@phosphor-icons/react/dist/csr/UploadSimple";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { ErrorGateBanner } from "../components/ErrorGateBanner";
+import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
 import { TargetSelector } from "../components/TargetSelector";
 import { Icon } from "../components/ui/Icon";
 import { useErrorGate } from "../hooks/useErrorGate";
@@ -32,6 +33,7 @@ const navItems = [
 export const AppShell = () => {
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem(SIDEBAR_KEY) === "true");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const { failedRun } = useErrorGate();
   const queryClient = useQueryClient();
 
@@ -43,12 +45,37 @@ export const AppShell = () => {
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setMobileMenuOpen(false);
+        setShortcutHelpOpen(false);
+        return;
+      }
+
+      if (shortcutHelpOpen) {
         return;
       }
 
       const modifier = event.metaKey || event.ctrlKey;
+      if (!modifier && event.key === "/" && !isTextEntry(event.target)) {
+        const filter = document.querySelector<HTMLElement>("[data-list-filter]");
+        if (filter) {
+          event.preventDefault();
+          filter.focus();
+        }
+        return;
+      }
+
+      if (!modifier && event.key === "?" && !isTextEntry(event.target)) {
+        event.preventDefault();
+        setShortcutHelpOpen(true);
+        return;
+      }
+
       if (!modifier) {
         return;
+      }
+
+      if (event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setShortcutHelpOpen(true);
       }
 
       if (event.key === "\\") {
@@ -64,7 +91,7 @@ export const AppShell = () => {
 
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [queryClient]);
+  }, [queryClient, shortcutHelpOpen]);
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
@@ -134,9 +161,8 @@ export const AppShell = () => {
             <TargetSelector compact />
           </div>
           <button
-            aria-controls={NAV_ID}
-            aria-expanded={!collapsed}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-pressed={collapsed}
             className="sidebar__collapse"
             type="button"
             onClick={() => setCollapsed((value) => !value)}
@@ -152,6 +178,15 @@ export const AppShell = () => {
           </main>
         </div>
       </div>
+      <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
     </>
   );
+};
+
+const isTextEntry = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tag = target.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
 };

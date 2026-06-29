@@ -15,11 +15,11 @@ export const TargetFormPage = () => {
   const updateTarget = useUpdateTarget(id ?? "");
   const deleteTarget = useDeleteTarget();
   const testConnection = useTestConnection();
-  const { data: runs = [], isLoading: runsLoading, isSuccess: runsLoaded } = useRuns();
+  const { data: runs = [], isLoading: runsLoading, isSuccess: runsLoaded } = useRuns(id);
   const [testResult, setTestResult] = useState<ConnectionTestResult | undefined>();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const hasActiveRuns = runs.some((run) => run.target_id === id && (run.status === "running" || run.status === "pending"));
+  const hasActiveRuns = runs.some((run) => run.status === "running" || run.status === "pending");
   const deleteDisabled = !runsLoaded || runsLoading || hasActiveRuns;
 
   const submit = (values: TargetFormValues) => {
@@ -29,7 +29,8 @@ export const TargetFormPage = () => {
   };
 
   const test = async (values: TargetFormValues) => {
-    const result = await testConnection.mutateAsync(values.password?.trim() ? { values } : { id });
+    const useFormValues = Boolean(values.password?.trim()) || values.jdbc_url.trim() !== target?.jdbc_url.trim();
+    const result = await testConnection.mutateAsync(useFormValues ? { values } : { id });
     setTestResult(result);
     return result;
   };

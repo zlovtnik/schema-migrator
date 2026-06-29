@@ -37,3 +37,33 @@ class ManifestBuilderSuite extends FunSuite:
       Files.deleteIfExists(file)
       Files.deleteIfExists(dir)
   }
+
+  test("classifies Oracle editionable procedures stored in functions folder as procedures") {
+    List("EDITIONABLE", "NONEDITIONABLE").foreach { editionability =>
+      val dir = Files.createTempDirectory("schema-migrator-manifest")
+      val file = dir.resolve(s"001_${editionability.toLowerCase}_procedure.sql")
+      Files.writeString(
+        file,
+        s"""-- object: demo_${editionability.toLowerCase}_procedure
+           |-- folder: functions
+           |-- depends_on: -
+           |
+           |CREATE OR REPLACE $editionability PROCEDURE DEMO_PROCEDURE AS
+           |BEGIN
+           |    NULL;
+           |END DEMO_PROCEDURE;
+           |/
+           |""".stripMargin
+      )
+
+      try
+        val manifest = ManifestBuilder[IO](SqlDialect.Oracle)
+          .build(List(SqlFile("functions", file, file.getFileName.toString, s"functions/${file.getFileName}")))
+          .unsafeRunSync()
+
+        assertEquals(manifest.head.kind, "procedure")
+      finally
+        Files.deleteIfExists(file)
+        Files.deleteIfExists(dir)
+    }
+  }

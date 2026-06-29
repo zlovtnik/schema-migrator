@@ -12,8 +12,8 @@ export class ApiError extends Error {
 
 const API_BASE_KEY = "schemaMigrator.apiBaseUrl";
 const ENCRYPT_KEY = "schemaMigrator.encryptKey";
-const DEV_AUTH_SECRET = import.meta.env.VITE_DEV_AUTH_SECRET?.trim() || "";
-const DEV_AUTH_SUBJECT = import.meta.env.VITE_DEV_AUTH_SUBJECT?.trim() || "docker-dev";
+const DEV_AUTH_SECRET = import.meta.env.DEV ? import.meta.env.VITE_DEV_AUTH_SECRET?.trim() || "" : "";
+const DEV_AUTH_SUBJECT = import.meta.env.DEV ? import.meta.env.VITE_DEV_AUTH_SUBJECT?.trim() || "docker-dev" : "docker-dev";
 const DEV_AUTH_ATTEMPTS = 45;
 const DEV_AUTH_RETRY_MS = 1000;
 let authToken = "";
@@ -163,7 +163,8 @@ const fetchDevAuthToken = async (): Promise<string> => {
     throw new ApiError(message, response.status, detail);
   }
 
-  const body = (await response.json()) as AuthTokenResponse;
+  const text = await readResponseText(response);
+  const body = (text === "" ? {} : JSON.parse(text)) as AuthTokenResponse;
   if (!body.token) {
     throw new Error("Dev auth response did not include a token");
   }
@@ -256,14 +257,10 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
 
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.includes("application/json")) {
-    const text = await response.text();
+    const text = await readResponseText(response);
     return (text === "" ? undefined : text) as T;
   }
 
-  const text = await response.text();
-  if (response.headers.get("X-Bedrock-Encrypted") === "1") {
-    const decrypted = await decryptEnvelope(text);
-    return (decrypted === "" ? undefined : JSON.parse(decrypted)) as T;
-  }
+  const text = await readResponseText(response);
   return (text === "" ? undefined : JSON.parse(text)) as T;
 };

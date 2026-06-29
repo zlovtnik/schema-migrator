@@ -61,6 +61,33 @@ class ValidatorSuite extends FunSuite:
     }
   }
 
+  test("accepts Oracle editionable procedures in routine folders") {
+    List("EDITIONABLE", "NONEDITIONABLE").foreach { editionability =>
+      withTempDir { dir =>
+        val path = dir.resolve(s"001_${editionability.toLowerCase}_proc.sql")
+        Files.writeString(
+          path,
+          s"""-- object: demo_proc
+             |-- folder: procedures
+             |-- depends_on: -
+             |CREATE OR REPLACE $editionability PROCEDURE demo_proc AS
+             |BEGIN
+             |  NULL;
+             |END;
+             |/
+             |""".stripMargin
+        )
+
+        val report = Validator[IO](DbKind.Oracle)
+          .validate(List(SqlFile("procedures", path, path.getFileName.toString, path.getFileName.toString)))
+          .unsafeRunSync()
+
+        assert(!report.warnings.exists(_.contains("CREATE OR REPLACE PROCEDURE")))
+        assert(!report.hasErrors)
+      }
+    }
+  }
+
   private def withTempDir[A](run: Path => A): A =
     val dir = Files.createTempDirectory("schema-migrator-validator")
     try run(dir)

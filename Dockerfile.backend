@@ -3,21 +3,31 @@ FROM eclipse-temurin:21-jdk-jammy
 ARG SBT_VERSION=1.11.6
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bash ca-certificates curl \
+  && apt-get install -y --no-install-recommends bash ca-certificates curl util-linux \
   && curl -fsSL "https://github.com/sbt/sbt/releases/download/v${SBT_VERSION}/sbt-${SBT_VERSION}.tgz" | tar -xz -C /opt \
   && ln -s /opt/sbt/bin/sbt /usr/local/bin/sbt \
+  && groupadd --system schema \
+  && useradd --system --gid schema --create-home --home-dir /home/schema schema \
+  && mkdir -p /app \
+  && chown -R schema:schema /app /home/schema \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+USER schema
 
-COPY project ./project
-COPY build.sbt ./
+COPY --chown=schema:schema project ./project
+COPY --chown=schema:schema build.sbt ./
 RUN sbt -Dsbt.supershell=false update
 
-COPY src ./src
-COPY AGENTS.md README.md ./
+COPY --chown=schema:schema src ./src
+COPY --chown=schema:schema AGENTS.md README.md ./
+COPY docker/backend-entrypoint.sh /usr/local/bin/backend-entrypoint.sh
+
+USER root
+RUN chmod 0755 /usr/local/bin/backend-entrypoint.sh
 
 EXPOSE 8080
 
+ENTRYPOINT ["/usr/local/bin/backend-entrypoint.sh"]
 CMD ["sbt", "-Dsbt.supershell=false", "run --serve --host 0.0.0.0"]
