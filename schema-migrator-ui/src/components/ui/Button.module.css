@@ -96,4 +96,9 @@
   .button {
     transition: none;
   }
+
+  .button:hover:not(:disabled),
+  .button:active:not(:disabled) {
+    transform: none;
+  }
 }
