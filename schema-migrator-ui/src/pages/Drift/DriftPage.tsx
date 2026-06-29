@@ -132,14 +132,14 @@ export const DriftPage = () => {
               caption="Drift results"
               columns={columns}
               rows={items}
-              rowKey={(item) => `${item.schema}:${item.object_type}:${item.name}:${item.drift_type}`}
+              rowKey={driftItemKey}
               empty={filter ? `No drift results match "${filter}".` : "No drift detected."}
             />
             <section className="section-block">
               <h2>Drift details</h2>
               <div className="drift-detail-grid">
                 {items.map((item) => (
-                  <article className="drift-detail" key={`${item.schema}:${item.object_type}:${item.name}:${item.drift_type}`}>
+                  <article className="drift-detail" key={driftItemKey(item)}>
                     <header>
                       <StatusBadge status={item.drift_type} />
                       <strong>
@@ -166,3 +166,13 @@ const formatLabel = (value: string): string =>
     .split("_")
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(" ");
+
+const driftItemKey = (item: DriftItem): string =>
+  JSON.stringify([
+    item.schema,
+    item.object_type,
+    item.name,
+    item.drift_type,
+    item.source_file ?? "live",
+    item.checksum ?? item.actual
+  ]);

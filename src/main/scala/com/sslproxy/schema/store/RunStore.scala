@@ -1,6 +1,6 @@
 package com.sslproxy.schema.store
 
-import cats.effect.{Clock, IO, Ref, Temporal}
+import cats.effect.{Clock, IO, Ref, Resource, Temporal}
 import cats.syntax.all.*
 import fs2.Stream
 import fs2.concurrent.Topic
@@ -16,6 +16,7 @@ trait RunStore:
   def abort(id: String): IO[Option[Run]]
   def runPatch(run: Run, patchStore: PatchStore, validationStore: ValidationStore): IO[Unit]
   def events: Stream[IO, RunEvent]
+  def runEvents(id: String): Resource[IO, Stream[IO, RunEvent]]
 
 object RunStore:
   def inMemory: IO[RunStore] =
@@ -102,18 +103,20 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topi
           case Some(status) if isTerminalStatus(status) => IO.unit
           case _ =>
             for
-              _ <- updateScript(run.id, script.script_id)(_.copy(status = "running"))
-              _ <- publish(
-                run.id,
-                "script:start",
-                Json.obj(
-                  "script_id" -> Json.fromString(script.script_id),
-                  "filename" -> Json.fromString(script.filename),
-                  "order" -> Json.fromInt(script.order),
-                  "total" -> Json.fromInt(total)
-                )
-              )
-              _ <- log(run.id, "info", s"running ${script.filename}")
+              startedScript <- updateScript(run.id, script.script_id)(_.copy(status = "running"))
+              _ <-
+                if startedScript then
+                  publish(
+                    run.id,
+                    "script:start",
+                    Json.obj(
+                      "script_id" -> Json.fromString(script.script_id),
+                      "filename" -> Json.fromString(script.filename),
+                      "order" -> Json.fromInt(script.order),
+                      "total" -> Json.fromInt(total)
+                    )
+                  ) *> log(run.id, "info", s"running ${script.filename}")
+                else IO.unit
               started <- Clock[IO].monotonic
               _ <- Temporal[IO].sleep(75.millis)
               elapsed <- Clock[IO].monotonic.map(duration => (duration - started).toMillis.max(1L))
@@ -121,18 +124,20 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topi
                 case Some(status) if isTerminalStatus(status) => IO.unit
                 case _ =>
                   for
-                    _ <- updateScript(run.id, script.script_id)(
+                    completedScript <- updateScript(run.id, script.script_id)(
                       _.copy(status = "completed", duration_ms = Some(elapsed))
                     )
-                    _ <- publish(
-                      run.id,
-                      "script:complete",
-                      Json.obj(
-                        "script_id" -> Json.fromString(script.script_id),
-                        "duration_ms" -> Json.fromLong(elapsed)
-                      )
-                    )
-                    _ <- log(run.id, "info", s"completed ${script.filename}")
+                    _ <-
+                      if completedScript then
+                        publish(
+                          run.id,
+                          "script:complete",
+                          Json.obj(
+                            "script_id" -> Json.fromString(script.script_id),
+                            "duration_ms" -> Json.fromLong(elapsed)
+                          )
+                        ) *> log(run.id, "info", s"completed ${script.filename}")
+                      else IO.unit
                   yield ()
               }
             yield ()
@@ -171,6 +176,9 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topi
   override def events: Stream[IO, RunEvent] =
     topic.subscribe(1024)
 
+  override def runEvents(id: String): Resource[IO, Stream[IO, RunEvent]] =
+    topic.subscribeAwait(1024).map(_.filter(_.run_id == id))
+
   private def startRunning(id: String): IO[Boolean] =
     ref.modify { values =>
       values.get(id) match
@@ -198,19 +206,15 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], topic: Topi
   private def isTerminalStatus(status: String): Boolean =
     terminalStatuses.contains(status)
 
-  private def updateRun(id: String)(f: Run => Run): IO[Option[Run]] =
+  private def updateScript(id: String, scriptId: String)(f: ScriptRun => ScriptRun): IO[Boolean] =
     ref.modify { values =>
       values.get(id) match
-        case None => values -> Option.empty[Run]
+        case None => values -> false
+        case Some(run) if isTerminalStatus(run.status) => values -> false
         case Some(run) =>
-          val next = f(run)
-          values.updated(id, next) -> Some(next)
+          val next = run.copy(scripts = run.scripts.map(script => if script.script_id == scriptId then f(script) else script))
+          values.updated(id, next) -> true
     }
-
-  private def updateScript(id: String, scriptId: String)(f: ScriptRun => ScriptRun): IO[Unit] =
-    updateRun(id) { run =>
-      run.copy(scripts = run.scripts.map(script => if script.script_id == scriptId then f(script) else script))
-    }.void
 
   private def publish(runId: String, name: String, payload: Json): IO[Unit] =
     topic.publish1(RunEvent(runId, name, payload)).void

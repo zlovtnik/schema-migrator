@@ -55,7 +55,7 @@ describe("SchemaPage", () => {
             })
           );
         }
-        return Promise.resolve(jsonResponse({}));
+        throw new Error(`Unexpected fetch request: ${url}`);
       })
     );
   });

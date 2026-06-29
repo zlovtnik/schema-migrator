@@ -3,7 +3,7 @@ package com.sslproxy.schema.server.compress
 import cats.data.OptionT
 import cats.effect.IO
 import com.sslproxy.schema.server.RouteJson
-import fs2.{Chunk, Stream}
+import fs2.Stream
 import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.dsl.io.*
@@ -15,40 +15,45 @@ object Bzip2Middleware:
   private val eventStreamMediaType = MediaType.unsafeParse("text/event-stream")
   private val contentEncoding = CIString("Content-Encoding")
   private val contentLength = CIString("Content-Length")
+  private val vary = CIString("Vary")
 
   def apply(routes: HttpRoutes[IO]): HttpRoutes[IO] =
     HttpRoutes { request =>
-      OptionT.liftF(decodeRequest(request).attempt).flatMap {
-        case Right(decoded) =>
-          routes(decoded).semiflatMap(response => encodeResponse(decoded, response))
-        case Left(error: Bzip2.BadInput) =>
-          OptionT.liftF(BadRequest(RouteJson.error(error.getMessage)))
-        case Left(error: Bzip2.SizeLimitExceeded) =>
-          OptionT.liftF(PayloadTooLarge(RouteJson.error(error.getMessage)))
-        case Left(error) =>
-          OptionT.liftF(IO.raiseError(error))
+      OptionT {
+        decodeRequest(request)
+          .flatMap(decoded => routes(decoded).semiflatMap(response => encodeResponse(decoded, response)).value)
+          .attempt
+          .flatMap {
+            case Right(response) => IO.pure(response)
+            case Left(error: Bzip2.BadInput) => BadRequest(RouteJson.error(error.getMessage)).map(Some(_))
+            case Left(error: Bzip2.SizeLimitExceeded) => PayloadTooLarge(RouteJson.error(error.getMessage)).map(Some(_))
+            case Left(error) => IO.raiseError(error)
+          }
       }
     }
 
   private def decodeRequest(request: Request[IO]): IO[Request[IO]] =
     trailingBzip2Encoding(request.headers) match
       case Some(remainingEncodings) =>
-        readBodyBounded(request.body, maxCompressedRequestBytes, "compressed bzip2 request body exceeds 10 MiB limit")
-          .flatMap(Bzip2.decompress)
-          .map { decoded =>
-            request
-              .withHeaders(decodedRequestHeaders(request.headers, remainingEncodings))
-              .withBodyStream(Stream.emits(decoded).covary[IO])
-          }
+        IO.pure(
+          request
+            .withHeaders(decodedRequestHeaders(request.headers, remainingEncodings))
+            .withBodyStream(
+              Bzip2.decompressStream(
+                limitBody(request.body, maxCompressedRequestBytes, "compressed bzip2 request body exceeds 10 MiB limit")
+              )
+            )
+        )
       case None => IO.pure(request)
 
   private def encodeResponse(request: Request[IO], response: Response[IO]): IO[Response[IO]] =
     if shouldCompress(request, response) && !belowCompressionThreshold(response) then
+      val nextVary = appendHeaderValue(headerValues(response.headers, vary), "Accept-Encoding").mkString(", ")
       IO.pure(
         response
-          .withHeaders(removeHeaders(response.headers, Set(contentEncoding, contentLength)))
+          .withHeaders(removeHeaders(response.headers, Set(contentEncoding, contentLength, vary)))
           .withBodyStream(Bzip2.compressStream(response.body))
-          .putHeaders(Header.Raw(contentEncoding, "bzip2"))
+          .putHeaders(Header.Raw(contentEncoding, "bzip2"), Header.Raw(vary, nextVary))
       )
     else IO.pure(response)
 
@@ -84,22 +89,29 @@ object Bzip2Middleware:
     if remainingEncodings.isEmpty then withoutDecodedHeaders
     else withoutDecodedHeaders.put(Header.Raw(contentEncoding, remainingEncodings.mkString(", ")))
 
-  private def readBodyBounded(body: Stream[IO, Byte], maxBytes: Long, message: String): IO[Array[Byte]] =
-    body.take(maxBytes + 1).chunks.compile.toList.flatMap { chunks =>
-      val size = chunks.foldLeft(0L)((total, chunk) => total + chunk.size.toLong)
-      if size > maxBytes then IO.raiseError(new Bzip2.SizeLimitExceeded(message))
-      else IO.delay(chunksToArray(chunks, size.toInt))
+  private def limitBody(body: Stream[IO, Byte], maxBytes: Long, message: String): Stream[IO, Byte] =
+    Stream.eval(cats.effect.Ref.of[IO, Long](0L)).flatMap { totalRef =>
+      body.chunks
+        .evalMap { chunk =>
+          totalRef
+            .modify { total =>
+              val next = total + chunk.size.toLong
+              if next > maxBytes then total -> Left(new Bzip2.SizeLimitExceeded(message))
+              else next -> Right(chunk)
+            }
+            .flatMap(IO.fromEither)
+        }
+        .flatMap(Stream.chunk)
     }
 
-  private def chunksToArray(chunks: List[Chunk[Byte]], size: Int): Array[Byte] =
-    val bytes = Array.ofDim[Byte](size)
-    var offset = 0
-    chunks.foreach { chunk =>
-      val chunkBytes = chunk.toArray
-      System.arraycopy(chunkBytes, 0, bytes, offset, chunkBytes.length)
-      offset += chunkBytes.length
-    }
-    bytes
+  private def headerValues(headers: Headers, name: CIString): List[String] =
+    headers.headers
+      .filter(_.name == name)
+      .flatMap(_.value.split(",").map(_.trim))
+      .filter(_.nonEmpty)
+
+  private def appendHeaderValue(values: List[String], value: String): List[String] =
+    if values.exists(_.equalsIgnoreCase(value)) then values else values :+ value
 
   private def removeHeaders(headers: Headers, names: Set[CIString]): Headers =
     Headers(headers.headers.filterNot(header => names.contains(header.name)))

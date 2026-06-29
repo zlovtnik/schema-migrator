@@ -101,10 +101,65 @@ class RoutesSuite extends FunSuite:
     )
   }
 
+  test("target routes reject inline JDBC credentials before storing targets") {
+    val result = routeFixture
+      .use { routes =>
+        val payload = targetPayload(
+          "Inline credentials",
+          jdbcUrl = "jdbc:postgresql://app:secret@localhost:5432/app?user=app"
+        )
+
+        for
+          response <- routes.run(jsonRequest(Method.POST, "/targets", payload))
+          listed <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString("/targets")))
+          json <- bodyJson(response)
+          listedJson <- bodyJson(listed)
+        yield (response.status, json, listedJson)
+      }
+      .unsafeRunSync()
+
+    val (status, json, listedJson) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(
+      json.hcursor.get[String]("error"),
+      Right("JDBC URL must not contain inline credentials; provide credentials in the password field")
+    )
+    assertEquals(listedJson.hcursor.downField("targets").values.map(_.size), Some(0))
+  }
+
   test("target test routes reject hosts outside the configured allowlist") {
     val result = routeFixture
       .use { routes =>
         val payload = targetPayload("Blocked", jdbcUrl = "jdbc:postgresql://db.internal:5432/app?user=app")
+
+        for
+          response <- routes.run(jsonRequest(Method.POST, "/targets/test", payload))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.Forbidden)
+    assertEquals(json.hcursor.get[String]("error"), Right("database connection tests are not allowed for this target"))
+  }
+
+  test("target test wildcard allowlist permits URLs without a parsed host") {
+    val response = TargetRoutes
+      .withDbAccessAllowed(serverConfig(Path.of("."), Set("*")), "jdbc:oracle:thin:@tnsalias", "blocked") {
+        Ok()
+      }
+      .unsafeRunSync()
+
+    assertEquals(response.status, Status.Ok)
+  }
+
+  test("target test routes reject Oracle descriptors with multiple hosts") {
+    val result = routeFixture(Set("db1.example"))
+      .use { routes =>
+        val descriptor =
+          "jdbc:oracle:thin:@(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=db1.example)(PORT=1521))(ADDRESS=(PROTOCOL=TCP)(HOST=db2.example)(PORT=1521))(CONNECT_DATA=(SERVICE_NAME=FREE)))"
+        val payload = targetPayload("Oracle descriptor", jdbcUrl = descriptor)
 
         for
           response <- routes.run(jsonRequest(Method.POST, "/targets/test", payload))
@@ -222,6 +277,34 @@ class RoutesSuite extends FunSuite:
     assertEquals(driftJson.hcursor.get[String]("db_kind"), Right("oracle"))
   }
 
+  test("schema and drift routes reject targets outside the configured allowlist") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          targetResponse <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/targets",
+              targetPayload("Blocked", jdbcUrl = "jdbc:postgresql://db.internal:5432/app?user=app")
+            )
+          )
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          schemaResponse <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/schema?target_id=$targetId")))
+          schemaJson <- bodyJson(schemaResponse)
+          driftResponse <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/drift?target_id=$targetId")))
+          driftJson <- bodyJson(driftResponse)
+        yield (schemaResponse.status, schemaJson, driftResponse.status, driftJson)
+      }
+      .unsafeRunSync()
+
+    val (schemaStatus, schemaJson, driftStatus, driftJson) = result
+    assertEquals(schemaStatus, Status.Forbidden)
+    assertEquals(driftStatus, Status.Forbidden)
+    assertEquals(schemaJson.hcursor.get[String]("error"), Right("database schema access is not allowed for this target"))
+    assertEquals(driftJson.hcursor.get[String]("error"), Right("database drift access is not allowed for this target"))
+  }
+
   test("patch upload, run trigger, and validation routes interoperate") {
     val result = routeFixture
       .use { routes =>
@@ -280,7 +363,10 @@ class RoutesSuite extends FunSuite:
     assertEquals(json.hcursor.get[String]("error"), Right("uploaded SQL file exceeds 10 MiB limit"))
   }
 
-  private def routeFixture =
+  private def routeFixture: cats.effect.Resource[IO, HttpApp[IO]] =
+    routeFixture(Set("localhost", "127.0.0.1"))
+
+  private def routeFixture(allowedHosts: Set[String]): cats.effect.Resource[IO, HttpApp[IO]] =
     cats.effect.Resource
       .make(IO.blocking(Files.createTempDirectory("schema-migrator-routes")))(path =>
         IO.blocking(deleteRecursively(path))
@@ -295,11 +381,11 @@ class RoutesSuite extends FunSuite:
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
         yield Routes
-          .all(migratorConfig(patchStageDir, sqlDir), targetStore, patchStore, runStore, validationStore)
+          .all(migratorConfig(patchStageDir, sqlDir, allowedHosts), targetStore, patchStore, runStore, validationStore)
           .orNotFound
       }
 
-  private def migratorConfig(stageDir: Path, sqlDir: Path): MigratorConfig =
+  private def migratorConfig(stageDir: Path, sqlDir: Path, allowedHosts: Set[String]): MigratorConfig =
     MigratorConfig(
       dbKind = DbKind.Postgres,
       databaseUrl = None,
@@ -314,10 +400,10 @@ class RoutesSuite extends FunSuite:
       oracleUser = None,
       oraclePasswordFile = None,
       json = false,
-      server = serverConfig(stageDir)
+      server = serverConfig(stageDir, allowedHosts)
     )
 
-  private def serverConfig(stageDir: Path): ServerConfig =
+  private def serverConfig(stageDir: Path, allowedHosts: Set[String]): ServerConfig =
     ServerConfig(
       host = "127.0.0.1",
       port = 8080,
@@ -325,7 +411,7 @@ class RoutesSuite extends FunSuite:
       encryptKeyBase64 = None,
       jwtSecret = "jwt",
       devAuthSecret = "dev",
-      dbTestAllowedHosts = Set("localhost"),
+      dbTestAllowedHosts = allowedHosts,
       patchStageDir = stageDir
     )
 

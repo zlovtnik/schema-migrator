@@ -238,6 +238,7 @@ export const useRunStream = (runId?: string, initialRun?: Run, options: UseRunSt
         }
 
         const reader = response.body.getReader();
+        attempts = 0;
         const decoder = new TextDecoder();
         let buffer = "";
         let boundary = /\r?\n\r?\n/.exec(buffer);

@@ -33,7 +33,14 @@ object SchemaRoutes:
         targetId(request).fold(RouteJson.badRequest("target_id is required")) { id =>
           targetStore.getStored(id).flatMap {
             case None => RouteJson.notFound(s"target '$id' was not found")
-            case Some(target) => catalog(config, target).flatMap(response => RouteJson.ok(response.asJson))
+            case Some(target) =>
+              TargetRoutes.withDbAccessAllowed(
+                config.server,
+                target.target.jdbc_url,
+                "database schema access is not allowed for this target"
+              ) {
+                catalog(config, target).flatMap(response => RouteJson.ok(response.asJson))
+              }
           }
         }
 
@@ -41,7 +48,14 @@ object SchemaRoutes:
         targetId(request).fold(RouteJson.badRequest("target_id is required")) { id =>
           targetStore.getStored(id).flatMap {
             case None => RouteJson.notFound(s"target '$id' was not found")
-            case Some(target) => drift(config, target).flatMap(response => RouteJson.ok(response.asJson))
+            case Some(target) =>
+              TargetRoutes.withDbAccessAllowed(
+                config.server,
+                target.target.jdbc_url,
+                "database drift access is not allowed for this target"
+              ) {
+                drift(config, target).flatMap(response => RouteJson.ok(response.asJson))
+              }
           }
         }
     }
@@ -400,7 +414,10 @@ object SchemaRoutes:
   private final case class ControlSnapshot(objects: Map[ObjectKey, ControlObject], warnings: List[String])
 
   private val excludedSchemas: String =
-    "n.nspname <> 'information_schema' and n.nspname not like 'pg_%'"
+    "n.nspname <> 'information_schema' and n.nspname <> 'schema_control' and n.nspname not like 'pg_%'"
+
+  private val excludedIndexSchemas: String =
+    "schemaname <> 'information_schema' and schemaname <> 'schema_control' and schemaname not like 'pg_%'"
 
   private val postgresCatalogSql: String =
     s"""
@@ -428,7 +445,7 @@ object SchemaRoutes:
     union all
     select schemaname, indexname, 'index', indexdef
       from pg_indexes
-     where schemaname <> 'information_schema' and schemaname not like 'pg_%'
+     where $excludedIndexSchemas
     union all
     select n.nspname, e.extname, 'extension',
            format('create extension if not exists %I with schema %I', e.extname, n.nspname)

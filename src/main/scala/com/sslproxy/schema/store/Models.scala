@@ -34,6 +34,19 @@ final case class TargetPayload(
   override def toString: String =
     s"TargetPayload(label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, password=${redacted(password)})"
 
+object TargetPayload:
+  def rejectInlineCredentials(jdbcUrl: String): Either[String, Unit] =
+    if containsInlineCredentials(jdbcUrl) then
+      Left("JDBC URL must not contain inline credentials; provide credentials in the password field")
+    else Right(())
+
+  private def containsInlineCredentials(jdbcUrl: String): Boolean =
+    List(
+      "(?i)(^|[?&;])(password|pwd)=",
+      "(?i)//[^:/?#\\s]+:[^@/?#\\s]+@",
+      "(?i)^jdbc:oracle:thin:[^/\\s:@]+/[^@\\s]+@"
+    ).exists(pattern => pattern.r.findFirstIn(jdbcUrl).nonEmpty)
+
 final case class StoredTarget(target: Target, password: Option[String]):
   override def toString: String =
     s"StoredTarget(target=$target, password=${redacted(password)})"

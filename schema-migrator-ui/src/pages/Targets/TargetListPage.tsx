@@ -12,7 +12,10 @@ import { useCreateTarget, useDeleteTarget, useTargets, useTestConnection } from 
 import type { ConnectionTestResult, Target, TargetFormValues } from "../../types";
 
 const redactedJdbcUrl = (value: string) =>
-  value.replace(/(password=)[^&;\s]+/gi, "$1<redacted>").replace(/(\/\/[^:/?#]+:)[^@/?#]+(@)/gi, "$1<redacted>$2");
+  value
+    .replace(/(password=)[^&;\s]+/gi, "$1<redacted>")
+    .replace(/(jdbc:oracle:thin:[^/\s:@]+\/)[^@\s]+(@)/gi, "$1<redacted>$2")
+    .replace(/(\/\/[^:/?#]+:)[^@/?#]+(@)/gi, "$1<redacted>$2");
 
 export const TargetListPage = () => {
   const { data: targets = [], isLoading, error } = useTargets();
@@ -42,6 +45,11 @@ export const TargetListPage = () => {
   const closeCreate = () => {
     preSaveTestRequestRef.current += 1;
     setCreateOpen(false);
+    setPreSaveTestResult(undefined);
+  };
+
+  const clearPreSaveTestResult = () => {
+    preSaveTestRequestRef.current += 1;
     setPreSaveTestResult(undefined);
   };
 
@@ -222,6 +230,7 @@ export const TargetListPage = () => {
               onSubmit={create}
               onCancel={closeCreate}
               onTest={testPreSave}
+              onCredentialsChange={clearPreSaveTestResult}
             />
           </div>
         </aside>

@@ -11,6 +11,7 @@ export const renderApp = (ui: ReactElement, { route = "/", ...options }: RenderA
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
+        gcTime: Infinity,
         retry: false,
         staleTime: 0
       }

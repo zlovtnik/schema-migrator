@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -17,6 +17,7 @@ export const TargetFormPage = () => {
   const testConnection = useTestConnection();
   const { data: runs = [], isLoading: runsLoading, isSuccess: runsLoaded } = useRuns(id);
   const [testResult, setTestResult] = useState<ConnectionTestResult | undefined>();
+  const testRequestRef = useRef(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const hasActiveRuns = runs.some((run) => run.status === "running" || run.status === "pending");
@@ -29,10 +30,19 @@ export const TargetFormPage = () => {
   };
 
   const test = async (values: TargetFormValues) => {
+    const requestId = testRequestRef.current + 1;
+    testRequestRef.current = requestId;
     const useFormValues = Boolean(values.password?.trim()) || values.jdbc_url.trim() !== target?.jdbc_url.trim();
     const result = await testConnection.mutateAsync(useFormValues ? { values } : { id });
-    setTestResult(result);
+    if (testRequestRef.current === requestId) {
+      setTestResult(result);
+    }
     return result;
+  };
+
+  const clearTestResult = () => {
+    testRequestRef.current += 1;
+    setTestResult(undefined);
   };
 
   const confirmDelete = () => {
@@ -85,6 +95,7 @@ export const TargetFormPage = () => {
         onSubmit={submit}
         onCancel={() => navigate("/targets")}
         onTest={test}
+        onCredentialsChange={clearTestResult}
       />
 
       <ConfirmDialog

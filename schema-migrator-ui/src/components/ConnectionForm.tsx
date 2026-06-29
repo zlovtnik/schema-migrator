@@ -21,6 +21,7 @@ interface ConnectionFormProps {
   onSubmit: (values: TargetFormValues) => void;
   onCancel?: () => void;
   onTest?: (values: TargetFormValues) => Promise<ConnectionTestResult> | void;
+  onCredentialsChange?: () => void;
 }
 
 const defaultsFromTarget = (target?: Target): TargetFormValues => ({
@@ -46,7 +47,8 @@ export const ConnectionForm = ({
   testing = false,
   onSubmit,
   onCancel,
-  onTest
+  onTest,
+  onCredentialsChange
 }: ConnectionFormProps) => {
   const [showPassword, setShowPassword] = useState(false);
 
@@ -71,6 +73,9 @@ export const ConnectionForm = ({
   const test = async (values: TargetFormValues) => {
     await onTest?.(values);
   };
+
+  const jdbcUrlField = onCredentialsChange ? register("jdbc_url", { onChange: onCredentialsChange }) : register("jdbc_url");
+  const passwordField = onCredentialsChange ? register("password", { onChange: onCredentialsChange }) : register("password");
 
   const errorId = (name: keyof TargetFormValues) => `${fieldIds[name]}-error`;
   const fieldState = (name: keyof TargetFormValues, required = true) => ({
@@ -115,7 +120,7 @@ export const ConnectionForm = ({
           JDBC URL{renderRequired()}
           <input
             id={fieldIds.jdbc_url}
-            {...register("jdbc_url")}
+            {...jdbcUrlField}
             autoComplete="off"
             placeholder="jdbc:postgresql://localhost:5432/app?user=app"
             spellCheck={false}
@@ -130,7 +135,7 @@ export const ConnectionForm = ({
         <span className="password-input">
           <input
             id={fieldIds.password}
-            {...register("password")}
+            {...passwordField}
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
             {...fieldState("password", false)}

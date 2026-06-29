@@ -125,16 +125,25 @@ object TargetRoutes:
       Left(
         "Postgres JDBC URLs must start with jdbc:postgresql://, for example jdbc:postgresql://host:5432/database?user=username"
       )
-    else if isSupportedJdbcUrl(jdbcUrl) then Right(payload.copy(jdbc_url = jdbcUrl))
+    else if isSupportedJdbcUrl(jdbcUrl) then TargetPayload.rejectInlineCredentials(jdbcUrl).as(payload.copy(jdbc_url = jdbcUrl))
     else Left("unsupported JDBC URL: expected jdbc:postgresql://... or jdbc:oracle:thin:...")
 
   private def isSupportedJdbcUrl(value: String): Boolean =
     value.startsWith("jdbc:postgresql:") || value.startsWith("jdbc:oracle:thin:")
 
   private def withDbTestAllowed(config: ServerConfig, jdbcUrl: String)(use: => IO[Response[IO]]): IO[Response[IO]] =
-    jdbcHost(jdbcUrl).map(_.toLowerCase(Locale.ROOT)) match
-      case Some(host) if config.dbTestAllowedHosts.contains("*") || config.dbTestAllowedHosts.contains(host) => use
-      case _ => RouteJson.forbidden("database connection tests are not allowed for this target")
+    withDbAccessAllowed(config, jdbcUrl, "database connection tests are not allowed for this target")(use)
+
+  private[server] def withDbAccessAllowed(
+    config: ServerConfig,
+    jdbcUrl: String,
+    forbiddenMessage: String
+  )(use: => IO[Response[IO]]): IO[Response[IO]] =
+    if config.dbTestAllowedHosts.contains("*") then use
+    else
+      jdbcHost(jdbcUrl).map(_.toLowerCase(Locale.ROOT)) match
+        case Some(host) if config.dbTestAllowedHosts.contains(host) => use
+        case _ => RouteJson.forbidden(forbiddenMessage)
 
   private def targetDeleteBlocker(
     id: String,
@@ -152,7 +161,7 @@ object TargetRoutes:
       case _ => None
     }
 
-  private def jdbcHost(jdbcUrl: String): Option[String] =
+  private[server] def jdbcHost(jdbcUrl: String): Option[String] =
     val value = jdbcUrl.trim
     if value.startsWith("jdbc:postgresql://") then uriHost(value.stripPrefix("jdbc:"))
     else if value.startsWith("jdbc:oracle:thin:@//") then uriHost("oracle:" + value.stripPrefix("jdbc:oracle:thin:@"))
@@ -162,7 +171,13 @@ object TargetRoutes:
     Either.catchNonFatal(URI.create(value).getHost).toOption.flatMap(Option(_)).filter(_.nonEmpty)
 
   private def oracleDescriptorHost(value: String): Option[String] =
-    raw"(?i)\bhost\s*=\s*([^)]+)".r.findFirstMatchIn(value).map(_.group(1).trim).filter(_.nonEmpty)
+    raw"(?i)\bhost\s*=\s*([^)]+)".r
+      .findAllMatchIn(value)
+      .map(_.group(1).trim)
+      .filter(_.nonEmpty)
+      .toList match
+      case host :: Nil => Some(host)
+      case _ => None
 
   private val invalidPayloadMessage: String =
     "invalid target payload: expected label, app_name, env, jdbc_url, and optional password fields"

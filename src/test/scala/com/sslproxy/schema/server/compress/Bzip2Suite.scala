@@ -11,8 +11,12 @@ import org.typelevel.ci.CIString
 import munit.FunSuite
 
 import java.nio.charset.StandardCharsets
+import scala.util.Random
 
 class Bzip2Suite extends FunSuite:
+  private val maxBzip2RequestBytes = 10L * 1024L * 1024L
+  private val maxBzip2DecompressedBytes = 10 * 1024 * 1024
+
   test("bzip2 compress and decompress round-trips") {
     val plain = "payload".repeat(200).getBytes(StandardCharsets.UTF_8)
     val compressed = Bzip2.compress(plain).unsafeRunSync()
@@ -34,6 +38,7 @@ class Bzip2Suite extends FunSuite:
     val decoded = Bzip2.decompress(encoded).unsafeRunSync()
 
     assertEquals(response.headers.headers.find(_.name == CIString("Content-Encoding")).map(_.value), Some("bzip2"))
+    assertEquals(response.headers.headers.find(_.name == CIString("Vary")).map(_.value), Some("Accept-Encoding"))
     assert(String(decoded, StandardCharsets.UTF_8).contains("x".repeat(800)))
   }
 
@@ -49,6 +54,44 @@ class Bzip2Suite extends FunSuite:
     val response = Bzip2Middleware(routes).orNotFound.run(request).unsafeRunSync()
 
     assertEquals(response.status, Status.BadRequest)
+  }
+
+  test("middleware maps compressed bzip2 request size overflow to payload too large") {
+    val routes = HttpRoutes.of[IO] { case request @ POST -> Root / "payload" =>
+      request.body.compile.drain *> Ok()
+    }
+    val plain = Array.ofDim[Byte](maxBzip2DecompressedBytes - 1)
+    Random(0L).nextBytes(plain)
+    val compressed = Bzip2.compress(plain).unsafeRunSync()
+    assert(compressed.length.toLong > maxBzip2RequestBytes)
+    val request =
+      Request[IO](Method.POST, Uri.unsafeFromString("/payload"))
+        .putHeaders(Header.Raw(CIString("Content-Encoding"), "bzip2"))
+        .withBodyStream(Stream.emits(compressed.toVector).covary[IO])
+
+    val response = Bzip2Middleware(routes).orNotFound.run(request).unsafeRunSync()
+    val json = response.as[Json].unsafeRunSync()
+
+    assertEquals(response.status, Status.PayloadTooLarge)
+    assertEquals(json.hcursor.get[String]("error"), Right("compressed bzip2 request body exceeds 10 MiB limit"))
+  }
+
+  test("middleware maps decompressed bzip2 request size overflow to payload too large") {
+    val routes = HttpRoutes.of[IO] { case request @ POST -> Root / "payload" =>
+      request.body.compile.drain *> Ok()
+    }
+    val compressed = Bzip2.compress(Array.fill(maxBzip2DecompressedBytes + 1)(0.toByte)).unsafeRunSync()
+    assert(compressed.length.toLong <= maxBzip2RequestBytes)
+    val request =
+      Request[IO](Method.POST, Uri.unsafeFromString("/payload"))
+        .putHeaders(Header.Raw(CIString("Content-Encoding"), "bzip2"))
+        .withBodyStream(Stream.emits(compressed.toVector).covary[IO])
+
+    val response = Bzip2Middleware(routes).orNotFound.run(request).unsafeRunSync()
+    val json = response.as[Json].unsafeRunSync()
+
+    assertEquals(response.status, Status.PayloadTooLarge)
+    assertEquals(json.hcursor.get[String]("error"), Right(s"decompressed bzip2 payload exceeds $maxBzip2DecompressedBytes bytes"))
   }
 
   test("middleware preserves earlier content encodings when decoding trailing bzip2 requests") {

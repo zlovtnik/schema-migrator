@@ -33,12 +33,11 @@ object LoggingMiddleware:
     val path = request.uri.path.toString
     if excludedPaths.contains(path) then IO.unit
     else
-      val queryStr = Option(request.uri.query.renderString).filter(_.nonEmpty)
       val fields = List(
         "event" -> Json.fromString("http_request"),
         "method" -> Json.fromString(request.method.name),
         "path" -> Json.fromString(path)
-      ) ++ queryStr.map(q => "query" -> Json.fromString(q)).toList
+      )
       logger.info(Json.obj(fields*).noSpaces)
 
   private def logResponse(request: Request[IO], response: Response[IO], durationMs: Long): IO[Unit] =
@@ -64,6 +63,6 @@ object LoggingMiddleware:
         "path" -> Json.fromString(path),
         "status" -> Json.fromInt(500),
         "duration_ms" -> Json.fromLong(durationMs),
-        "error" -> Json.fromString(Option(error.getMessage).filter(_.nonEmpty).getOrElse(error.getClass.getSimpleName))
+        "error" -> Json.fromString(error.getClass.getSimpleName)
       )
       logger.error(Json.obj(fields*).noSpaces)

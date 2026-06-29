@@ -1,6 +1,6 @@
 package com.sslproxy.schema.server
 
-import cats.effect.{Deferred, IO}
+import cats.effect.{Deferred, IO, Resource}
 import cats.effect.unsafe.implicits.global
 import cats.syntax.all.*
 import com.sslproxy.schema.store.{
@@ -135,6 +135,9 @@ class RunStreamSuite extends FunSuite:
 
       override def events: Stream[IO, RunEvent] =
         Stream.eval_(subscribed.complete(()).void) ++ delegate.events
+
+      override def runEvents(id: String): Resource[IO, Stream[IO, RunEvent]] =
+        delegate.runEvents(id).evalTap(_ => subscribed.complete(()).void)
 
   private def deleteRecursively(path: java.nio.file.Path): Unit =
     if Files.exists(path) then

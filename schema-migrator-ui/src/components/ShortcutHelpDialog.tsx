@@ -14,7 +14,17 @@ const shortcuts = [
   { keys: "Esc", action: "Close menus and dialogs" }
 ];
 
+const focusableSelector = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])"
+].join(",");
+
 export const ShortcutHelpDialog = ({ open, onClose }: ShortcutHelpDialogProps) => {
+  const backdropRef = useRef<HTMLDivElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -22,16 +32,70 @@ export const ShortcutHelpDialog = ({ open, onClose }: ShortcutHelpDialogProps) =
       return;
     }
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const frame = window.requestAnimationFrame(() => dialogRef.current?.focus());
+    const siblings = Array.from(document.body.children).filter((element) => element !== backdropRef.current);
+    const siblingState = siblings.map((element) => ({
+      element,
+      inert: element.hasAttribute("inert"),
+      ariaHidden: element.getAttribute("aria-hidden")
+    }));
+    siblings.forEach((element) => {
+      element.setAttribute("inert", "");
+      element.setAttribute("aria-hidden", "true");
+    });
+
+    const focusableElements = () =>
+      Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? []).filter(
+        (element) => element.offsetParent !== null || element === document.activeElement
+      );
+
+    const frame = window.requestAnimationFrame(() => {
+      const firstFocusable = focusableElements()[0];
+      (firstFocusable ?? dialogRef.current)?.focus();
+    });
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onClose();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusable = focusableElements();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (!dialogRef.current?.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener("keydown", onKeyDown);
+      siblingState.forEach(({ element, inert, ariaHidden }) => {
+        if (!inert) {
+          element.removeAttribute("inert");
+        }
+        if (ariaHidden === null) {
+          element.removeAttribute("aria-hidden");
+        } else {
+          element.setAttribute("aria-hidden", ariaHidden);
+        }
+      });
       previous?.focus();
     };
   }, [onClose, open]);
@@ -41,7 +105,7 @@ export const ShortcutHelpDialog = ({ open, onClose }: ShortcutHelpDialogProps) =
   }
 
   return createPortal(
-    <div className="modal-backdrop" role="presentation">
+    <div className="modal-backdrop" role="presentation" ref={backdropRef}>
       <div className="confirm-dialog shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcut-help-title" ref={dialogRef} tabIndex={-1}>
         <h2 id="shortcut-help-title">Keyboard shortcuts</h2>
         <dl className="shortcut-list">

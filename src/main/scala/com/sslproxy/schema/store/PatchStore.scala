@@ -3,7 +3,7 @@ package com.sslproxy.schema.store
 import cats.effect.{Clock, IO, Ref}
 import cats.syntax.all.*
 
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, Path, StandardCopyOption}
 import java.security.MessageDigest
 import java.time.{Instant, ZoneOffset}
 import java.time.format.DateTimeFormatter
@@ -45,18 +45,18 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
     ref.get.map(_.get(id))
 
   override def delete(id: String): IO[Boolean] =
-    ref
-      .modify { values =>
-        values.get(id) match
-          case Some(patch) => (values - id) -> Some(patch)
-          case None        => values -> None
-      }
-      .flatMap {
-        case None => IO.pure(false)
-        case Some(patch) =>
-          deleteStageDir(id).as(true).handleErrorWith { error =>
-            ref.update(_ + (id -> patch)) *> IO.raiseError(error)
+    ref.get.map(_.contains(id)).flatMap {
+      case false => IO.pure(false)
+      case true =>
+        moveStageDirAside(id).flatMap { moved =>
+          deleteStageDir(moved).flatMap { _ =>
+            ref.modify { values =>
+              if values.contains(id) then (values - id) -> true else values -> false
+            }
+          }.handleErrorWith { error =>
+            restoreStageDir(id, moved) *> IO.raiseError(error)
           }
+        }
     }
 
   override def markApplied(id: String, appliedAt: String): IO[Unit] =
@@ -116,6 +116,28 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
 
   private def deleteStageDir(patchId: String): IO[Unit] =
     IO.blocking(deleteRecursively(stageDir.resolve(patchId)))
+
+  private def deleteStageDir(path: Option[Path]): IO[Unit] =
+    path.traverse_(target => IO.blocking(deleteRecursively(target)))
+
+  private def moveStageDirAside(patchId: String): IO[Option[Path]] =
+    IO.blocking {
+      val source = stageDir.resolve(patchId)
+      if Files.exists(source) then
+        val target = stageDir.resolve(s".$patchId.delete-${UUID.randomUUID()}")
+        Some(Files.move(source, target, StandardCopyOption.ATOMIC_MOVE))
+      else None
+    }
+
+  private def restoreStageDir(patchId: String, moved: Option[Path]): IO[Unit] =
+    moved.traverse_ { target =>
+      IO.blocking {
+        val original = stageDir.resolve(patchId)
+        if Files.exists(target) && Files.notExists(original) then
+          Files.move(target, original, StandardCopyOption.ATOMIC_MOVE)
+        ()
+      }.handleErrorWith(_ => IO.unit)
+    }
 
   private def deleteRecursively(path: Path): Unit =
     if Files.exists(path) then

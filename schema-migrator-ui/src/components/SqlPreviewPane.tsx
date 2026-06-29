@@ -84,13 +84,18 @@ const loadSqlHighlighter = (): Promise<HighlighterCore> => {
       import("shiki/engine/javascript"),
       import("shiki/langs/sql.mjs"),
       import("shiki/themes/github-dark.mjs")
-    ]).then(([core, engine, sql, githubDark]) =>
-      core.createHighlighterCore({
-        themes: [githubDark.default],
-        langs: [sql.default],
-        engine: engine.createJavaScriptRegexEngine()
-      })
-    );
+    ])
+      .then(([core, engine, sql, githubDark]) =>
+        core.createHighlighterCore({
+          themes: [githubDark.default],
+          langs: [sql.default],
+          engine: engine.createJavaScriptRegexEngine()
+        })
+      )
+      .catch((error: unknown) => {
+        sqlHighlighter = undefined;
+        throw error;
+      });
   }
   return sqlHighlighter;
 };

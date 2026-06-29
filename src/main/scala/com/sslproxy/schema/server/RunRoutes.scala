@@ -92,18 +92,17 @@ object RunRoutes:
     }
 
   private def eventStream(id: String, store: RunStore): Stream[IO, ServerSentEvent] =
-    val current =
-      Stream.eval(store.get(id)).flatMap {
-        case Some(run) => terminalEvent(run).fold(Stream.empty)(event => Stream.emit(toServerSentEvent(event)))
-        case None => Stream.empty
-      }
-    val events =
-      store.events
-        .filter(_.run_id == id)
-        .map(toServerSentEvent)
     val heartbeat =
       Stream.awakeEvery[IO](15.seconds).map(_ => ServerSentEvent(comment = Some("ping")))
-    current ++ events.merge(heartbeat)
+    Stream.resource(store.runEvents(id)).flatMap { events =>
+      Stream.eval(store.get(id)).flatMap {
+        case Some(run) =>
+          terminalEvent(run) match
+            case Some(event) => Stream.emit(toServerSentEvent(event))
+            case None => events.map(toServerSentEvent).merge(heartbeat)
+        case None => events.map(toServerSentEvent).merge(heartbeat)
+      }
+    }
 
   private def terminalEvent(run: Run): Option[RunEvent] =
     run.status match

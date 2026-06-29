@@ -10,7 +10,7 @@ services:
       - BEDROCK_JWT_SECRET=gpbEGk8AOtpfWZtir568o5r7J7JIMDAnG7TIr3ZhzvA
       - BEDROCK_DEV_AUTH_SECRET=macacosmemordam
       - BEDROCK_ENCRYPT_KEY
-      - BEDROCK_DB_TEST_ALLOWED_HOSTS=localhost
+      - BEDROCK_DB_TEST_ALLOWED_HOSTS=192.168.1.221
     ports:
       - "8080:8080"
     healthcheck:
