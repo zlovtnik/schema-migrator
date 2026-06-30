@@ -23,25 +23,25 @@
 .success {
   --badge-bg: color-mix(in srgb, var(--color-success) 16%, transparent);
   --badge-border: color-mix(in srgb, var(--color-success) 42%, var(--color-border));
-  --badge-color: var(--color-success);
+  --badge-color: var(--color-success-text);
 }
 
 .warning {
   --badge-bg: color-mix(in srgb, var(--color-warning) 16%, transparent);
   --badge-border: color-mix(in srgb, var(--color-warning) 42%, var(--color-border));
-  --badge-color: var(--color-warning);
+  --badge-color: var(--color-warning-text);
 }
 
 .danger {
   --badge-bg: color-mix(in srgb, var(--color-danger) 16%, transparent);
   --badge-border: color-mix(in srgb, var(--color-danger) 42%, var(--color-border));
-  --badge-color: var(--color-danger);
+  --badge-color: var(--color-danger-text);
 }
 
 .info {
   --badge-bg: color-mix(in srgb, var(--color-info) 16%, transparent);
   --badge-border: color-mix(in srgb, var(--color-info) 42%, var(--color-border));
-  --badge-color: var(--color-info);
+  --badge-color: var(--color-info-text);
 }
 
 .neutral {

@@ -19,6 +19,7 @@ class CorsSuite extends FunSuite:
       encryptKeyBase64 = None,
       jwtSecret = "jwt",
       devAuthSecret = "dev",
+      dbTestAllowedHosts = Set.empty,
       patchStageDir = Paths.get(".")
     )
     val routes = HttpRoutes.of[IO] { case GET -> Root / "health" => Ok("ok") }
@@ -48,5 +49,31 @@ class CorsSuite extends FunSuite:
     assertEquals(
       response.headers.headers.find(_.name == CIString("Access-Control-Expose-Headers")).map(_.value),
       Some("X-Bedrock-Encrypted")
+    )
+  }
+
+  test("CORS preserves existing Vary values when adding Origin") {
+    val config = ServerConfig(
+      host = "127.0.0.1",
+      port = 8080,
+      corsOrigins = Set("http://localhost:5173"),
+      encryptKeyBase64 = None,
+      jwtSecret = "jwt",
+      devAuthSecret = "dev",
+      dbTestAllowedHosts = Set.empty,
+      patchStageDir = Paths.get(".")
+    )
+    val routes = HttpRoutes.of[IO] { case GET -> Root / "payload" =>
+      Ok("ok").map(_.putHeaders(Header.Raw(CIString("Vary"), "Accept-Encoding")))
+    }
+    val request =
+      Request[IO](Method.GET, Uri.unsafeFromString("/payload"))
+        .putHeaders(Header.Raw(CIString("Origin"), "http://localhost:5173"))
+
+    val response = CorsMiddleware(config)(routes).orNotFound.run(request).unsafeRunSync()
+
+    assertEquals(
+      response.headers.headers.find(_.name == CIString("Vary")).map(_.value),
+      Some("Accept-Encoding, Origin")
     )
   }

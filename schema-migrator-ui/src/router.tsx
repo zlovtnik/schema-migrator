@@ -1,21 +1,31 @@
+import { lazy, Suspense, type ComponentType } from "react";
 import { Navigate, createBrowserRouter, useParams } from "react-router-dom";
 import { AppShell } from "./layouts/AppShell";
-import { DriftPage } from "./pages/Drift/DriftPage";
-import { OverviewPage } from "./pages/Overview/OverviewPage";
-import { TargetListPage } from "./pages/Targets/TargetListPage";
-import { TargetFormPage } from "./pages/Targets/TargetFormPage";
-import { PatchListPage } from "./pages/Patches/PatchListPage";
-import { PatchDetailPage } from "./pages/Patches/PatchDetailPage";
-import { RunListPage } from "./pages/Runs/RunListPage";
-import { RunDetailPage } from "./pages/Runs/RunDetailPage";
-import { SchemaPage } from "./pages/Schema/SchemaPage";
-import { ValidationReportPage } from "./pages/Validation/ValidationReportPage";
-import { SettingsPage } from "./pages/Settings/SettingsPage";
+
+const OverviewPage = lazy(() => import("./pages/Overview/OverviewPage").then((module) => ({ default: module.OverviewPage })));
+const SchemaPage = lazy(() => import("./pages/Schema/SchemaPage").then((module) => ({ default: module.SchemaPage })));
+const TargetListPage = lazy(() => import("./pages/Targets/TargetListPage").then((module) => ({ default: module.TargetListPage })));
+const TargetFormPage = lazy(() => import("./pages/Targets/TargetFormPage").then((module) => ({ default: module.TargetFormPage })));
+const PatchListPage = lazy(() => import("./pages/Patches/PatchListPage").then((module) => ({ default: module.PatchListPage })));
+const PatchDetailPage = lazy(() => import("./pages/Patches/PatchDetailPage").then((module) => ({ default: module.PatchDetailPage })));
+const RunListPage = lazy(() => import("./pages/Runs/RunListPage").then((module) => ({ default: module.RunListPage })));
+const RunDetailPage = lazy(() => import("./pages/Runs/RunDetailPage").then((module) => ({ default: module.RunDetailPage })));
+const DriftPage = lazy(() => import("./pages/Drift/DriftPage").then((module) => ({ default: module.DriftPage })));
+const ValidationReportPage = lazy(() =>
+  import("./pages/Validation/ValidationReportPage").then((module) => ({ default: module.ValidationReportPage }))
+);
+const SettingsPage = lazy(() => import("./pages/Settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 
 const PatchDetailRedirect = () => {
   const { id } = useParams();
   return <Navigate to={id ? `/migrations/${id}` : "/migrations"} replace />;
 };
+
+const routeElement = (Component: ComponentType) => (
+  <Suspense fallback={<div className="page empty-state" role="status">Loading page...</div>}>
+    <Component />
+  </Suspense>
+);
 
 export const router = createBrowserRouter([
   {
@@ -23,19 +33,21 @@ export const router = createBrowserRouter([
     element: <AppShell />,
     children: [
       { index: true, element: <Navigate to="/overview" replace /> },
-      { path: "overview", element: <OverviewPage /> },
-      { path: "schema", element: <SchemaPage /> },
-      { path: "targets", element: <TargetListPage /> },
-      { path: "targets/:id", element: <TargetFormPage /> },
-      { path: "migrations", element: <PatchListPage /> },
-      { path: "migrations/:id", element: <PatchDetailPage /> },
+      { path: "overview", element: routeElement(OverviewPage) },
+      { path: "schema", element: routeElement(SchemaPage) },
+      { path: "targets", element: routeElement(TargetListPage) },
+      { path: "targets/:id", element: routeElement(TargetFormPage) },
+      { path: "migrations", element: routeElement(PatchListPage) },
+      { path: "migrations/:id", element: routeElement(PatchDetailPage) },
       { path: "patches", element: <Navigate to="/migrations" replace /> },
       { path: "patches/:id", element: <PatchDetailRedirect /> },
-      { path: "runs", element: <RunListPage /> },
-      { path: "runs/:id", element: <RunDetailPage /> },
-      { path: "drift", element: <DriftPage /> },
-      { path: "validation/:runId", element: <ValidationReportPage /> },
-      { path: "settings", element: <SettingsPage /> }
+      { path: "runs", element: routeElement(RunListPage) },
+      { path: "runs/:id", element: routeElement(RunDetailPage) },
+      { path: "drift", element: routeElement(DriftPage) },
+      { path: "validation/:runId", element: routeElement(ValidationReportPage) },
+      { path: "settings", element: routeElement(SettingsPage) },
+      { path: "settings/targets", element: routeElement(TargetListPage) },
+      { path: "settings/targets/:id", element: routeElement(TargetFormPage) }
     ]
   }
 ]);

@@ -74,17 +74,7 @@ object JwtMiddleware:
     }
 
   private def extractToken(request: Request[IO]): Option[String] =
-    bearerHeader(request).orElse(queryTokenForStream(request))
-
-  private def queryTokenForStream(request: Request[IO]): Option[String] =
-    if isRunStreamPath(request) then request.uri.query.params.get("access_token").filter(_.nonEmpty)
-    else None
-
-  private def isRunStreamPath(request: Request[IO]): Boolean =
-    val segments = request.uri.path.segments.map(_.decoded())
-    segments match
-      case Vector("api", "runs", _, "stream") | Vector("runs", _, "stream") => true
-      case _ => false
+    bearerHeader(request)
 
   private def bearerHeader(request: Request[IO]): Option[String] =
     request.headers.headers

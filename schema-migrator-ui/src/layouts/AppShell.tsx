@@ -11,6 +11,7 @@ import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple"
 import { UploadSimpleIcon } from "@phosphor-icons/react/dist/csr/UploadSimple";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { ErrorGateBanner } from "../components/ErrorGateBanner";
+import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
 import { TargetSelector } from "../components/TargetSelector";
 import { Icon } from "../components/ui/Icon";
 import { useErrorGate } from "../hooks/useErrorGate";
@@ -18,20 +19,36 @@ import { useErrorGate } from "../hooks/useErrorGate";
 const SIDEBAR_KEY = "schemaMigrator.sidebarCollapsed";
 const NAV_ID = "primary-navigation";
 
-const navItems = [
-  { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
-  { to: "/schema", label: "Schema", icon: DatabaseIcon },
-  { to: "/targets", label: "Targets", icon: DatabaseIcon },
-  { to: "/migrations", label: "Migrations", icon: UploadSimpleIcon },
-  { to: "/runs", label: "Runs", icon: ClockCounterClockwiseIcon },
-  { to: "/drift", label: "Drift", icon: ListBulletsIcon },
-  { to: "/validation/latest", label: "Validation", icon: ShieldCheckIcon },
-  { to: "/settings", label: "Settings", icon: GearIcon }
+const navSections = [
+  {
+    label: "Operate",
+    items: [
+      { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
+      { to: "/schema", label: "Schema", icon: DatabaseIcon },
+      { to: "/migrations", label: "Migrations", icon: UploadSimpleIcon }
+    ]
+  },
+  {
+    label: "Observe",
+    items: [
+      { to: "/runs", label: "Runs", icon: ClockCounterClockwiseIcon },
+      { to: "/drift", label: "Drift", icon: ListBulletsIcon },
+      { to: "/validation/latest", label: "Validation", icon: ShieldCheckIcon }
+    ]
+  },
+  {
+    label: "Settings",
+    items: [
+      { to: "/settings", label: "Application", icon: GearIcon, end: true },
+      { to: "/settings/targets", label: "Targets", icon: DatabaseIcon }
+    ]
+  }
 ];
 
 export const AppShell = () => {
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem(SIDEBAR_KEY) === "true");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const { failedRun } = useErrorGate();
   const queryClient = useQueryClient();
 
@@ -43,12 +60,37 @@ export const AppShell = () => {
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setMobileMenuOpen(false);
+        setShortcutHelpOpen(false);
+        return;
+      }
+
+      if (shortcutHelpOpen) {
         return;
       }
 
       const modifier = event.metaKey || event.ctrlKey;
+      if (!modifier && event.key === "/" && !isTextEntry(event.target)) {
+        const filter = document.querySelector<HTMLElement>("[data-list-filter]");
+        if (filter) {
+          event.preventDefault();
+          filter.focus();
+        }
+        return;
+      }
+
+      if (!modifier && event.key === "?" && !isTextEntry(event.target)) {
+        event.preventDefault();
+        setShortcutHelpOpen(true);
+        return;
+      }
+
       if (!modifier) {
         return;
+      }
+
+      if (event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setShortcutHelpOpen(true);
       }
 
       if (event.key === "\\") {
@@ -64,7 +106,7 @@ export const AppShell = () => {
 
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [queryClient]);
+  }, [queryClient, shortcutHelpOpen]);
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
@@ -84,13 +126,7 @@ export const AppShell = () => {
       <div className={collapsed ? "app-shell app-shell--collapsed" : "app-shell"}>
         <header className="mobile-topbar">
           <div className="mobile-topbar__brand">
-            <div className="brand-mark" aria-hidden="true">
-              SM
-            </div>
-            <div className="brand-copy">
-              <strong>Schema Migrator</strong>
-              <span>Patch operations</span>
-            </div>
+            <BrandIdentity />
           </div>
           <button
             aria-controls={NAV_ID}
@@ -105,38 +141,35 @@ export const AppShell = () => {
         </header>
         <aside className={mobileMenuOpen ? "sidebar sidebar--open" : "sidebar"} aria-label="Primary navigation">
           <div className="sidebar__brand">
-            <div className="brand-mark" aria-hidden="true">
-              SM
-            </div>
-            <div className="brand-copy">
-              <strong>Schema Migrator</strong>
-              <span>Patch operations</span>
-            </div>
+            <BrandIdentity />
           </div>
           <nav className="sidebar__nav" id={NAV_ID}>
-            {navItems.map((item) => {
-              return (
-                <NavLink
-                  aria-label={item.label}
-                  className="nav-link"
-                  key={item.to}
-                  title={collapsed ? item.label : undefined}
-                  to={item.to}
-                  onClick={closeMobileMenu}
-                >
-                  <Icon source={item.icon} size={20} />
-                  <span>{item.label}</span>
-                </NavLink>
-              );
-            })}
+            {navSections.map((section) => (
+              <div className="nav-section" key={section.label}>
+                <div className="nav-section__label">{section.label}</div>
+                {section.items.map((item) => (
+                  <NavLink
+                    aria-label={item.label}
+                    className="nav-link"
+                    end={item.end === true}
+                    key={item.to}
+                    title={collapsed ? item.label : undefined}
+                    to={item.to}
+                    onClick={closeMobileMenu}
+                  >
+                    <Icon source={item.icon} size={20} />
+                    <span>{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            ))}
           </nav>
           <div className="sidebar__selector">
             <TargetSelector compact />
           </div>
           <button
-            aria-controls={NAV_ID}
-            aria-expanded={!collapsed}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-pressed={collapsed}
             className="sidebar__collapse"
             type="button"
             onClick={() => setCollapsed((value) => !value)}
@@ -152,6 +185,27 @@ export const AppShell = () => {
           </main>
         </div>
       </div>
+      <ShortcutHelpDialog open={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
     </>
   );
+};
+
+const BrandIdentity = () => (
+  <>
+    <div className="brand-mark" aria-hidden="true">
+      <img src="/bedrock-logo.svg" alt="" />
+    </div>
+    <div className="brand-copy">
+      <strong>Bedrock Schema Migrator</strong>
+      <span>Patch operations</span>
+    </div>
+  </>
+);
+
+const isTextEntry = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  const tag = target.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
 };

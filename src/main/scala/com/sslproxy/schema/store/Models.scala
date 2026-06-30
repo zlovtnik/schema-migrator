@@ -6,34 +6,46 @@ import io.circe.generic.semiauto.*
 private def redacted(value: Option[String]): String =
   value.fold("None")(_ => "Some(<redacted>)")
 
+private def redactedJdbcUrl(value: String): String =
+  value
+    .replaceAll("(?i)(password=)[^&;\\s]+", "$1<redacted>")
+    .replaceAll("(?i)(pwd=)[^&;\\s]+", "$1<redacted>")
+    .replaceAll("(?i)(jdbc:oracle:thin:[^/\\s:@]+/)[^@\\s]+(@)", "$1<redacted>$2")
+    .replaceAll("(?i)(//[^:/?#]+:)[^@/?#]+(@)", "$1<redacted>$2")
+
 final case class Target(
   id: String,
   label: String,
   app_name: String,
   env: String,
-  host: String,
-  port: Int,
-  dbname: String,
-  user: String,
-  schema: String,
-  ssl_mode: String,
+  jdbc_url: String,
   created_at: String
-)
+):
+  override def toString: String =
+    s"Target(id=$id, label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, created_at=$created_at)"
 
 final case class TargetPayload(
   label: String,
   app_name: String,
   env: String,
-  host: String,
-  port: Int,
-  dbname: String,
-  user: String,
-  password: Option[String],
-  schema: String,
-  ssl_mode: String
+  jdbc_url: String,
+  password: Option[String]
 ):
   override def toString: String =
-    s"TargetPayload(label=$label, app_name=$app_name, env=$env, host=$host, port=$port, dbname=$dbname, user=$user, password=${redacted(password)}, schema=$schema, ssl_mode=$ssl_mode)"
+    s"TargetPayload(label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, password=${redacted(password)})"
+
+object TargetPayload:
+  def rejectInlineCredentials(jdbcUrl: String): Either[String, Unit] =
+    if containsInlineCredentials(jdbcUrl) then
+      Left("JDBC URL must not contain inline credentials; provide credentials in the password field")
+    else Right(())
+
+  private def containsInlineCredentials(jdbcUrl: String): Boolean =
+    List(
+      "(?i)(^|[?&;])(password|pwd)=",
+      "(?i)//[^:/?#\\s]+:[^@/?#\\s]+@",
+      "(?i)^jdbc:oracle:thin:[^/\\s:@]+/[^@\\s]+@"
+    ).exists(pattern => pattern.r.findFirstIn(jdbcUrl).nonEmpty)
 
 final case class StoredTarget(target: Target, password: Option[String]):
   override def toString: String =
@@ -108,6 +120,49 @@ final case class ValidationResult(
   status: String
 )
 
+final case class SchemaCatalogObject(
+  schema: String,
+  name: String,
+  object_type: String,
+  status: String,
+  source_file: Option[String],
+  checksum: Option[String],
+  apply_status: Option[String],
+  actual_ddl: Option[String],
+  expected_ddl: Option[String],
+  last_checked: String
+)
+
+final case class SchemaCatalogResponse(
+  target_id: String,
+  db_kind: String,
+  supported: Boolean,
+  checked_at: String,
+  objects: List[SchemaCatalogObject],
+  warnings: List[String]
+)
+
+final case class DriftItem(
+  schema: String,
+  name: String,
+  object_type: String,
+  drift_type: String,
+  expected: String,
+  actual: String,
+  source_file: Option[String],
+  checksum: Option[String],
+  detected_at: String
+)
+
+final case class DriftResponse(
+  target_id: String,
+  db_kind: String,
+  supported: Boolean,
+  checked_at: String,
+  items: List[DriftItem],
+  warnings: List[String]
+)
+
 final case class RunEvent(run_id: String, name: String, payload: Json)
 
 final case class AuthTokenRequest(subject: Option[String], secret: Option[String]):
@@ -132,4 +187,8 @@ object Models:
   given Encoder[Run] = deriveEncoder
   given Encoder[InvalidObject] = deriveEncoder
   given Encoder[ValidationResult] = deriveEncoder
+  given Encoder[SchemaCatalogObject] = deriveEncoder
+  given Encoder[SchemaCatalogResponse] = deriveEncoder
+  given Encoder[DriftItem] = deriveEncoder
+  given Encoder[DriftResponse] = deriveEncoder
   given Encoder[AuthTokenResponse] = deriveEncoder

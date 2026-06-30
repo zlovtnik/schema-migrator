@@ -56,12 +56,7 @@ private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]])
       label = payload.label,
       app_name = payload.app_name,
       env = payload.env,
-      host = payload.host,
-      port = payload.port,
-      dbname = payload.dbname,
-      user = payload.user,
-      schema = payload.schema,
-      ssl_mode = payload.ssl_mode,
+      jdbc_url = payload.jdbc_url,
       created_at = createdAt
     )
 

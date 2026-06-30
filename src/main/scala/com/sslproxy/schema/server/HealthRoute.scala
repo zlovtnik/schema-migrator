@@ -7,7 +7,6 @@ import org.http4s.dsl.io.*
 
 object HealthRoute:
   val routes: HttpRoutes[IO] =
-    HttpRoutes.of[IO] {
-      case GET -> Root / "health" =>
-        RouteJson.ok(Json.obj("ok" -> Json.fromBoolean(true)))
+    HttpRoutes.of[IO] { case GET -> Root / "health" =>
+      RouteJson.ok(Json.obj("ok" -> Json.fromBoolean(true)))
     }

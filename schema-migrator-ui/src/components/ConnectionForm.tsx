@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { EyeIcon } from "@phosphor-icons/react/dist/csr/Eye";
 import { EyeSlashIcon } from "@phosphor-icons/react/dist/csr/EyeSlash";
 import { PlugsConnectedIcon } from "@phosphor-icons/react/dist/csr/PlugsConnected";
 import { useForm } from "react-hook-form";
-import { z } from "zod";
 import {
   envOptions,
-  sslModeOptions,
   targetFormSchema,
   type ConnectionTestResult,
   type Target,
@@ -23,32 +21,23 @@ interface ConnectionFormProps {
   onSubmit: (values: TargetFormValues) => void;
   onCancel?: () => void;
   onTest?: (values: TargetFormValues) => Promise<ConnectionTestResult> | void;
+  onCredentialsChange?: () => void;
 }
 
 const defaultsFromTarget = (target?: Target): TargetFormValues => ({
   label: target?.label ?? "",
   app_name: target?.app_name ?? "",
   env: target?.env ?? "dev",
-  host: target?.host ?? "",
-  port: target?.port ?? 5432,
-  dbname: target?.dbname ?? "",
-  user: target?.user ?? "",
-  password: "",
-  schema: target?.schema ?? "public",
-  ssl_mode: target?.ssl_mode ?? "require"
+  jdbc_url: target?.jdbc_url ?? "",
+  password: ""
 });
 
 const fieldIds = {
   label: "target-label",
   app_name: "target-app-name",
   env: "target-env",
-  host: "target-host",
-  port: "target-port",
-  dbname: "target-dbname",
-  user: "target-user",
-  password: "target-password",
-  schema: "target-schema",
-  ssl_mode: "target-ssl-mode"
+  jdbc_url: "target-jdbc-url",
+  password: "target-password"
 } satisfies Record<keyof TargetFormValues, string>;
 
 export const ConnectionForm = ({
@@ -58,24 +47,10 @@ export const ConnectionForm = ({
   testing = false,
   onSubmit,
   onCancel,
-  onTest
+  onTest,
+  onCredentialsChange
 }: ConnectionFormProps) => {
   const [showPassword, setShowPassword] = useState(false);
-  const [changePassword, setChangePassword] = useState(!initialTarget);
-
-  const schema = useMemo(
-    () =>
-      targetFormSchema.superRefine((values, ctx) => {
-        if ((!initialTarget || changePassword) && !values.password?.trim()) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: initialTarget ? "Password is required to change it" : "Password is required for new targets",
-            path: ["password"]
-          });
-        }
-      }),
-    [changePassword, initialTarget]
-  );
 
   const {
     register,
@@ -83,28 +58,30 @@ export const ConnectionForm = ({
     formState: { errors },
     reset
   } = useForm<TargetFormValues>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(targetFormSchema),
     defaultValues: defaultsFromTarget(initialTarget)
   });
 
   useEffect(() => {
     reset(defaultsFromTarget(initialTarget));
-    setChangePassword(!initialTarget);
   }, [initialTarget, reset]);
 
   const submit = (values: TargetFormValues) => {
-    onSubmit(changePassword ? values : { ...values, password: "" });
+    onSubmit(values);
   };
 
   const test = async (values: TargetFormValues) => {
-    await onTest?.(changePassword ? values : { ...values, password: "" });
+    await onTest?.(values);
   };
 
+  const jdbcUrlField = onCredentialsChange ? register("jdbc_url", { onChange: onCredentialsChange }) : register("jdbc_url");
+  const passwordField = onCredentialsChange ? register("password", { onChange: onCredentialsChange }) : register("password");
+
   const errorId = (name: keyof TargetFormValues) => `${fieldIds[name]}-error`;
-  const fieldState = (name: keyof TargetFormValues) => ({
+  const fieldState = (name: keyof TargetFormValues, required = true) => ({
     "aria-describedby": errors[name] ? errorId(name) : undefined,
     "aria-invalid": Boolean(errors[name]) || undefined,
-    "aria-required": true
+    "aria-required": required || undefined
   });
   const renderRequired = () => <span aria-hidden="true"> *</span>;
   const renderError = (name: keyof TargetFormValues) =>
@@ -139,72 +116,37 @@ export const ConnectionForm = ({
           </select>
           {renderError("env")}
         </label>
-        <label htmlFor={fieldIds.host}>
-          Host{renderRequired()}
-          <input id={fieldIds.host} {...register("host")} autoComplete="off" {...fieldState("host")} />
-          {renderError("host")}
-        </label>
-        <label htmlFor={fieldIds.port}>
-          Port{renderRequired()}
-          <input id={fieldIds.port} {...register("port")} inputMode="numeric" {...fieldState("port")} />
-          {renderError("port")}
-        </label>
-        <label htmlFor={fieldIds.dbname}>
-          Database{renderRequired()}
-          <input id={fieldIds.dbname} {...register("dbname")} autoComplete="off" {...fieldState("dbname")} />
-          {renderError("dbname")}
-        </label>
-        <label htmlFor={fieldIds.user}>
-          User{renderRequired()}
-          <input id={fieldIds.user} {...register("user")} autoComplete="off" {...fieldState("user")} />
-          {renderError("user")}
-        </label>
-        <label htmlFor={fieldIds.schema}>
-          Schema{renderRequired()}
-          <input id={fieldIds.schema} {...register("schema")} autoComplete="off" {...fieldState("schema")} />
-          {renderError("schema")}
-        </label>
-        <label htmlFor={fieldIds.ssl_mode}>
-          SSL mode{renderRequired()}
-          <select id={fieldIds.ssl_mode} {...register("ssl_mode")} {...fieldState("ssl_mode")}>
-            {sslModeOptions.map((mode) => (
-              <option value={mode} key={mode}>
-                {mode}
-              </option>
-            ))}
-          </select>
-          {renderError("ssl_mode")}
+        <label className="form-field--wide" htmlFor={fieldIds.jdbc_url}>
+          JDBC URL{renderRequired()}
+          <input
+            id={fieldIds.jdbc_url}
+            {...jdbcUrlField}
+            autoComplete="off"
+            placeholder="jdbc:postgresql://localhost:5432/app?user=app"
+            spellCheck={false}
+            {...fieldState("jdbc_url")}
+          />
+          {renderError("jdbc_url")}
         </label>
       </div>
 
-      {initialTarget ? (
-        <label className="checkbox-row">
-          <input type="checkbox" checked={changePassword} onChange={(event) => setChangePassword(event.target.checked)} />
-          Change password
-        </label>
-      ) : null}
-
-      {changePassword ? (
-        <label htmlFor={fieldIds.password}>
-          Password{renderRequired()}
-          <span className="password-input">
-            <input
-              id={fieldIds.password}
-              {...register("password")}
-              type={showPassword ? "text" : "password"}
-              autoComplete="current-password"
-              {...fieldState("password")}
-            />
-            <button className="icon-button" type="button" onClick={() => setShowPassword((value) => !value)}>
-              <Icon source={showPassword ? EyeSlashIcon : EyeIcon} size={16} />
-              <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
-            </button>
-          </span>
-          {renderError("password")}
-        </label>
-      ) : (
-        <div className="masked-secret">Password is saved and masked.</div>
-      )}
+      <label htmlFor={fieldIds.password}>
+        Password
+        <span className="password-input">
+          <input
+            id={fieldIds.password}
+            {...passwordField}
+            type={showPassword ? "text" : "password"}
+            autoComplete="current-password"
+            {...fieldState("password", false)}
+          />
+          <button className="icon-button" type="button" onClick={() => setShowPassword((value) => !value)}>
+            <Icon source={showPassword ? EyeSlashIcon : EyeIcon} size={16} />
+            <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
+          </button>
+        </span>
+        {renderError("password")}
+      </label>
 
       {testResult ? (
         <div className={testResult.ok ? "inline-result inline-result--ok" : "inline-result inline-result--error"} role="status">

@@ -68,7 +68,7 @@
   --button-bg: var(--color-accent-primary);
   --button-bg-hover: var(--color-accent-primary-hover);
   --button-border: var(--color-accent-primary);
-  --button-color: var(--color-white);
+  --button-color: var(--color-accent-contrast);
 }
 
 .secondary {
@@ -87,13 +87,18 @@
 
 .danger {
   --button-bg: var(--color-danger);
-  --button-bg-hover: color-mix(in srgb, var(--color-danger) 84%, var(--color-white));
+  --button-bg-hover: var(--color-danger-hover);
   --button-border: var(--color-danger);
-  --button-color: var(--color-white);
+  --button-color: var(--color-danger-contrast);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .button {
     transition: none;
+  }
+
+  .button:hover:not(:disabled),
+  .button:active:not(:disabled) {
+    transform: none;
   }
 }

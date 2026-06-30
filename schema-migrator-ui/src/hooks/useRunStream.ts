@@ -187,6 +187,7 @@ export const useRunStream = (runId?: string, initialRun?: Run, options: UseRunSt
         const data = parseEventData<RunCompleteEvent>(dataText);
         setState((previous) => ({ ...previous, runStatus: "completed" }));
         callbacksRef.current.onRunComplete?.(data);
+        attempts = 0;
         closed = true;
         closeSource();
         return;
@@ -196,6 +197,7 @@ export const useRunStream = (runId?: string, initialRun?: Run, options: UseRunSt
         const data = parseEventData<RunFailedEvent>(dataText);
         setState((previous) => ({ ...previous, runStatus: data.reason === "aborted" ? "aborted" : "failed" }));
         callbacksRef.current.onRunFailed?.(data);
+        attempts = 0;
         closed = true;
         closeSource();
         return;
@@ -234,9 +236,9 @@ export const useRunStream = (runId?: string, initialRun?: Run, options: UseRunSt
         if (!response.ok || !response.body) {
           throw new Error(`run stream failed with ${response.status}`);
         }
-        attempts = 0;
 
         const reader = response.body.getReader();
+        attempts = 0;
         const decoder = new TextDecoder();
         let buffer = "";
         let boundary = /\r?\n\r?\n/.exec(buffer);

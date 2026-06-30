@@ -10,7 +10,7 @@ import com.sslproxy.schema.parser.{Canonicalizer, HeaderParser}
 import java.nio.file.Files
 
 final class ManifestBuilder[F[_]: Sync](dialect: SqlDialect):
-  private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+procedure\b".r
+  private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+(?:(?:non)?editionable\s+)?procedure\b".r
 
   def build(files: List[SqlFile]): F[List[SchemaObject]] =
     files.traverse(file => Sync[F].blocking(fromFile(file)))

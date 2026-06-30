@@ -1,6 +1,7 @@
 package com.sslproxy.schema.config
 
 import java.nio.file.{Files, Path}
+import java.util.Base64
 import scala.concurrent.duration.FiniteDuration
 
 enum DbKind:
@@ -66,6 +67,7 @@ final case class ServerConfig(
   encryptKeyBase64: Option[String],
   jwtSecret: String,
   devAuthSecret: String,
+  dbTestAllowedHosts: Set[String],
   patchStageDir: Path
 ):
   def validate: Either[String, Unit] =
@@ -73,7 +75,18 @@ final case class ServerConfig(
     else if port < 1 || port > 65535 then Left("server port must be between 1 and 65535")
     else if jwtSecret.trim.isEmpty then Left("BEDROCK_JWT_SECRET must not be empty")
     else if devAuthSecret.trim.isEmpty then Left("BEDROCK_DEV_AUTH_SECRET must not be empty")
-    else validatePatchStageDir()
+    else validateEncryptKeyBase64().flatMap(_ => validatePatchStageDir())
+
+  private def validateEncryptKeyBase64(): Either[String, Unit] =
+    encryptKeyBase64 match
+      case None => Right(())
+      case Some(value) if value.trim.isEmpty => Left("BEDROCK_ENCRYPT_KEY must not be empty when set")
+      case Some(value) =>
+        try
+          val bytes = Base64.getDecoder.decode(value.trim)
+          if bytes.length == 32 then Right(())
+          else Left("AES-GCM key must decode to 32 bytes")
+        catch case error: IllegalArgumentException => Left(error.getMessage)
 
   private def validatePatchStageDir(): Either[String, Unit] =
     try

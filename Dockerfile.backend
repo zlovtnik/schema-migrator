@@ -1,23 +1,46 @@
-FROM eclipse-temurin:21-jdk-jammy
+# --- build stage ---
+FROM azul/zulu-openjdk:21 AS builder
 
 ARG SBT_VERSION=1.11.6
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates curl \
-  && curl -fsSL "https://github.com/sbt/sbt/releases/download/v${SBT_VERSION}/sbt-${SBT_VERSION}.tgz" | tar -xz -C /opt \
+  && curl --retry 5 --retry-delay 2 --retry-connrefused -fsSL \
+     "https://github.com/sbt/sbt/releases/download/v${SBT_VERSION}/sbt-${SBT_VERSION}.tgz" \
+     -o /tmp/sbt.tgz \
+  && tar -xzf /tmp/sbt.tgz -C /opt \
+  && rm /tmp/sbt.tgz \
   && ln -s /opt/sbt/bin/sbt /usr/local/bin/sbt \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+  && groupadd --system schema \
+  && useradd --system --gid schema --create-home --home-dir /home/schema schema \
+  && mkdir -p /app \
+  && chown -R schema:schema /app /home/schema \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+USER schema
 
-COPY project ./project
-COPY build.sbt ./
+COPY --chown=schema:schema project/ project/
+COPY --chown=schema:schema build.sbt .
 RUN sbt -Dsbt.supershell=false update
 
-COPY src ./src
-COPY AGENTS.md README.md ./
+COPY --chown=schema:schema src/ src/
+COPY --chown=schema:schema AGENTS.md README.md ./
+RUN sbt -Dsbt.supershell=false assembly
+
+# --- runtime stage ---
+FROM azul/zulu-openjdk:21-jre
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && groupadd --system schema \
+  && useradd --system --gid schema --home-dir /home/schema --create-home schema \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /app/target/scala-3*/schema-migrator.jar app.jar
 
 EXPOSE 8080
-
-CMD ["sbt", "-Dsbt.supershell=false", "run --serve --host 0.0.0.0"]
+USER schema
+ENTRYPOINT ["java", "-jar", "app.jar"]
+CMD ["--serve", "--host", "0.0.0.0"]

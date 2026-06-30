@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -15,23 +15,35 @@ export const TargetFormPage = () => {
   const updateTarget = useUpdateTarget(id ?? "");
   const deleteTarget = useDeleteTarget();
   const testConnection = useTestConnection();
-  const { data: runs = [], isLoading: runsLoading, isSuccess: runsLoaded } = useRuns();
+  const { data: runs = [], isLoading: runsLoading, isSuccess: runsLoaded } = useRuns(id);
   const [testResult, setTestResult] = useState<ConnectionTestResult | undefined>();
+  const testRequestRef = useRef(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const hasActiveRuns = runs.some((run) => run.target_id === id && (run.status === "running" || run.status === "pending"));
+  const hasActiveRuns = runs.some((run) => run.status === "running" || run.status === "pending");
   const deleteDisabled = !runsLoaded || runsLoading || hasActiveRuns;
+  const returnToList = () => navigate("..", { relative: "path" });
 
   const submit = (values: TargetFormValues) => {
     updateTarget.mutate(values, {
-      onSuccess: () => navigate("/targets")
+      onSuccess: returnToList
     });
   };
 
   const test = async (values: TargetFormValues) => {
-    const result = await testConnection.mutateAsync(values.password?.trim() ? { values } : { id });
-    setTestResult(result);
+    const requestId = testRequestRef.current + 1;
+    testRequestRef.current = requestId;
+    const useFormValues = Boolean(values.password?.trim()) || values.jdbc_url.trim() !== target?.jdbc_url.trim();
+    const result = await testConnection.mutateAsync(useFormValues ? { values } : { id });
+    if (testRequestRef.current === requestId) {
+      setTestResult(result);
+    }
     return result;
+  };
+
+  const clearTestResult = () => {
+    testRequestRef.current += 1;
+    setTestResult(undefined);
   };
 
   const confirmDelete = () => {
@@ -39,7 +51,7 @@ export const TargetFormPage = () => {
       return;
     }
     deleteTarget.mutate(id, {
-      onSuccess: () => navigate("/targets")
+      onSuccess: returnToList
     });
   };
 
@@ -82,8 +94,9 @@ export const TargetFormPage = () => {
         testing={testConnection.isPending}
         testResult={testResult}
         onSubmit={submit}
-        onCancel={() => navigate("/targets")}
+        onCancel={returnToList}
         onTest={test}
+        onCredentialsChange={clearTestResult}
       />
 
       <ConfirmDialog

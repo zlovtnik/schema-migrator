@@ -2,18 +2,32 @@ package com.sslproxy.schema.server
 
 import cats.effect.IO
 import cats.syntax.all.*
-import com.sslproxy.schema.store.{Models, PatchStore, RunEvent, RunStore, TargetStore, TriggerRunPayload, ValidationStore}
+import com.sslproxy.schema.store.{
+  Models,
+  PatchStore,
+  Run,
+  RunEvent,
+  RunStore,
+  TargetStore,
+  TriggerRunPayload,
+  ValidationStore
+}
 import fs2.Stream
 import io.circe.Json
 import io.circe.syntax.*
 import org.http4s.{HttpRoutes, ServerSentEvent}
 import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.dsl.io.*
+import org.typelevel.log4cats.LoggerFactory
+import org.typelevel.log4cats.slf4j.Slf4jFactory
 
 import scala.concurrent.duration.*
 
 object RunRoutes:
   import Models.given
+
+  private given LoggerFactory[IO] = Slf4jFactory.create[IO]
+  private val log = LoggerFactory[IO].getLogger
 
   def routes(
     targetStore: TargetStore,
@@ -32,6 +46,16 @@ object RunRoutes:
             case (Some(_), Some(patch)) =>
               for
                 run <- runStore.create(payload, patch, "api")
+                _ <- log.info(
+                  Json
+                    .obj(
+                      "event" -> Json.fromString("run_triggered"),
+                      "run_id" -> Json.fromString(run.id),
+                      "target_id" -> Json.fromString(payload.target_id),
+                      "patch_id" -> Json.fromString(payload.patch_id)
+                    )
+                    .noSpaces
+                )
                 _ <- runStore.runPatch(run, patchStore, validationStore).start.void
                 response <- RouteJson.created(run.asJson)
               yield response
@@ -56,22 +80,71 @@ object RunRoutes:
 
       case POST -> Root / "runs" / id / "abort" =>
         runStore.abort(id).flatMap {
-          case Some(run) => RouteJson.ok(run.asJson)
-          case None => RouteJson.notFound(s"run '$id' was not found")
+          case Some(run) =>
+            log.info(Json.obj("event" -> Json.fromString("run_aborted"), "run_id" -> Json.fromString(id)).noSpaces) *>
+              RouteJson.ok(run.asJson)
+          case None =>
+            log.info(
+              Json.obj("event" -> Json.fromString("run_abort_not_found"), "run_id" -> Json.fromString(id)).noSpaces
+            ) *>
+              RouteJson.notFound(s"run '$id' was not found")
         }
     }
 
   private def eventStream(id: String, store: RunStore): Stream[IO, ServerSentEvent] =
-    val events =
-      store.events
-        .filter(_.run_id == id)
-        .map(toServerSentEvent)
     val heartbeat =
       Stream.awakeEvery[IO](15.seconds).map(_ => ServerSentEvent(comment = Some("ping")))
-    events.merge(heartbeat)
+    Stream.resource(store.runEvents(id)).flatMap { events =>
+      Stream.eval(store.get(id)).flatMap {
+        case Some(run) =>
+          terminalEvent(run) match
+            case Some(event) => Stream.emit(toServerSentEvent(event))
+            case None => events.map(toServerSentEvent).merge(heartbeat)
+        case None => events.map(toServerSentEvent).merge(heartbeat)
+      }
+    }
+
+  private def terminalEvent(run: Run): Option[RunEvent] =
+    run.status match
+      case "completed" =>
+        Some(
+          RunEvent(
+            run.id,
+            "run:complete",
+            Json.obj(
+              "run_id" -> Json.fromString(run.id),
+              "duration_ms" -> Json.fromLong(durationMs(run)),
+              "validation_triggered" -> Json.fromBoolean(true)
+            )
+          )
+        )
+      case "failed" | "aborted" =>
+        Some(
+          RunEvent(
+            run.id,
+            "run:failed",
+            Json.obj(
+              "run_id" -> Json.fromString(run.id),
+              "failed_script_id" -> Json.fromString(""),
+              "reason" -> Json.fromString(run.status)
+            )
+          )
+        )
+      case _ => None
 
   private def toServerSentEvent(event: RunEvent): ServerSentEvent =
     ServerSentEvent(
       data = Some(event.payload.noSpaces),
       eventType = Some(event.name)
     )
+
+  private def durationMs(run: Run): Long =
+    run.ended_at
+      .flatMap { ended =>
+        Either
+          .catchNonFatal(
+            java.time.Duration.between(java.time.Instant.parse(run.started_at), java.time.Instant.parse(ended)).toMillis
+          )
+          .toOption
+      }
+      .getOrElse(0L)

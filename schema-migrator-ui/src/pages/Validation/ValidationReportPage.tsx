@@ -27,7 +27,7 @@ export const ValidationReportPage = () => {
     const latestCompletedRun = runsQuery.data
       ?.filter((run) => run.status === "completed")
       .slice()
-      .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))[0];
+      .sort((a, b) => Date.parse(b.ended_at ?? b.started_at) - Date.parse(a.ended_at ?? a.started_at))[0];
 
     if (latestCompletedRun) {
       return <Navigate to={`/validation/${latestCompletedRun.id}`} replace />;
