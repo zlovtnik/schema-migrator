@@ -19,15 +19,30 @@ import { useErrorGate } from "../hooks/useErrorGate";
 const SIDEBAR_KEY = "schemaMigrator.sidebarCollapsed";
 const NAV_ID = "primary-navigation";
 
-const navItems = [
-  { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
-  { to: "/schema", label: "Schema", icon: DatabaseIcon },
-  { to: "/targets", label: "Targets", icon: DatabaseIcon },
-  { to: "/migrations", label: "Migrations", icon: UploadSimpleIcon },
-  { to: "/runs", label: "Runs", icon: ClockCounterClockwiseIcon },
-  { to: "/drift", label: "Drift", icon: ListBulletsIcon },
-  { to: "/validation/latest", label: "Validation", icon: ShieldCheckIcon },
-  { to: "/settings", label: "Settings", icon: GearIcon }
+const navSections = [
+  {
+    label: "Operate",
+    items: [
+      { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
+      { to: "/schema", label: "Schema", icon: DatabaseIcon },
+      { to: "/migrations", label: "Migrations", icon: UploadSimpleIcon }
+    ]
+  },
+  {
+    label: "Observe",
+    items: [
+      { to: "/runs", label: "Runs", icon: ClockCounterClockwiseIcon },
+      { to: "/drift", label: "Drift", icon: ListBulletsIcon },
+      { to: "/validation/latest", label: "Validation", icon: ShieldCheckIcon }
+    ]
+  },
+  {
+    label: "Settings",
+    items: [
+      { to: "/settings", label: "Application", icon: GearIcon, end: true },
+      { to: "/settings/targets", label: "Targets", icon: DatabaseIcon }
+    ]
+  }
 ];
 
 export const AppShell = () => {
@@ -111,13 +126,7 @@ export const AppShell = () => {
       <div className={collapsed ? "app-shell app-shell--collapsed" : "app-shell"}>
         <header className="mobile-topbar">
           <div className="mobile-topbar__brand">
-            <div className="brand-mark" aria-hidden="true">
-              SM
-            </div>
-            <div className="brand-copy">
-              <strong>Schema Migrator</strong>
-              <span>Patch operations</span>
-            </div>
+            <BrandIdentity />
           </div>
           <button
             aria-controls={NAV_ID}
@@ -132,30 +141,28 @@ export const AppShell = () => {
         </header>
         <aside className={mobileMenuOpen ? "sidebar sidebar--open" : "sidebar"} aria-label="Primary navigation">
           <div className="sidebar__brand">
-            <div className="brand-mark" aria-hidden="true">
-              SM
-            </div>
-            <div className="brand-copy">
-              <strong>Schema Migrator</strong>
-              <span>Patch operations</span>
-            </div>
+            <BrandIdentity />
           </div>
           <nav className="sidebar__nav" id={NAV_ID}>
-            {navItems.map((item) => {
-              return (
-                <NavLink
-                  aria-label={item.label}
-                  className="nav-link"
-                  key={item.to}
-                  title={collapsed ? item.label : undefined}
-                  to={item.to}
-                  onClick={closeMobileMenu}
-                >
-                  <Icon source={item.icon} size={20} />
-                  <span>{item.label}</span>
-                </NavLink>
-              );
-            })}
+            {navSections.map((section) => (
+              <div className="nav-section" key={section.label}>
+                <div className="nav-section__label">{section.label}</div>
+                {section.items.map((item) => (
+                  <NavLink
+                    aria-label={item.label}
+                    className="nav-link"
+                    end={item.end === true}
+                    key={item.to}
+                    title={collapsed ? item.label : undefined}
+                    to={item.to}
+                    onClick={closeMobileMenu}
+                  >
+                    <Icon source={item.icon} size={20} />
+                    <span>{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            ))}
           </nav>
           <div className="sidebar__selector">
             <TargetSelector compact />
@@ -182,6 +189,18 @@ export const AppShell = () => {
     </>
   );
 };
+
+const BrandIdentity = () => (
+  <>
+    <div className="brand-mark" aria-hidden="true">
+      <img src="/bedrock-logo.svg" alt="" />
+    </div>
+    <div className="brand-copy">
+      <strong>Bedrock Schema Migrator</strong>
+      <span>Patch operations</span>
+    </div>
+  </>
+);
 
 const isTextEntry = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {

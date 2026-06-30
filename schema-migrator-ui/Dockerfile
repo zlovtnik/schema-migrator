@@ -1,12 +1,16 @@
-FROM oven/bun:1.1
+FROM oven/bun:1.1 AS builder
 
 WORKDIR /app
-
 RUN chown bun:bun /app
-COPY --chown=bun:bun . .
 USER bun
-RUN if [ -f bun.lock ] || [ -f bun.lockb ]; then bun install --frozen-lockfile; else bun install; fi
 
-EXPOSE 5173
+COPY --chown=bun:bun package.json pnpm-lock.yaml ./
+# bun can install from pnpm lockfile directly
+RUN bun install --frozen-lockfile
 
-CMD ["bun", "run", "dev", "--host", "0.0.0.0"]
+COPY --chown=bun:bun . .
+RUN bun run build
+
+# output stage - hand-off to nginx
+FROM scratch AS dist
+COPY --from=builder /app/dist /dist

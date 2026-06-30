@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
@@ -18,6 +18,7 @@ const redactedJdbcUrl = (value: string) =>
     .replace(/(\/\/[^:/?#]+:)[^@/?#]+(@)/gi, "$1<redacted>$2");
 
 export const TargetListPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: targets = [], isLoading, error } = useTargets();
   const {
     data: runs = [],
@@ -46,6 +47,11 @@ export const TargetListPage = () => {
     preSaveTestRequestRef.current += 1;
     setCreateOpen(false);
     setPreSaveTestResult(undefined);
+    if (searchParams.has("create")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("create");
+      setSearchParams(next, { replace: true });
+    }
   };
 
   const clearPreSaveTestResult = () => {
@@ -58,6 +64,12 @@ export const TargetListPage = () => {
       onSuccess: closeCreate
     });
   };
+
+  useEffect(() => {
+    if (searchParams.get("create") === "1") {
+      setCreateOpen(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     if (!createOpen) {
@@ -155,7 +167,7 @@ export const TargetListPage = () => {
                 return (
                   <tr key={target.id}>
                     <td>
-                      <Link to={`/targets/${target.id}`}>{target.label}</Link>
+                      <Link to={target.id}>{target.label}</Link>
                     </td>
                     <td>{target.app_name}</td>
                     <td>

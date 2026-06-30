@@ -80,6 +80,14 @@ lazy val root = (project in file("."))
     ),
     scalacOptions ++= Seq("-Yfuture-lazy-vals", "-java-output-version:11"),
     Compile / mainClass := Some("com.sslproxy.schema.Main"),
+    assembly / assemblyJarName := "schema-migrator.jar",
+    assembly / mainClass := Some("com.sslproxy.schema.Main"),
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "services", xs @ _*) => MergeStrategy.concat
+      case PathList("META-INF", xs @ _*)             => MergeStrategy.discard
+      case "reference.conf"                           => MergeStrategy.concat
+      case _                                          => MergeStrategy.first
+    },
     Compile / run / fork := true,
     Test / fork := true
   )

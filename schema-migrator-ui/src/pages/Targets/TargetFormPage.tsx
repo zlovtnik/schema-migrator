@@ -22,10 +22,11 @@ export const TargetFormPage = () => {
 
   const hasActiveRuns = runs.some((run) => run.status === "running" || run.status === "pending");
   const deleteDisabled = !runsLoaded || runsLoading || hasActiveRuns;
+  const returnToList = () => navigate("..", { relative: "path" });
 
   const submit = (values: TargetFormValues) => {
     updateTarget.mutate(values, {
-      onSuccess: () => navigate("/targets")
+      onSuccess: returnToList
     });
   };
 
@@ -50,7 +51,7 @@ export const TargetFormPage = () => {
       return;
     }
     deleteTarget.mutate(id, {
-      onSuccess: () => navigate("/targets")
+      onSuccess: returnToList
     });
   };
 
@@ -93,7 +94,7 @@ export const TargetFormPage = () => {
         testing={testConnection.isPending}
         testResult={testResult}
         onSubmit={submit}
-        onCancel={() => navigate("/targets")}
+        onCancel={returnToList}
         onTest={test}
         onCredentialsChange={clearTestResult}
       />

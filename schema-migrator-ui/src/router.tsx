@@ -45,7 +45,9 @@ export const router = createBrowserRouter([
       { path: "runs/:id", element: routeElement(RunDetailPage) },
       { path: "drift", element: routeElement(DriftPage) },
       { path: "validation/:runId", element: routeElement(ValidationReportPage) },
-      { path: "settings", element: routeElement(SettingsPage) }
+      { path: "settings", element: routeElement(SettingsPage) },
+      { path: "settings/targets", element: routeElement(TargetListPage) },
+      { path: "settings/targets/:id", element: routeElement(TargetFormPage) }
     ]
   }
 ]);

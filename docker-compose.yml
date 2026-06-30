@@ -1,53 +1,44 @@
 services:
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
+    restart: unless-stopped
     environment:
       - BEDROCK_HTTP_HOST=0.0.0.0
       - BEDROCK_HTTP_PORT=8080
-      - BEDROCK_CORS_ORIGINS=http://localhost:5173
-      - BEDROCK_JWT_SECRET=gpbEGk8AOtpfWZtir568o5r7J7JIMDAnG7TIr3ZhzvA
-      - BEDROCK_DEV_AUTH_SECRET=macacosmemordam
-      - BEDROCK_ENCRYPT_KEY
-      - BEDROCK_DB_TEST_ALLOWED_HOSTS=192.168.1.221
-    ports:
-      - "8080:8080"
+      - BEDROCK_CORS_ORIGINS=http://localhost
+      - BEDROCK_JWT_SECRET=${BEDROCK_JWT_SECRET}
+      - BEDROCK_DEV_AUTH_SECRET=${BEDROCK_DEV_AUTH_SECRET}
+      - BEDROCK_DB_URL=${BEDROCK_DB_URL}
+      - BEDROCK_DB_USER=${BEDROCK_DB_USER}
+      - BEDROCK_DB_PASSWORD=${BEDROCK_DB_PASSWORD}
+      - DATABASE_URL=${BEDROCK_DB_URL}
+    expose:
+      - "8080"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
       interval: 5s
       timeout: 3s
       retries: 30
-      start_period: 20s
-    volumes:
-      - sbt-cache:/home/schema/.sbt
-      - ivy-cache:/home/schema/.ivy2
-      - coursier-cache:/home/schema/.cache/coursier
+      start_period: 30s
+    networks:
+      - internal
 
-  ui:
+  nginx:
     build:
-      context: ./schema-migrator-ui
-      dockerfile: Dockerfile
-    command: sh -lc "rm -rf node_modules/.vite && bun run dev --host 0.0.0.0"
-    environment:
-      - VITE_API_BASE_URL=/api
-      - VITE_API_PROXY_TARGET=http://backend:8080
-      - VITE_DEV_AUTH_SECRET=macacosmemordam
-      - VITE_DEV_AUTH_SUBJECT=docker-dev
-      - VITE_USE_POLLING=true
+      context: .
+      dockerfile: nginx/Dockerfile
+    restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "80:80"
     depends_on:
       backend:
         condition: service_healthy
-    volumes:
-      - ./schema-migrator-ui/index.html:/app/index.html
-      - ./schema-migrator-ui/src:/app/src
-      - ./schema-migrator-ui/tsconfig.json:/app/tsconfig.json
-      - ./schema-migrator-ui/tsconfig.node.json:/app/tsconfig.node.json
-      - ./schema-migrator-ui/vite.config.ts:/app/vite.config.ts
+    networks:
+      - internal
 
-volumes:
-  sbt-cache:
-  ivy-cache:
-  coursier-cache:
+networks:
+  internal:
+    driver: bridge
