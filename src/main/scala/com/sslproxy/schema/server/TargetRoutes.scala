@@ -3,6 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.config.ServerConfig
+import com.sslproxy.schema.db.postgres.PostgresProvider
 import com.sslproxy.schema.store.{Models, PatchStore, RunStore, TargetPayload, TargetStore, ValidationStore}
 import io.circe.Json
 import io.circe.syntax.*
@@ -13,6 +14,8 @@ import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
 
 import java.net.URI
+import java.net.{URLDecoder, URLEncoder}
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 
 object TargetRoutes:
@@ -118,18 +121,69 @@ object TargetRoutes:
       case Left(_) => RouteJson.badRequest(invalidPayloadMessage)
     }
 
-  private def validateTargetPayload(payload: TargetPayload): Either[String, TargetPayload] =
+  private[server] def validateTargetPayload(payload: TargetPayload): Either[String, TargetPayload] =
     val jdbcUrl = payload.jdbc_url.trim
-    if jdbcUrl.isEmpty then Left("JDBC URL is required")
+    val trimmedPayload = payload.copy(jdbc_url = jdbcUrl)
+    if jdbcUrl.isEmpty then Left("Database URL is required")
+    else if isPostgresUrl(jdbcUrl) then normalizePostgresPayload(trimmedPayload, jdbcUrl)
     else if jdbcUrl.startsWith("jdbc:postgres://") then
       Left(
         "Postgres JDBC URLs must start with jdbc:postgresql://, for example jdbc:postgresql://host:5432/database?user=username"
       )
-    else if isSupportedJdbcUrl(jdbcUrl) then TargetPayload.rejectInlineCredentials(jdbcUrl).as(payload.copy(jdbc_url = jdbcUrl))
-    else Left("unsupported JDBC URL: expected jdbc:postgresql://... or jdbc:oracle:thin:...")
+    else if isSupportedJdbcUrl(jdbcUrl) then TargetPayload.rejectInlineCredentials(jdbcUrl).as(trimmedPayload)
+    else Left("unsupported database URL: expected postgres://..., postgresql://..., jdbc:postgresql://..., or jdbc:oracle:thin:...")
+
+  private def normalizePostgresPayload(payload: TargetPayload, rawUrl: String): Either[String, TargetPayload] =
+    for
+      _ <-
+        if rawUrl.startsWith("jdbc:postgresql:") then TargetPayload.rejectInlineCredentials(rawUrl)
+        else Right(())
+      config <- PostgresProvider.normalize(rawUrl)
+      _ <- TargetPayload.rejectInlineCredentials(config.url)
+      jdbcUrl <- config.user.fold(Right(config.url))(user => appendUserParameter(config.url, user))
+      password <- mergedPassword(payload.password, config.password)
+    yield payload.copy(jdbc_url = jdbcUrl, password = password)
+
+  private def mergedPassword(formPassword: Option[String], urlPassword: Option[String]): Either[String, Option[String]] =
+    val provided = formPassword.filter(_.nonEmpty)
+    (provided, urlPassword) match
+      case (Some(value), Some(parsed)) if value != parsed =>
+        Left("Postgres URL password does not match the password field")
+      case (Some(value), _) => Right(Some(value))
+      case (None, parsed) => Right(parsed)
 
   private def isSupportedJdbcUrl(value: String): Boolean =
     value.startsWith("jdbc:postgresql:") || value.startsWith("jdbc:oracle:thin:")
+
+  private def isPostgresUrl(value: String): Boolean =
+    value.startsWith("postgres://") || value.startsWith("postgresql://") || value.startsWith("jdbc:postgresql://")
+
+  private def appendUserParameter(jdbcUrl: String, user: String): Either[String, String] =
+    queryParameter(jdbcUrl, "user") match
+      case Some(existing) if decode(existing) == user => Right(jdbcUrl)
+      case Some(_) => Left("Postgres URL has conflicting usernames in userinfo and query string")
+      case None =>
+        val separator = if jdbcUrl.contains("?") then "&" else "?"
+        Right(s"$jdbcUrl${separator}user=${encode(user)}")
+
+  private def queryParameter(url: String, name: String): Option[String] =
+    val queryStart = url.indexOf('?')
+    if queryStart < 0 || queryStart == url.length - 1 then None
+    else
+      url
+        .substring(queryStart + 1)
+        .split("&")
+        .toList
+        .collectFirst {
+          case part if part.takeWhile(_ != '=') == name && part.contains("=") =>
+            part.dropWhile(_ != '=').drop(1)
+        }
+
+  private def encode(value: String): String =
+    URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
+
+  private def decode(value: String): String =
+    URLDecoder.decode(value, StandardCharsets.UTF_8)
 
   private def withDbTestAllowed(config: ServerConfig, jdbcUrl: String)(use: => IO[Response[IO]]): IO[Response[IO]] =
     withDbAccessAllowed(config, jdbcUrl, "database connection tests are not allowed for this target")(use)

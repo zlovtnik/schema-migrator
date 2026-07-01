@@ -2,7 +2,7 @@ package com.sslproxy.schema.cli
 
 import cats.syntax.all.*
 import com.monovore.decline.*
-import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
+import com.sslproxy.schema.config.{DbKind, MigratorConfig, MongoConfig, ServerConfig}
 
 import java.nio.file.{Path, Paths}
 import java.util.Locale
@@ -84,6 +84,12 @@ object CliOpts:
       .orNone
       .map(_.orElse(env.get("BEDROCK_DEV_AUTH_SECRET")).flatMap(nonBlank).getOrElse(""))
 
+  private val apiBearerTokenOpt: Opts[Option[String]] =
+    Opts
+      .option[String]("api-bearer-token", help = "Static bearer token accepted by protected HTTP API routes")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_API_BEARER_TOKEN")).flatMap(nonBlank))
+
   private val patchStageDirOpt: Opts[Path] =
     Opts
       .option[Path]("patch-stage-dir", help = "Directory used to stage uploaded patch files")
@@ -95,6 +101,67 @@ object CliOpts:
       .option[String]("db-test-allowed-hosts", help = "Comma-separated JDBC hosts allowed for /targets/test")
       .orNone
       .map(_.orElse(env.get("BEDROCK_DB_TEST_ALLOWED_HOSTS")).fold(Set.empty[String])(commaSet).map(_.toLowerCase(Locale.ROOT)))
+
+  private val mongoUriOpt: Opts[Option[String]] =
+    Opts
+      .option[String]("mongo-uri", help = "MongoDB connection URI for persisted HTTP API targets")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_MONGO_URI")).flatMap(nonBlank))
+
+  private val mongoDatabaseOpt: Opts[Option[String]] =
+    Opts
+      .option[String]("mongo-database", help = "MongoDB database for persisted HTTP API targets")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_MONGO_DATABASE")).flatMap(nonBlank))
+
+  private val mongoTargetsCollectionOpt: Opts[Option[String]] =
+    Opts
+      .option[String]("mongo-targets-collection", help = "MongoDB collection for persisted HTTP API targets")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_MONGO_TARGETS_COLLECTION")).flatMap(nonBlank))
+
+  private val serverOpts: Opts[ServerConfig] =
+    (
+      hostOpt,
+      portOpt,
+      corsOriginsOpt,
+      encryptKeyOpt,
+      jwtSecretOpt,
+      devAuthSecretOpt,
+      apiBearerTokenOpt,
+      dbTestAllowedHostsOpt,
+      patchStageDirOpt,
+      mongoUriOpt,
+      mongoDatabaseOpt,
+      mongoTargetsCollectionOpt
+    ).mapN {
+      (
+        host,
+        port,
+        corsOrigins,
+        encryptKey,
+        jwtSecret,
+        devAuthSecret,
+        apiBearerToken,
+        dbTestAllowedHosts,
+        patchStageDir,
+        mongoUri,
+        mongoDatabase,
+        mongoTargetsCollection
+      ) =>
+        ServerConfig(
+          host = host,
+          port = port,
+          corsOrigins = corsOrigins,
+          encryptKeyBase64 = encryptKey.flatMap(nonBlank).orElse(env.get("BEDROCK_ENCRYPT_KEY").flatMap(nonBlank)),
+          jwtSecret = jwtSecret,
+          devAuthSecret = devAuthSecret,
+          apiBearerToken = apiBearerToken,
+          dbTestAllowedHosts = dbTestAllowedHosts,
+          patchStageDir = patchStageDir,
+          mongo = (mongoUri, mongoDatabase, mongoTargetsCollection).mapN(MongoConfig.apply)
+        )
+    }
 
   private val configOpts: Opts[MigratorConfig] =
     (
@@ -111,14 +178,7 @@ object CliOpts:
       oracleUserOpt,
       oraclePasswordFileOpt,
       Opts.flag("json", help = "Print machine-readable JSON").orFalse,
-      hostOpt,
-      portOpt,
-      corsOriginsOpt,
-      encryptKeyOpt,
-      jwtSecretOpt,
-      devAuthSecretOpt,
-      dbTestAllowedHostsOpt,
-      patchStageDirOpt
+      serverOpts
     ).mapN {
       (
         dbKind,
@@ -134,14 +194,7 @@ object CliOpts:
         oracleUser,
         oraclePasswordFile,
         json,
-        host,
-        port,
-        corsOrigins,
-        encryptKey,
-        jwtSecret,
-        devAuthSecret,
-        dbTestAllowedHosts,
-        patchStageDir
+        serverConfig
       ) =>
         MigratorConfig(
           dbKind = dbKind,
@@ -157,16 +210,7 @@ object CliOpts:
           oracleUser = oracleUser.orElse(env.get("ORACLE_USER")),
           oraclePasswordFile = oraclePasswordFile.orElse(env.get("ORACLE_PASS_FILE").map(Paths.get(_))),
           json = json,
-          server = ServerConfig(
-            host = host,
-            port = port,
-            corsOrigins = corsOrigins,
-            encryptKeyBase64 = encryptKey.flatMap(nonBlank).orElse(env.get("BEDROCK_ENCRYPT_KEY").flatMap(nonBlank)),
-            jwtSecret = jwtSecret,
-            devAuthSecret = devAuthSecret,
-            dbTestAllowedHosts = dbTestAllowedHosts,
-            patchStageDir = patchStageDir
-          )
+          server = serverConfig
         )
     }
 

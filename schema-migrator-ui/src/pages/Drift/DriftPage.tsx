@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { PageHeader } from "../../components/PageHeader";
 import { SqlPreviewPane } from "../../components/SqlPreviewPane";
@@ -10,11 +9,11 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useDrift } from "../../hooks/useSchema";
+import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import type { DriftItem } from "../../types";
 
 export const DriftPage = () => {
-  const [searchParams] = useSearchParams();
-  const selectedTarget = searchParams.get("target");
+  const selectedTarget = useSelectedTargetId();
   const { data, isLoading, error } = useDrift(selectedTarget);
   const [filter, setFilter] = useState("");
 

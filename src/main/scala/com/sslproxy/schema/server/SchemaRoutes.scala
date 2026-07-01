@@ -184,9 +184,10 @@ object SchemaRoutes:
     }
 
   private def connect(target: StoredTarget): Connection =
+    val settings = JdbcConnectionProperties.normalize(target.target.jdbc_url, target.password)
     DriverManager.getConnection(
-      target.target.jdbc_url,
-      JdbcConnectionProperties.withTimeouts(target.target.jdbc_url, target.password, 5.seconds)
+      settings.jdbcUrl,
+      JdbcConnectionProperties.withTimeouts(settings.jdbcUrl, settings.password, 5.seconds, user = settings.user)
     )
 
   private def readPostgresObjects(connection: Connection): List[LiveObject] =

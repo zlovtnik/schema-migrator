@@ -46,6 +46,7 @@ val declineVersion = "2.5.0"
 val circeVersion = "0.14.14"
 val doobieVersion = "1.0.0-RC10"
 val http4sVersion = "0.23.34"
+val mongoDriverVersion = "5.8.0"
 val oracleJdbcVersion = "23.6.0.24.10"
 val oracleOsdtVersion = "21.18.0.0"
 
@@ -67,6 +68,7 @@ lazy val root = (project in file("."))
       "org.http4s" %% "http4s-circe" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion,
       "com.auth0" % "java-jwt" % "4.4.0",
+      "org.mongodb" % "mongodb-driver-sync" % mongoDriverVersion,
       "org.apache.commons" % "commons-compress" % "1.27.1",
       "org.typelevel" %% "log4cats-slf4j" % "2.7.1",
       "org.slf4j" % "slf4j-simple" % "2.0.17",

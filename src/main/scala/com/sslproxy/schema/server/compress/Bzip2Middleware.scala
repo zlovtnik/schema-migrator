@@ -47,15 +47,20 @@ object Bzip2Middleware:
       case None => IO.pure(request)
 
   private def encodeResponse(request: Request[IO], response: Response[IO]): IO[Response[IO]] =
-    if shouldCompress(request, response) && !belowCompressionThreshold(response) then
-      val nextVary = appendHeaderValue(headerValues(response.headers, vary), "Accept-Encoding").mkString(", ")
-      IO.pure(
-        response
-          .withHeaders(removeHeaders(response.headers, Set(contentEncoding, contentLength, vary)))
-          .withBodyStream(Bzip2.compressStream(response.body))
-          .putHeaders(Header.Raw(contentEncoding, "bzip2"), Header.Raw(vary, nextVary))
-      )
+    if shouldCompress(request, response) then
+      responseWithCompressionDecision(response).map {
+        case (true, responseToCompress) =>
+          encodeBzip2(responseToCompress)
+        case (false, responseToKeep) => responseToKeep
+      }
     else IO.pure(response)
+
+  private def encodeBzip2(response: Response[IO]): Response[IO] =
+    val nextVary = appendHeaderValue(headerValues(response.headers, vary), "Accept-Encoding").mkString(", ")
+    response
+      .withHeaders(removeHeaders(response.headers, Set(contentEncoding, contentLength, vary)))
+      .withBodyStream(Bzip2.compressStream(response.body))
+      .putHeaders(Header.Raw(contentEncoding, "bzip2"), Header.Raw(vary, nextVary))
 
   private def shouldCompress(request: Request[IO], response: Response[IO]): Boolean =
     acceptsBzip2(request) &&
@@ -72,11 +77,18 @@ object Bzip2Middleware:
   private def isEventStream(response: Response[IO]): Boolean =
     response.contentType.exists(_.mediaType == eventStreamMediaType)
 
-  private def belowCompressionThreshold(response: Response[IO]): Boolean =
+  private def responseWithCompressionDecision(response: Response[IO]): IO[(Boolean, Response[IO])] =
     response.headers.headers
       .find(_.name == contentLength)
       .flatMap(header => header.value.toLongOption)
-      .exists(_ <= thresholdBytes.toLong)
+      .fold {
+        response.body.compile.toVector.map { bytes =>
+          val buffered = response.withBodyStream(Stream.emits(bytes).covary[IO])
+          (bytes.size.toLong > thresholdBytes.toLong) -> buffered
+        }
+      } { length =>
+        IO.pure((length > thresholdBytes.toLong) -> response)
+      }
 
   private def trailingBzip2Encoding(headers: Headers): Option[List[String]] =
     val values = headers.headers

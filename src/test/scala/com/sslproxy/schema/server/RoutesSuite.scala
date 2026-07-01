@@ -3,7 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
-import com.sslproxy.schema.store.{Models, PatchStore, RunStore, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{Models, PatchStore, RunStore, TargetPayload, TargetStore, ValidationStore}
 import fs2.Stream
 import io.circe.Json
 import io.circe.parser.parse
@@ -101,6 +101,99 @@ class RoutesSuite extends FunSuite:
     )
   }
 
+  test("target routes accept postgres URLs and store sanitized JDBC URLs") {
+    val result = routeFixture
+      .use { routes =>
+        val payload = targetPayload(
+          "Postgres URL",
+          password = None,
+          jdbcUrl = "postgres://sync:p%40ss@localhost:5432/sync?sslmode=disable"
+        )
+
+        for
+          response <- routes.run(jsonRequest(Method.POST, "/targets", payload))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.Created)
+    assertEquals(
+      json.hcursor.get[String]("jdbc_url"),
+      Right("jdbc:postgresql://localhost:5432/sync?sslmode=disable&user=sync")
+    )
+    assert(!json.noSpaces.contains("p@ss"))
+  }
+
+  test("target payload normalization extracts postgres URL passwords without storing them inline") {
+    val normalized = TargetRoutes
+      .validateTargetPayload(
+        TargetPayload(
+          label = "Postgres URL",
+          app_name = "app",
+          env = "dev",
+          jdbc_url = "postgres://sync:p%40ss@localhost:5432/sync",
+          password = None
+        )
+      )
+      .toOption
+      .get
+
+    assertEquals(normalized.jdbc_url, "jdbc:postgresql://localhost:5432/sync?user=sync")
+    assertEquals(normalized.password, Some("p@ss"))
+  }
+
+  test("target payload normalization converts JDBC postgres username authority to user parameter") {
+    val normalized = TargetRoutes
+      .validateTargetPayload(
+        TargetPayload(
+          label = "Postgres JDBC URL",
+          app_name = "app",
+          env = "dev",
+          jdbc_url = "jdbc:postgresql://sync@192.168.1.221:5432/sync",
+          password = Some("secret")
+        )
+      )
+      .toOption
+      .get
+
+    assertEquals(normalized.jdbc_url, "jdbc:postgresql://192.168.1.221:5432/sync?user=sync")
+    assertEquals(normalized.password, Some("secret"))
+  }
+
+  test("JDBC connection settings normalize stored postgres username authority") {
+    val settings = JdbcConnectionProperties.normalize(
+      "jdbc:postgresql://sync@192.168.1.221:5432/sync",
+      Some("secret")
+    )
+
+    assertEquals(settings.jdbcUrl, "jdbc:postgresql://192.168.1.221:5432/sync")
+    assertEquals(settings.user, Some("sync"))
+    assertEquals(settings.password, Some("secret"))
+  }
+
+  test("target routes reject conflicting postgres URL and password field passwords") {
+    val result = routeFixture
+      .use { routes =>
+        val payload = targetPayload(
+          "Conflicting passwords",
+          password = Some("field-secret"),
+          jdbcUrl = "postgres://sync:url-secret@localhost:5432/sync"
+        )
+
+        for
+          response <- routes.run(jsonRequest(Method.POST, "/targets", payload))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(json.hcursor.get[String]("error"), Right("Postgres URL password does not match the password field"))
+  }
+
   test("target routes reject inline JDBC credentials before storing targets") {
     val result = routeFixture
       .use { routes =>
@@ -142,6 +235,20 @@ class RoutesSuite extends FunSuite:
     val (status, json) = result
     assertEquals(status, Status.Forbidden)
     assertEquals(json.hcursor.get[String]("error"), Right("database connection tests are not allowed for this target"))
+  }
+
+  test("target test allowlist permits approved Postgres hosts") {
+    val response = TargetRoutes
+      .withDbAccessAllowed(
+        serverConfig(Path.of("."), Set("192.168.1.221")),
+        "jdbc:postgresql://192.168.1.221:5432/sync?user=sync",
+        "blocked"
+      ) {
+        Ok()
+      }
+      .unsafeRunSync()
+
+    assertEquals(response.status, Status.Ok)
   }
 
   test("target test wildcard allowlist permits URLs without a parsed host") {

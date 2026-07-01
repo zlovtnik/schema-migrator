@@ -337,7 +337,10 @@ export const parseDriftResponse = (value: unknown): DriftResponse => driftRespon
 
 const postgresJdbcPrefix = "jdbc:postgresql:";
 const oracleJdbcPrefix = "jdbc:oracle:thin:";
-const supportedJdbcUrlMessage = "Use jdbc:postgresql://host:5432/database?user=username or jdbc:oracle:thin:@...";
+const postgresUrlPrefix = "postgres://";
+const postgresqlUrlPrefix = "postgresql://";
+const supportedDatabaseUrlMessage =
+  "Use postgres://user:password@host:5432/database, jdbc:postgresql://host:5432/database?user=username, or jdbc:oracle:thin:@...";
 
 export const targetFormSchema = z.object({
   label: z.string().trim().min(1, "Label is required"),
@@ -346,10 +349,9 @@ export const targetFormSchema = z.object({
   jdbc_url: z
     .string()
     .trim()
-    .min(1, "JDBC URL is required")
+    .min(1, "Database URL is required")
     .superRefine((value, ctx) => {
-      if (!value.startsWith("jdbc:")) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "JDBC URL must start with jdbc:" });
+      if (value.startsWith(postgresUrlPrefix) || value.startsWith(postgresqlUrlPrefix)) {
         return;
       }
       if (value.startsWith("jdbc:postgres://")) {
@@ -357,7 +359,7 @@ export const targetFormSchema = z.object({
         return;
       }
       if (!value.startsWith(postgresJdbcPrefix) && !value.startsWith(oracleJdbcPrefix)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: supportedJdbcUrlMessage });
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: supportedDatabaseUrlMessage });
       }
     }),
   password: z.string().optional()

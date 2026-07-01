@@ -72,6 +72,15 @@ describe("SchemaPage", () => {
     expect(screen.getByLabelText("Filter schema objects")).toBeInTheDocument();
   });
 
+  it("loads schema objects from the saved target when the route has no target query", async () => {
+    window.localStorage.setItem("schemaMigrator.selectedTargetId", "target-1");
+
+    renderApp(<SchemaPage />, { route: "/schema" });
+
+    expect((await screen.findAllByText("devices")).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Filter schema objects")).toBeInTheDocument();
+  });
+
   it("has no axe violations for the loaded catalog surface", async () => {
     const { container } = renderApp(<SchemaPage />, { route: "/schema?target=target-1" });
 

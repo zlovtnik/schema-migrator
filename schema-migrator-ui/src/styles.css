@@ -664,8 +664,9 @@ label {
 
 .settings-target-summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 160px));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
   gap: 12px;
+  max-width: 332px;
 }
 
 .settings-target-summary > div {
@@ -1760,6 +1761,10 @@ kbd {
 
   .settings-nav {
     position: static;
+  }
+
+  .settings-target-summary {
+    max-width: none;
   }
 
   .target-selector,

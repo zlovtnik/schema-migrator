@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
 import { FileSqlIcon } from "@phosphor-icons/react/dist/csr/FileSql";
 import { PageHeader } from "../../components/PageHeader";
@@ -12,13 +11,13 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useSchemaCatalog } from "../../hooks/useSchema";
+import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import type { ObjectType, SchemaCatalogObject } from "../../types";
 
 type ObjectFilter = ObjectType | "all";
 
 export const SchemaPage = () => {
-  const [searchParams] = useSearchParams();
-  const selectedTarget = searchParams.get("target");
+  const selectedTarget = useSelectedTargetId();
   const { data, isLoading, error } = useSchemaCatalog(selectedTarget);
   const [filter, setFilter] = useState<ObjectFilter>("all");
   const [textFilter, setTextFilter] = useState("");

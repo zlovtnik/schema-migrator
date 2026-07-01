@@ -138,6 +138,7 @@ If no command is given, `apply` is used as the default.
 | `--oracle-tns-alias` | — | Oracle TNS alias. |
 | `--oracle-user` | — | Oracle username. |
 | `--oracle-pass-file` | — | File containing Oracle password. |
+| `--db-test-allowed-hosts` | — | Comma-separated database hosts allowed for HTTP target connection tests and catalog reads. |
 | `--json` | `false` | Print machine-readable JSON output. |
 
 ### Environment variables
@@ -151,6 +152,11 @@ If no command is given, `apply` is used as the default.
 | `ORACLE_CONN` | Oracle TNS alias / connection name. |
 | `ORACLE_PASS_FILE` | File path for Oracle password. |
 | `TNS_ADMIN` | Oracle wallet / TNS admin directory. |
+| `BEDROCK_DB_TEST_ALLOWED_HOSTS` | Comma-separated database hosts allowed for HTTP target connection tests and catalog reads. |
+| `BEDROCK_API_BEARER_TOKEN` | Static bearer token accepted by the HTTP API and injected by nginx for the bundled UI. |
+| `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist database targets. |
+| `BEDROCK_MONGO_DATABASE` | MongoDB database for persisted target records. |
+| `BEDROCK_MONGO_TARGETS_COLLECTION` | MongoDB collection for persisted target records. |
 
 ---
 

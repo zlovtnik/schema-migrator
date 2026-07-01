@@ -42,6 +42,32 @@ class Bzip2Suite extends FunSuite:
     assert(String(decoded, StandardCharsets.UTF_8).contains("x".repeat(800)))
   }
 
+  test("middleware leaves small responses without content length uncompressed") {
+    val body = "small response".getBytes(StandardCharsets.UTF_8)
+    val routes = HttpRoutes.of[IO] { case GET -> Root / "small" =>
+      IO.pure(Response[IO](Status.Ok).withBodyStream(Stream.emits(body.toVector).covary[IO]))
+    }
+    val request =
+      Request[IO](Method.GET, Uri.unsafeFromString("/small"))
+        .putHeaders(Header.Raw(CIString("Accept-Encoding"), "bzip2"))
+
+    val response = Bzip2Middleware(routes).orNotFound.run(request).unsafeRunSync()
+    val responseBody = response.body.compile.toVector.map(_.toArray).unsafeRunSync()
+
+    assertEquals(response.headers.headers.find(_.name == CIString("Content-Encoding")).map(_.value), None)
+    assertEquals(String(responseBody, StandardCharsets.UTF_8), "small response")
+  }
+
+  test("decompress stream propagates writer-side errors") {
+    val writerError = IllegalStateException("writer failed")
+
+    val error = intercept[IllegalStateException] {
+      Bzip2.decompressStream(Stream.raiseError[IO](writerError)).compile.drain.unsafeRunSync()
+    }
+
+    assertEquals(error, writerError)
+  }
+
   test("middleware rejects invalid bzip2 request bodies as bad input") {
     val routes = HttpRoutes.of[IO] { case request @ POST -> Root / "payload" =>
       request.body.compile.drain *> Ok()
@@ -91,7 +117,10 @@ class Bzip2Suite extends FunSuite:
     val json = response.as[Json].unsafeRunSync()
 
     assertEquals(response.status, Status.PayloadTooLarge)
-    assertEquals(json.hcursor.get[String]("error"), Right(s"decompressed bzip2 payload exceeds $maxBzip2DecompressedBytes bytes"))
+    assertEquals(
+      json.hcursor.get[String]("error"),
+      Right(s"decompressed bzip2 payload exceeds $maxBzip2DecompressedBytes bytes")
+    )
   }
 
   test("middleware preserves earlier content encodings when decoding trailing bzip2 requests") {

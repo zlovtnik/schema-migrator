@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ArrowDownIcon } from "@phosphor-icons/react/dist/csr/ArrowDown";
 import { ArrowUpIcon } from "@phosphor-icons/react/dist/csr/ArrowUp";
 import { PlayIcon } from "@phosphor-icons/react/dist/csr/Play";
@@ -10,10 +10,10 @@ import { Icon } from "../../components/ui/Icon";
 import { useErrorGate } from "../../hooks/useErrorGate";
 import { usePatches, useTriggerRun, useUploadPatch } from "../../hooks/usePatches";
 import { useRuns } from "../../hooks/useRuns";
+import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 
 export const PatchListPage = () => {
-  const [searchParams] = useSearchParams();
-  const selectedTarget = searchParams.get("target");
+  const selectedTarget = useSelectedTargetId();
   const { data: patches = [], isLoading, error } = usePatches(selectedTarget);
   const { data: runs = [] } = useRuns(selectedTarget);
   const { isGateBlocked, failedRun } = useErrorGate();

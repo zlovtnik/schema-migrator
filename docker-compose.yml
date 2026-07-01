@@ -1,5 +1,19 @@
 services:
 
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    networks:
+      - internal
+
   backend:
     build:
       context: .
@@ -9,12 +23,17 @@ services:
       - BEDROCK_HTTP_HOST=0.0.0.0
       - BEDROCK_HTTP_PORT=8080
       - BEDROCK_CORS_ORIGINS=http://localhost
-      - BEDROCK_JWT_SECRET=${BEDROCK_JWT_SECRET}
-      - BEDROCK_DEV_AUTH_SECRET=${BEDROCK_DEV_AUTH_SECRET}
-      - BEDROCK_DB_URL=${BEDROCK_DB_URL}
-      - BEDROCK_DB_USER=${BEDROCK_DB_USER}
-      - BEDROCK_DB_PASSWORD=${BEDROCK_DB_PASSWORD}
-      - DATABASE_URL=${BEDROCK_DB_URL}
+      - BEDROCK_JWT_SECRET=${BEDROCK_JWT_SECRET:?BEDROCK_JWT_SECRET is required}
+      - BEDROCK_DEV_AUTH_SECRET=${BEDROCK_DEV_AUTH_SECRET:?BEDROCK_DEV_AUTH_SECRET is required}
+      - BEDROCK_API_BEARER_TOKEN=${BEDROCK_API_BEARER_TOKEN:?BEDROCK_API_BEARER_TOKEN is required}
+      - BEDROCK_MONGO_URI=${BEDROCK_MONGO_URI:-mongodb://mongo:27017}
+      - BEDROCK_MONGO_DATABASE=${BEDROCK_MONGO_DATABASE:-schema_migrator}
+      - BEDROCK_MONGO_TARGETS_COLLECTION=${BEDROCK_MONGO_TARGETS_COLLECTION:-targets}
+      - BEDROCK_DB_TEST_ALLOWED_HOSTS=${BEDROCK_DB_TEST_ALLOWED_HOSTS:-localhost,127.0.0.1,192.168.1.221}
+      - BEDROCK_DB_URL=${BEDROCK_DB_URL:?BEDROCK_DB_URL is required}
+      - BEDROCK_DB_USER=${BEDROCK_DB_USER:?BEDROCK_DB_USER is required}
+      - BEDROCK_DB_PASSWORD=${BEDROCK_DB_PASSWORD:?BEDROCK_DB_PASSWORD is required}
+      - DATABASE_URL=${BEDROCK_DB_URL:?BEDROCK_DB_URL is required}
     expose:
       - "8080"
     healthcheck:
@@ -23,6 +42,9 @@ services:
       timeout: 3s
       retries: 30
       start_period: 30s
+    depends_on:
+      mongo:
+        condition: service_healthy
     networks:
       - internal
 
@@ -31,6 +53,8 @@ services:
       context: .
       dockerfile: nginx/Dockerfile
     restart: unless-stopped
+    environment:
+      - BEDROCK_API_BEARER_TOKEN=${BEDROCK_API_BEARER_TOKEN:?BEDROCK_API_BEARER_TOKEN is required}
     ports:
       - "80:80"
     depends_on:
@@ -42,3 +66,6 @@ services:
 networks:
   internal:
     driver: bridge
+
+volumes:
+  mongo-data:

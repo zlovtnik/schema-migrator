@@ -117,12 +117,12 @@ export const ConnectionForm = ({
           {renderError("env")}
         </label>
         <label className="form-field--wide" htmlFor={fieldIds.jdbc_url}>
-          JDBC URL{renderRequired()}
+          Database URL{renderRequired()}
           <input
             id={fieldIds.jdbc_url}
             {...jdbcUrlField}
             autoComplete="off"
-            placeholder="jdbc:postgresql://localhost:5432/app?user=app"
+            placeholder="postgres://user:password@localhost:5432/app"
             spellCheck={false}
             {...fieldState("jdbc_url")}
           />

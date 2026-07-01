@@ -15,5 +15,5 @@ RUN bun run build
 FROM nginx:1.27-alpine
 
 RUN rm /etc/nginx/conf.d/default.conf
-COPY nginx/nginx.conf /etc/nginx/conf.d/app.conf
+COPY nginx/nginx.conf.template /etc/nginx/templates/app.conf.template
 COPY --from=ui-builder /ui/dist /usr/share/nginx/html

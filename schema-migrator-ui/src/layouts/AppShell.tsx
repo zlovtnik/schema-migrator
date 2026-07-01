@@ -88,7 +88,7 @@ export const AppShell = () => {
         return;
       }
 
-      if (event.key.toLowerCase() === "k") {
+      if (event.key.toLowerCase() === "k" && !isTextEntry(event.target)) {
         event.preventDefault();
         setShortcutHelpOpen(true);
       }

@@ -6,6 +6,7 @@ import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { installDesignTokens } from "./design/tokens";
+import { SelectedTargetProvider } from "./hooks/useSelectedTarget";
 import { router } from "./router";
 import "./styles.css";
 
@@ -25,7 +26,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <SelectedTargetProvider>
+          <RouterProvider router={router} />
+        </SelectedTargetProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>

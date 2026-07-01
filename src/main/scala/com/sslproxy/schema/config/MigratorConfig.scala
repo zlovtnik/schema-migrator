@@ -60,6 +60,13 @@ final case class MigratorConfig(
     else if !Files.isDirectory(sqlDir) then Left(s"path '$sqlDir' is not a directory")
     else Right(())
 
+final case class MongoConfig(uri: String, database: String, targetsCollection: String):
+  def validate: Either[String, Unit] =
+    if uri.trim.isEmpty then Left("BEDROCK_MONGO_URI must not be empty")
+    else if database.trim.isEmpty then Left("BEDROCK_MONGO_DATABASE must not be empty")
+    else if targetsCollection.trim.isEmpty then Left("BEDROCK_MONGO_TARGETS_COLLECTION must not be empty")
+    else Right(())
+
 final case class ServerConfig(
   host: String,
   port: Int,
@@ -68,14 +75,20 @@ final case class ServerConfig(
   jwtSecret: String,
   devAuthSecret: String,
   dbTestAllowedHosts: Set[String],
-  patchStageDir: Path
+  patchStageDir: Path,
+  apiBearerToken: Option[String] = None,
+  mongo: Option[MongoConfig] = None
 ):
   def validate: Either[String, Unit] =
     if host.trim.isEmpty then Left("server host must not be empty")
     else if port < 1 || port > 65535 then Left("server port must be between 1 and 65535")
     else if jwtSecret.trim.isEmpty then Left("BEDROCK_JWT_SECRET must not be empty")
     else if devAuthSecret.trim.isEmpty then Left("BEDROCK_DEV_AUTH_SECRET must not be empty")
-    else validateEncryptKeyBase64().flatMap(_ => validatePatchStageDir())
+    else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
+    else validateEncryptKeyBase64().flatMap(_ => validateMongo()).flatMap(_ => validatePatchStageDir())
+
+  def mongoConfig: Either[String, MongoConfig] =
+    mongo.toRight("BEDROCK_MONGO_URI, BEDROCK_MONGO_DATABASE, and BEDROCK_MONGO_TARGETS_COLLECTION must be set")
 
   private def validateEncryptKeyBase64(): Either[String, Unit] =
     encryptKeyBase64 match
@@ -87,6 +100,9 @@ final case class ServerConfig(
           if bytes.length == 32 then Right(())
           else Left("AES-GCM key must decode to 32 bytes")
         catch case error: IllegalArgumentException => Left(error.getMessage)
+
+  private def validateMongo(): Either[String, Unit] =
+    mongoConfig.flatMap(_.validate)
 
   private def validatePatchStageDir(): Either[String, Unit] =
     try
