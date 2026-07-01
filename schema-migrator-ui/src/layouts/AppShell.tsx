@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useMatches } from "react-router-dom";
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/dist/csr/ClockCounterClockwise";
 import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
 import { GearIcon } from "@phosphor-icons/react/dist/csr/Gear";
@@ -10,6 +10,9 @@ import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { UploadSimpleIcon } from "@phosphor-icons/react/dist/csr/UploadSimple";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
+import { AppBreadcrumbs } from "../components/AppBreadcrumbs";
+import { DocumentTitle } from "../components/DocumentTitle";
+import { activeRouteTitle } from "../components/breadcrumbs";
 import { ErrorGateBanner } from "../components/ErrorGateBanner";
 import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
 import { TargetSelector } from "../components/TargetSelector";
@@ -51,6 +54,8 @@ export const AppShell = () => {
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const { failedRun } = useErrorGate();
   const queryClient = useQueryClient();
+  const matches = useMatches();
+  const routeTitle = activeRouteTitle(matches);
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_KEY, String(collapsed));
@@ -112,6 +117,7 @@ export const AppShell = () => {
 
   return (
     <>
+      <DocumentTitle title={routeTitle} />
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
@@ -181,6 +187,7 @@ export const AppShell = () => {
         <div className="app-main">
           <ErrorGateBanner failedRun={failedRun} />
           <main className="main-scroll" id="main-content" tabIndex={-1}>
+            <AppBreadcrumbs />
             <Outlet />
           </main>
         </div>

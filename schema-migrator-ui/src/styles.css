@@ -345,12 +345,59 @@ code {
   scroll-behavior: smooth;
 }
 
+.app-breadcrumbs {
+  width: min(1280px, 100%);
+  margin: 0 auto;
+  padding: 20px 24px 0;
+}
+
+.app-breadcrumbs ol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.app-breadcrumbs li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--font-size-12);
+  font-weight: 750;
+}
+
+.app-breadcrumbs a,
+.app-breadcrumbs span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-breadcrumbs a {
+  color: var(--muted);
+}
+
+.app-breadcrumbs a:hover,
+.app-breadcrumbs a:focus-visible {
+  color: var(--schema-accent);
+  text-decoration: none;
+}
+
+.app-breadcrumbs [aria-current="page"] {
+  color: var(--text);
+}
+
 .page {
   display: grid;
   gap: 18px;
   width: min(1280px, 100%);
   margin: 0 auto;
-  padding: 24px;
+  padding: 14px 24px 24px;
 }
 
 .page > * {
@@ -1733,8 +1780,12 @@ kbd {
     min-height: 0;
   }
 
+  .app-breadcrumbs {
+    padding: 14px 16px 0;
+  }
+
   .page {
-    padding: 16px;
+    padding: 12px 16px 16px;
   }
 
   .page-header,
