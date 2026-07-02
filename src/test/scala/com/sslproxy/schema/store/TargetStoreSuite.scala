@@ -4,6 +4,7 @@ import cats.effect.{IO, Resource}
 import cats.effect.unsafe.implicits.global
 import com.mongodb.client.MongoClients
 import com.sslproxy.schema.config.MongoConfig
+import com.sslproxy.schema.server.crypto.AesGcm
 import munit.FunSuite
 
 import java.util.UUID
@@ -16,6 +17,9 @@ class TargetStoreSuite extends FunSuite:
     val collection = s"targets_${UUID.randomUUID().toString.replace("-", "")}"
     targetStoreContract("mongo", mongoResource(MongoConfig(uri, database, collection)))
   }
+
+  private val passwordKey =
+    AesGcm.keyFromBase64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").toOption.get
 
   private def targetStoreContract(name: String, storeResource: Resource[IO, TargetStore]): Unit =
     test(s"$name target store supports target CRUD and password preservation") {
@@ -77,7 +81,7 @@ class TargetStoreSuite extends FunSuite:
     }
 
   private def mongoResource(config: MongoConfig): Resource[IO, TargetStore] =
-    TargetStore.mongo(config).onFinalize {
+    TargetStore.mongo(config, passwordKey).onFinalize {
       IO.blocking {
         val client = MongoClients.create(config.uri)
         try client.getDatabase(config.database).getCollection(config.targetsCollection).drop()

@@ -5,6 +5,7 @@ target/scala-*/
 target/streams/
 
 # Metals / Bloop / IDE
+.bsp/
 .metals/
 .bloop/
 .vscode/

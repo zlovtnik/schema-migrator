@@ -17,6 +17,7 @@
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-query": "^5.62.8",
     "@tanstack/react-virtual": "^3.11.2",
+    "fflate": "^0.8.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-helmet-async": "^3.0.0",
@@ -37,8 +38,5 @@
     "typescript": "^5.7.3",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
-  },
-  "workspaces": [
-    "."
-  ]
+  }
 }

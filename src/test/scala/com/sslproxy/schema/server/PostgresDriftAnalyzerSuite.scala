@@ -8,7 +8,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
 
   private val now = "2026-07-02T12:00:00Z"
 
-  test("extracts schema-qualified Postgres function names without signatures") {
+  test("extracts schema-qualified Postgres function names with signatures") {
     val routines = routineDefinitions(
       """create or replace function coordinator.ensure_cursor(
         |  p_stream_name text,
@@ -20,7 +20,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         |""".stripMargin
     )
 
-    assertEquals(routines.map(_.key), List(ObjectKey("coordinator", "ensure_cursor", "function")))
+    assertEquals(routines.map(_.key), List(ObjectKey("coordinator", "ensure_cursor(text, text)", "function")))
   }
 
   test("extracts unqualified Postgres functions as public schema objects") {
@@ -32,7 +32,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         |""".stripMargin
     )
 
-    assertEquals(routines.map(_.key), List(ObjectKey("public", "sync_stable_uuid", "function")))
+    assertEquals(routines.map(_.key), List(ObjectKey("public", "sync_stable_uuid(text)", "function")))
   }
 
   test("extracts multiple routines from grouped files and ignores quoted bodies") {
@@ -56,7 +56,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
 
     assertEquals(
       routineDefinitions(sql).map(_.key),
-      List(ObjectKey("coordinator", "safe_int", "function"), ObjectKey("coordinator", "safe_bool", "function"))
+      List(ObjectKey("coordinator", "safe_int(text)", "function"), ObjectKey("coordinator", "safe_bool(text)", "function"))
     )
   }
 
@@ -72,7 +72,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         |""".stripMargin
     )
 
-    assertEquals(routines.map(_.key), List(ObjectKey("coordinator", "refresh_rollup", "procedure")))
+    assertEquals(routines.map(_.key), List(ObjectKey("coordinator", "refresh_rollup()", "procedure")))
   }
 
   test("manifest extraction uses grouped routine names instead of descriptive headers") {
@@ -94,7 +94,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
 
     assertEquals(
       expected.map(_.key),
-      List(ObjectKey("coordinator", "safe_int", "function"), ObjectKey("coordinator", "safe_bool", "function"))
+      List(ObjectKey("coordinator", "safe_int(text)", "function"), ObjectKey("coordinator", "safe_bool(text)", "function"))
     )
   }
 
@@ -228,6 +228,38 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     assertEquals(driftItems(now, expectedObjects, actualObjects, control), Nil)
   }
 
+  test("grouped source-file fallback does not reuse sibling control state") {
+    val sourceFile = "views/001_grouped_views.sql"
+    val staleSql = "create or replace view stale_view as select 1 as id;"
+    val currentSql = "create or replace view current_view as select 1 as id;"
+    val siblingSql = "create or replace view sibling_view as select 2 as id;"
+    val staleKey = ObjectKey("public", "stale_view", "view")
+    val currentKey = ObjectKey("public", "current_view", "view")
+    val siblingKey = ObjectKey("public", "sibling_view", "view")
+    val expectedObjects = List(
+      expected(staleKey, sourceFile = sourceFile, expectedDdl = Some(staleSql)),
+      expected(currentKey, sourceFile = sourceFile, expectedDdl = Some(currentSql))
+    )
+    val control = ControlSnapshot(
+      List(
+        ControlObject(staleKey, "applied", sourceFile, "sha-stale", Some(staleSql), "stale_view"),
+        ControlObject(siblingKey, "failed", sourceFile, "sha-sibling", Some(siblingSql), "sibling_view")
+      ),
+      None,
+      Nil
+    )
+    val actualObjects = List(LiveObject(currentKey, Some(currentSql)))
+
+    val catalog = mergeCatalog(now, expectedObjects, actualObjects, control)
+    val current = catalog.find(_.name == "current_view").get
+    val drift = driftItems(now, expectedObjects, actualObjects, control)
+
+    assertEquals(current.apply_status, None)
+    assertEquals(current.expected_ddl, Some(currentSql))
+    assertEquals(current.status, "in_sync")
+    assert(!drift.exists(_.name == "current_view"))
+  }
+
   test("duplicate view definitions use the later manifest definition") {
     val oldSql = "create or replace view v_wireless_session_timeline as select 1 as id;"
     val newSql = "create or replace view v_wireless_session_timeline as select 2 as id;"
@@ -251,10 +283,10 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     val items = driftItems(
       now,
       List(
-        expected(ObjectKey("public", "demo", "function"), expectedDdl = Some(oldSql)),
-        expected(ObjectKey("public", "demo", "function"), expectedDdl = Some(newSql))
+        expected(ObjectKey("public", "demo()", "function"), expectedDdl = Some(oldSql)),
+        expected(ObjectKey("public", "demo()", "function"), expectedDdl = Some(newSql))
       ),
-      List(LiveObject(ObjectKey("public", "demo", "function"), Some(newSql))),
+      List(LiveObject(ObjectKey("public", "demo()", "function"), Some(newSql))),
       ControlSnapshot(Nil, None, Nil)
     )
 
@@ -292,7 +324,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         |  )::uuid
         |$function$
         |""".stripMargin
-    val key = ObjectKey("public", "sync_stable_uuid", "function")
+    val key = ObjectKey("public", "sync_stable_uuid(text)", "function")
 
     assertEquals(
       driftItems(now, List(expected(key, expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
@@ -371,7 +403,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         |end;
         |$function$
         |""".stripMargin
-    val key = ObjectKey("coordinator", "list_pending_backlog", "function")
+    val key = ObjectKey("coordinator", "list_pending_backlog()", "function")
 
     assertEquals(
       driftItems(now, List(expected(key, expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
@@ -393,7 +425,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     )
 
     assertEquals(
-      driftItems(now, expectedObjects, List(LiveObject(ObjectKey("coordinator", "ensure_cursor", "function"), Some(actualSql))), control),
+      driftItems(now, expectedObjects, List(LiveObject(ObjectKey("coordinator", "ensure_cursor(text)", "function"), Some(actualSql))), control),
       Nil
     )
   }
@@ -411,13 +443,13 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     val drift = driftItems(
       now,
       Nil,
-      List(LiveObject(ObjectKey("coordinator", "ensure_cursor", "function"), Some(actualSql))),
+      List(LiveObject(ObjectKey("coordinator", "ensure_cursor(text)", "function"), Some(actualSql))),
       control
     )
     val catalog = mergeCatalog(
       now,
       Nil,
-      List(LiveObject(ObjectKey("coordinator", "ensure_cursor", "function"), Some(actualSql))),
+      List(LiveObject(ObjectKey("coordinator", "ensure_cursor(text)", "function"), Some(actualSql))),
       control
     )
 
@@ -429,7 +461,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
   test("pending and failed control rows take precedence over definition drift") {
     val expectedSql = "create or replace function coordinator.ensure_cursor(p_stream_name text) returns text language sql as $$ select 'expected' $$;"
     val actualSql = "create or replace function coordinator.ensure_cursor(p_stream_name text) returns text language sql as $$ select 'actual' $$;"
-    val key = ObjectKey("coordinator", "ensure_cursor", "function")
+    val key = ObjectKey("coordinator", "ensure_cursor(text)", "function")
     val control = controlSnapshot(
       List(controlRow("function", "coordinator.ensure_cursor", "functions/020_coordinator_ensure_cursor.sql", "pending", Some(expectedSql)))
     )

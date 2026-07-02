@@ -316,7 +316,7 @@ object SchemaRoutes:
      where $excludedSchemas
     union all
     select n.nspname,
-           p.proname,
+           p.proname || '(' || oidvectortypes(p.proargtypes) || ')',
            case when p.prokind = 'p' then 'procedure' else 'function' end,
            pg_get_functiondef(p.oid)
       from pg_proc p

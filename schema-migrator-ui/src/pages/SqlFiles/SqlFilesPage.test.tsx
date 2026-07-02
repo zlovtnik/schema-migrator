@@ -122,6 +122,18 @@ describe("SqlFilesPage", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(devicesFile.sha256));
     expect(await screen.findByText("Hash copied for 001_devices.sql")).toBeInTheDocument();
   });
+
+  it("activates the SQL directory picker from the keyboard", async () => {
+    const user = userEvent.setup();
+    const inputClick = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => undefined);
+    renderApp(<SqlFilesPage />);
+
+    const chooser = await screen.findByRole("button", { name: /choose sql directory/i });
+    chooser.focus();
+    await user.keyboard("{Enter}");
+
+    expect(inputClick).toHaveBeenCalled();
+  });
 });
 
 describe("ZipWriter", () => {

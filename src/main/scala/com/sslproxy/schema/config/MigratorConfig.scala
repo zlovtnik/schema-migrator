@@ -78,18 +78,24 @@ final case class ServerConfig(
   patchStageDir: Path,
   apiBearerToken: Option[String] = None,
   mongo: Option[MongoConfig] = None,
-  sqlFilesCollection: String = "sql_files"
+  sqlFilesCollection: String = "sql_files",
+  mongoConfigError: Option[String] = None
 ):
   def validate: Either[String, Unit] =
     if host.trim.isEmpty then Left("server host must not be empty")
     else if port < 1 || port > 65535 then Left("server port must be between 1 and 65535")
+    else if encryptKeyBase64.forall(_.trim.isEmpty) then Left("BEDROCK_ENCRYPT_KEY must not be empty")
     else if jwtSecret.trim.isEmpty then Left("BEDROCK_JWT_SECRET must not be empty")
     else if devAuthSecret.trim.isEmpty then Left("BEDROCK_DEV_AUTH_SECRET must not be empty")
     else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
     else validateEncryptKeyBase64().flatMap(_ => validateMongo()).flatMap(_ => validatePatchStageDir())
 
   def mongoConfig: Either[String, MongoConfig] =
-    mongo.toRight("BEDROCK_MONGO_URI, BEDROCK_MONGO_DATABASE, and BEDROCK_MONGO_TARGETS_COLLECTION must be set")
+    mongo.toRight(
+      mongoConfigError.getOrElse(
+        "BEDROCK_MONGO_URI, BEDROCK_MONGO_DATABASE, and BEDROCK_MONGO_TARGETS_COLLECTION must be set"
+      )
+    )
 
   private def validateEncryptKeyBase64(): Either[String, Unit] =
     encryptKeyBase64 match

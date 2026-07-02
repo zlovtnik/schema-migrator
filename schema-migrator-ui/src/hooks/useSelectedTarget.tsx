@@ -22,7 +22,7 @@ export const SelectedTargetProvider = ({ children }: { children: ReactNode }) =>
   const [selectedTargetId, setSelectedTargetIdState] = useState(readStoredTargetId);
 
   const setSelectedTargetId = useCallback((targetId: string) => {
-    const normalized = targetId.trim();
+    const normalized = normalizeTargetId(targetId);
     setSelectedTargetIdState(normalized);
     writeStoredTargetId(normalized);
   }, []);
@@ -30,7 +30,7 @@ export const SelectedTargetProvider = ({ children }: { children: ReactNode }) =>
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
       if (event.key === SELECTED_TARGET_KEY) {
-        setSelectedTargetIdState(event.newValue ?? "");
+        setSelectedTargetIdState(normalizeTargetId(event.newValue));
       }
     };
 
@@ -60,7 +60,7 @@ export const useSelectedTarget = () => {
 export const useSelectedTargetId = (paramName = "target"): string | null => {
   const [searchParams] = useSearchParams();
   const { selectedTargetId, setSelectedTargetId } = useSelectedTarget();
-  const urlTargetId = searchParams.get(paramName)?.trim() ?? "";
+  const urlTargetId = normalizeTargetId(searchParams.get(paramName));
 
   useEffect(() => {
     if (urlTargetId && urlTargetId !== selectedTargetId) {
@@ -68,16 +68,18 @@ export const useSelectedTargetId = (paramName = "target"): string | null => {
     }
   }, [selectedTargetId, setSelectedTargetId, urlTargetId]);
 
-  return urlTargetId || selectedTargetId || null;
+  return urlTargetId || normalizeTargetId(selectedTargetId) || null;
 };
 
 const readStoredTargetId = (): string => {
   try {
-    return window.localStorage.getItem(SELECTED_TARGET_KEY)?.trim() ?? "";
+    return normalizeTargetId(window.localStorage.getItem(SELECTED_TARGET_KEY));
   } catch {
     return "";
   }
 };
+
+const normalizeTargetId = (value: string | null | undefined): string => value?.trim() ?? "";
 
 const writeStoredTargetId = (targetId: string) => {
   try {

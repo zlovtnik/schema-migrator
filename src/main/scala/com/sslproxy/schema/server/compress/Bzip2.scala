@@ -71,8 +71,7 @@ object Bzip2:
               case NonFatal(error) =>
                 Stream.eval(writerFailure.tryGet).flatMap {
                   case Some(sizeError: SizeLimitExceeded) => Stream.raiseError[IO](sizeError)
-                  case Some(writerError) => Stream.raiseError[IO](writerError)
-                  case None => Stream.raiseError[IO](new BadInput("invalid bzip2 request body", error))
+                  case _ => Stream.raiseError[IO](new BadInput("invalid bzip2 request body", error))
                 }
             }
             .concurrently(Stream.eval(writer))

@@ -2,7 +2,7 @@ package com.sslproxy.schema.store
 
 import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
-import com.mongodb.client.model.Indexes
+import com.mongodb.client.model.{Indexes, ReplaceOptions}
 import com.mongodb.client.{MongoClients, MongoCollection}
 import com.sslproxy.schema.config.MongoConfig
 import com.sslproxy.schema.discovery.SqlFile
@@ -40,7 +40,8 @@ trait SqlFileStore:
   def isEmpty: IO[Boolean]
 
   /** Convert stored files to discovery SqlFile objects. */
-  def toSqlFiles: IO[List[SqlFile]]
+  def toSqlFiles: IO[List[SqlFile]] =
+    list.flatMap(_.traverse(SqlFileStore.toSqlFile))
 
 object SqlFileStore:
   def mongo(config: MongoConfig, collectionName: String): Resource[IO, SqlFileStore] =
@@ -55,6 +56,19 @@ object SqlFileStore:
 
   def inMemory: IO[SqlFileStore] =
     Ref.of[IO, Map[String, StoredSqlFile]](Map.empty).map(InMemorySqlFileStore(_))
+
+  private def toSqlFile(stored: StoredSqlFile): IO[SqlFile] =
+    IO.delay {
+      val bytes = Base64.getDecoder.decode(stored.contentBase64)
+      val virtualPath = Path.of(stored.path)
+      SqlFile(
+        folder = stored.folder,
+        path = virtualPath,
+        name = stored.filename,
+        relativePath = stored.path,
+        content = Some(new String(bytes, StandardCharsets.UTF_8))
+      )
+    }
 
 private final class MongoSqlFileStore(collection: MongoCollection[Document]) extends SqlFileStore:
   override def list: IO[List[StoredSqlFile]] =
@@ -81,11 +95,13 @@ private final class MongoSqlFileStore(collection: MongoCollection[Document]) ext
 
   override def replaceAll(files: List[StoredSqlFile]): IO[Unit] =
     IO.blocking {
-      // Drop all existing documents
-      collection.deleteMany(new Document())
-      // Insert all new documents
-      if files.nonEmpty then
-        collection.insertMany(files.map(toDocument).asJava)
+      val upsert = ReplaceOptions().upsert(true)
+      files.foreach { file =>
+        collection.replaceOne(new Document("_id", file.path), toDocument(file), upsert)
+      }
+      if files.isEmpty then collection.deleteMany(new Document())
+      else collection.deleteMany(new Document("_id", new Document("$nin", files.map(_.path).asJava)))
+      ()
     }
 
   override def clear: IO[Unit] =
@@ -94,27 +110,9 @@ private final class MongoSqlFileStore(collection: MongoCollection[Document]) ext
   override def isEmpty: IO[Boolean] =
     IO.blocking(collection.countDocuments() == 0)
 
-  override def toSqlFiles: IO[List[SqlFile]] =
-    list.flatMap { storedList =>
-      storedList.traverse { stored =>
-        IO.delay {
-          val bytes = Base64.getDecoder.decode(stored.contentBase64)
-          val virtualPath = Path.of(stored.path)
-          SqlFile(
-            folder = stored.folder,
-            path = virtualPath,
-            name = stored.filename,
-            relativePath = stored.path,
-            content = Some(new String(bytes, StandardCharsets.UTF_8))
-          )
-        }
-      }
-    }
-
   private[store] def initialize: IO[Unit] =
     IO.blocking {
       collection.createIndex(Indexes.ascending("folder", "filename"))
-      collection.createIndex(Indexes.ascending("path"))
     }.void
 
   private def toDocument(file: StoredSqlFile): Document =
@@ -157,23 +155,6 @@ private final class InMemorySqlFileStore(ref: Ref[IO, Map[String, StoredSqlFile]
 
   override def isEmpty: IO[Boolean] =
     ref.get.map(_.isEmpty)
-
-  override def toSqlFiles: IO[List[SqlFile]] =
-    list.flatMap { storedList =>
-      storedList.traverse { stored =>
-        IO.delay {
-          val bytes = Base64.getDecoder.decode(stored.contentBase64)
-          val virtualPath = Path.of(stored.path)
-          SqlFile(
-            folder = stored.folder,
-            path = virtualPath,
-            name = stored.filename,
-            relativePath = stored.path,
-            content = Some(new String(bytes, StandardCharsets.UTF_8))
-          )
-        }
-      }
-    }
 
 object StoredSqlFile:
   def fromBytes(

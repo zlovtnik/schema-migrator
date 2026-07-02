@@ -81,12 +81,7 @@ object Bzip2Middleware:
     response.headers.headers
       .find(_.name == contentLength)
       .flatMap(header => header.value.toLongOption)
-      .fold {
-        response.body.compile.toVector.map { bytes =>
-          val buffered = response.withBodyStream(Stream.emits(bytes).covary[IO])
-          (bytes.size.toLong > thresholdBytes.toLong) -> buffered
-        }
-      } { length =>
+      .fold(IO.pure(true -> response)) { length =>
         IO.pure((length > thresholdBytes.toLong) -> response)
       }
 

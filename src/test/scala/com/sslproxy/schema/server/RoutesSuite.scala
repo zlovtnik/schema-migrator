@@ -3,7 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
-import com.sslproxy.schema.store.{Models, PatchStore, RunStore, SqlFileStore, TargetPayload, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{Models, PatchStore, RunStore, SqlFileStore, StoredSqlFile, TargetPayload, TargetStore, ValidationStore}
 import fs2.Stream
 import io.circe.Json
 import io.circe.parser.parse
@@ -101,6 +101,23 @@ class RoutesSuite extends FunSuite:
         "Postgres JDBC URLs must start with jdbc:postgresql://, for example jdbc:postgresql://host:5432/database?user=username"
       )
     )
+  }
+
+  test("target routes reject hostless Postgres JDBC URLs") {
+    val result = routeFixture
+      .use { routes =>
+        val payload = targetPayload("Hostless", jdbcUrl = "jdbc:postgresql:///sync")
+
+        for
+          response <- routes.run(jsonRequest(Method.POST, "/targets", payload))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(json.hcursor.get[String]("error"), Right("invalid Postgres URL: host is required"))
   }
 
   test("target routes accept postgres URLs and store sanitized JDBC URLs") {
@@ -441,6 +458,65 @@ class RoutesSuite extends FunSuite:
     val (status, json) = result
     assertEquals(status, Status.PayloadTooLarge)
     assertEquals(json.hcursor.get[String]("error"), Right("zip archive exceeds 12 bytes uncompressed SQL limit"))
+  }
+
+  test("sql file upload rejects empty multipart without replacing existing files") {
+    val result =
+      (for
+        store <- SqlFileStore.inMemory
+        existing = StoredSqlFile.fromBytes(
+          path = "tables/001_existing.sql",
+          folder = "tables",
+          filename = "001_existing.sql",
+          bytes = "select 1;".getBytes(StandardCharsets.UTF_8),
+          uploadedAt = "2026-07-02T12:00:00Z"
+        )
+        _ <- store.replaceAll(List(existing))
+        routes = SqlFileRoutes.routes(store).orNotFound
+        multipart = Multipart[IO](Vector(Part.formData[IO]("note", "empty")))
+        response <- routes.run(
+          Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload"))
+            .withEntity(multipart)
+            .putHeaders(multipart.headers)
+        )
+        json <- bodyJson(response)
+        stored <- store.list
+      yield (response.status, json, stored))
+        .unsafeRunSync()
+
+    val (status, json, stored) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(json.hcursor.get[String]("error"), Right("No .sql files found in upload"))
+    assertEquals(stored.map(_.path), List("tables/001_existing.sql"))
+  }
+
+  test("sql file upload rejects non-sql multipart filenames") {
+    val result =
+      sqlFileRoutesWithLimits(SqlFileRoutes.UploadLimits.default)
+        .use { routes =>
+          val multipart = Multipart[IO](
+            Vector(
+              Part.fileData[IO](
+                "tables/files",
+                "001_readme.txt",
+                Stream.emits("not sql".getBytes(StandardCharsets.UTF_8).toVector).covary[IO]
+              )
+            )
+          )
+          for
+            response <- routes.run(
+              Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload"))
+                .withEntity(multipart)
+                .putHeaders(multipart.headers)
+            )
+            json <- bodyJson(response)
+          yield response.status -> json
+        }
+        .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(json.hcursor.get[String]("error"), Right("Only .sql file uploads are accepted"))
   }
 
   test("drift route returns warnings instead of failing when Postgres live catalog is unavailable") {

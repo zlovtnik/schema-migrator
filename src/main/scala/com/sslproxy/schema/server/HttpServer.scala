@@ -35,7 +35,12 @@ object HttpServer:
       mongoConfig <- Resource.eval(
         IO.fromEither(config.server.mongoConfig.leftMap(message => new IllegalArgumentException(message)))
       )
-      targetStore <- TargetStore.mongo(mongoConfig)
+      targetPasswordKey <- Resource.eval(
+        IO.fromOption(encryptKey)(
+          IllegalArgumentException("BEDROCK_ENCRYPT_KEY is required to encrypt stored target passwords")
+        )
+      )
+      targetStore <- TargetStore.mongo(mongoConfig, targetPasswordKey)
       sqlFileStore <- SqlFileStore.mongo(mongoConfig, config.server.sqlFilesCollection)
       patchStore <- Resource.eval(PatchStore.inMemory(config.server.patchStageDir))
       runStore <- Resource.eval(RunStore.inMemory)

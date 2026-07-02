@@ -21,21 +21,24 @@ export const DriftPage = () => {
   const [driftFilter, setDriftFilter] = useState<DriftFilter>("all");
   const [openKey, setOpenKey] = useState<string | null>(null);
 
-  const items = useMemo(() => {
+  const textFilteredItems = useMemo(() => {
     const query = textFilter.trim().toLowerCase();
     return (data?.items ?? []).filter((item) => {
-      const driftMatch = driftFilter === "all" || item.drift_type === driftFilter;
-      const textMatch =
+      return (
         !query ||
         item.name.toLowerCase().includes(query) ||
         item.schema.toLowerCase().includes(query) ||
         item.object_type.toLowerCase().includes(query) ||
-        item.drift_type.toLowerCase().includes(query);
-      return driftMatch && textMatch;
+        item.drift_type.toLowerCase().includes(query)
+      );
     });
-  }, [data?.items, driftFilter, textFilter]);
+  }, [data?.items, textFilter]);
 
-  const driftCounts = useMemo(() => countByDriftType(data?.items ?? []), [data?.items]);
+  const items = useMemo(() => {
+    return textFilteredItems.filter((item) => driftFilter === "all" || item.drift_type === driftFilter);
+  }, [driftFilter, textFilteredItems]);
+
+  const driftCounts = useMemo(() => countByDriftType(textFilteredItems), [textFilteredItems]);
 
   const openDriftDetail = useCallback((item: DriftItem) => {
     const key = driftItemKey(item);
@@ -172,7 +175,7 @@ export const DriftPage = () => {
                   aria-pressed={driftFilter === "all"}
                 >
                   <span>All drift</span>
-                  <strong>{data.items.length}</strong>
+                  <strong>{textFilteredItems.length}</strong>
                 </button>
                 {Array.from(driftCounts.entries()).map(([type, count]) => (
                   <button

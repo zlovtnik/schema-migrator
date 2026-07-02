@@ -28,6 +28,7 @@ object SqlFileRoutes:
       )
 
   private final class UploadTooLarge(message: String) extends IllegalArgumentException(message)
+  private final class UploadRejected(message: String) extends IllegalArgumentException(message)
 
   def routes(sqlFileStore: SqlFileStore): HttpRoutes[IO] =
     routes(sqlFileStore, UploadLimits.default)
@@ -65,28 +66,33 @@ object SqlFileRoutes:
 
       // POST /sql-files/upload — upload individual SQL files
       case request @ POST -> Root / "sql-files" / "upload" =>
-        val result = for
-          multipart <- request.as[Multipart[IO]]
-          files <- fileUploads(multipart, limits)
-        yield
-          val now = java.time.Clock.systemUTC.instant().toString
-          val stored = files.map { upload =>
-            StoredSqlFile.fromBytes(
-              path = upload.path,
-              folder = upload.folder,
-              filename = upload.filename,
-              bytes = upload.bytes,
-              uploadedAt = now
-            )
+        val result =
+          request.as[Multipart[IO]].flatMap { multipart =>
+            fileUploads(multipart, limits).flatMap {
+              case Nil =>
+                RouteJson.badRequest("No .sql files found in upload")
+              case files =>
+                val now = java.time.Clock.systemUTC.instant().toString
+                val stored = files.map { upload =>
+                  StoredSqlFile.fromBytes(
+                    path = upload.path,
+                    folder = upload.folder,
+                    filename = upload.filename,
+                    bytes = upload.bytes,
+                    uploadedAt = now
+                  )
+                }
+                sqlFileStore.replaceAll(stored) *>
+                  IO.println(s"Uploaded ${stored.size} SQL files to store") *>
+                  RouteJson.created(Json.obj(
+                    "uploaded" -> Json.fromInt(stored.size),
+                    "folders" -> Json.fromValues(stored.map(_.folder).distinct.sorted.map(Json.fromString))
+                  ))
+            }
           }
-          sqlFileStore.replaceAll(stored) *>
-            IO.println(s"Uploaded ${stored.size} SQL files to store") *>
-            RouteJson.created(Json.obj(
-              "uploaded" -> Json.fromInt(stored.size),
-              "folders" -> Json.fromValues(stored.map(_.folder).distinct.sorted.map(Json.fromString))
-            ))
-        result.flatten.handleErrorWith { case error: UploadTooLarge =>
-          RouteJson.payloadTooLarge(error.getMessage)
+        result.handleErrorWith {
+          case error: UploadTooLarge => RouteJson.payloadTooLarge(error.getMessage)
+          case error: UploadRejected => RouteJson.badRequest(error.getMessage)
         }
 
       // POST /sql-files/upload-zip — upload a zip containing SQL directory tree
@@ -146,7 +152,7 @@ object SqlFileRoutes:
 
   private def fileUploads(multipart: Multipart[IO], limits: UploadLimits): IO[List[FileUpload]] =
     multipart.parts
-      .filter(_.name.contains("files"))
+      .filter(_.name.exists(_.split("/").contains("files")))
       .zipWithIndex
       .toList
       .traverse { case (part, index) =>
@@ -156,10 +162,18 @@ object SqlFileRoutes:
           _ <- IO.raiseWhen(bytes.length.toLong > limits.maxUploadBytes)(
             UploadTooLarge(s"uploaded file exceeds ${limitLabel(limits.maxUploadBytes)} limit")
           )
-          filename = safeFilename(part.filename, index)
+          rawFilename <- IO.fromEither(sqlFilename(part.filename))
+          filename = safeFilename(Some(rawFilename), index)
           normalized = SqlPathNormalizer.normalizeUploadPath(s"$folder/$filename")
         yield FileUpload(normalized.path, normalized.folder, normalized.filename, bytes.toArray)
       }
+
+  private def sqlFilename(filename: Option[String]): Either[Throwable, String] =
+    filename
+      .map(_.trim)
+      .filter(_.nonEmpty)
+      .filter(_.toLowerCase.endsWith(".sql"))
+      .toRight(UploadRejected("Only .sql file uploads are accepted"))
 
   private def zipPart(multipart: Multipart[IO], limits: UploadLimits): IO[Option[Array[Byte]]] =
     multipart.parts

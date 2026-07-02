@@ -91,6 +91,50 @@ describe("DriftPage", () => {
     expect(screen.getByText("Control state")).toBeInTheDocument();
   });
 
+  it("counts drift type chips after applying the text filter", async () => {
+    const user = userEvent.setup();
+    driftPayload = {
+      ...(driftPayload as Record<string, unknown>),
+      items: [
+        {
+          schema: "public",
+          name: "devices",
+          object_type: "table",
+          drift_type: "missing_actual",
+          expected: "tables/001_devices.sql",
+          actual: "not present in live Postgres catalog",
+          source_file: "tables/001_devices.sql",
+          checksum: "abc",
+          apply_status: "applied",
+          detected_at: "2026-06-28T12:00:00Z"
+        },
+        {
+          schema: "public",
+          name: "accounts",
+          object_type: "view",
+          drift_type: "definition_changed",
+          expected: "create view accounts as select 1;",
+          actual: "create view accounts as select 2;",
+          source_file: "views/001_accounts.sql",
+          checksum: "def",
+          apply_status: "applied",
+          detected_at: "2026-06-28T12:00:00Z"
+        }
+      ]
+    };
+
+    renderApp(<DriftPage />, { route: "/drift?target=target-1" });
+
+    await screen.findByText("devices");
+    expect(screen.getByRole("button", { name: /all drift\s+2/i })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Filter drift results"), "devices");
+
+    expect(screen.getByRole("button", { name: /all drift\s+1/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /missing actual\s+1/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /definition changed/i })).not.toBeInTheDocument();
+  });
+
   it("opens a lazy-rendered drift detail from the table", async () => {
     const user = userEvent.setup();
     renderApp(<DriftPage />, { route: "/drift?target=target-1" });

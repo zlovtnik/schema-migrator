@@ -183,8 +183,16 @@ object PostgresProvider:
     else Left("Postgres URL must start with postgres://, postgresql://, or jdbc:postgresql://")
 
   private def parsePostgresJdbcUrl(raw: String): Either[String, JdbcConnectionConfig] =
-    if !raw.contains("@") then Right(JdbcConnectionConfig("org.postgresql.Driver", raw))
+    if !raw.contains("@") then
+      postgresJdbcHost(raw).as(JdbcConnectionConfig("org.postgresql.Driver", raw))
     else parsePostgresUri(raw.stripPrefix("jdbc:"))
+
+  private def postgresJdbcHost(raw: String): Either[String, String] =
+    Either.catchNonFatal(URI(raw.stripPrefix("jdbc:")))
+      .leftMap(error => s"invalid Postgres URL: ${error.getMessage}")
+      .flatMap { uri =>
+        Option(uri.getHost).filter(_.nonEmpty).toRight("invalid Postgres URL: host is required")
+      }
 
   private def parsePostgresUri(raw: String): Either[String, JdbcConnectionConfig] =
     Either.catchNonFatal(URI(raw)).leftMap(error => s"invalid Postgres URL: ${error.getMessage}").flatMap { uri =>

@@ -39,12 +39,21 @@ class ServerConfigSuite extends FunSuite:
     finally Files.deleteIfExists(stageDir)
   }
 
+  test("server validation requires encryption key for persisted targets") {
+    val stageDir = Files.createTempDirectory("schema-migrator-config")
+    try
+      val missingEncryptKey = validConfig(stageDir).copy(encryptKeyBase64 = None)
+
+      assertEquals(missingEncryptKey.validate, Left("BEDROCK_ENCRYPT_KEY must not be empty"))
+    finally Files.deleteIfExists(stageDir)
+  }
+
   private def validConfig(stageDir: java.nio.file.Path): ServerConfig =
     ServerConfig(
       host = "127.0.0.1",
       port = 8080,
       corsOrigins = Set("http://localhost:5173"),
-      encryptKeyBase64 = None,
+      encryptKeyBase64 = Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
       jwtSecret = "jwt",
       devAuthSecret = "dev",
       dbTestAllowedHosts = Set.empty,

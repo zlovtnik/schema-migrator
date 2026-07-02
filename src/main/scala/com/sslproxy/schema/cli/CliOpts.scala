@@ -157,6 +157,7 @@ object CliOpts:
         mongoTargetsCollection,
         sqlFilesCollection
       ) =>
+        val mongoResult = mongoConfigFromOptions(mongoUri, mongoDatabase, mongoTargetsCollection)
         ServerConfig(
           host = host,
           port = port,
@@ -167,8 +168,9 @@ object CliOpts:
           apiBearerToken = apiBearerToken,
           dbTestAllowedHosts = dbTestAllowedHosts,
           patchStageDir = patchStageDir,
-          mongo = (mongoUri, mongoDatabase, mongoTargetsCollection).mapN(MongoConfig.apply),
-          sqlFilesCollection = sqlFilesCollection
+          mongo = mongoResult.toOption.flatten,
+          sqlFilesCollection = sqlFilesCollection,
+          mongoConfigError = mongoResult.swap.toOption
         )
     }
 
@@ -261,6 +263,26 @@ object CliOpts:
 
   private def nonBlank(value: String): Option[String] =
     Option(value.trim).filter(_.nonEmpty)
+
+  private def mongoConfigFromOptions(
+    mongoUri: Option[String],
+    mongoDatabase: Option[String],
+    mongoTargetsCollection: Option[String]
+  ): Either[String, Option[MongoConfig]] =
+    val provided = List(
+      mongoUri.map(_ => "BEDROCK_MONGO_URI"),
+      mongoDatabase.map(_ => "BEDROCK_MONGO_DATABASE"),
+      mongoTargetsCollection.map(_ => "BEDROCK_MONGO_TARGETS_COLLECTION")
+    ).flatten
+    if provided.isEmpty then Right(None)
+    else
+      val missing = List(
+        Option.when(mongoUri.isEmpty)("BEDROCK_MONGO_URI"),
+        Option.when(mongoDatabase.isEmpty)("BEDROCK_MONGO_DATABASE"),
+        Option.when(mongoTargetsCollection.isEmpty)("BEDROCK_MONGO_TARGETS_COLLECTION")
+      ).flatten
+      if missing.nonEmpty then Left(s"Mongo configuration is incomplete; missing ${missing.mkString(", ")}")
+      else Right(Some(MongoConfig(mongoUri.get, mongoDatabase.get, mongoTargetsCollection.get)))
 
   private def envInt(name: String, defaultValue: Int): Int =
     env

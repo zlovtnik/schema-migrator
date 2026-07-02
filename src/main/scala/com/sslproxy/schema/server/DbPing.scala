@@ -69,7 +69,7 @@ object DbPing:
     ) ++ result.error.map(err => "error" -> Json.fromString(err)).toList
     logger.info(Json.obj(fields*).noSpaces)
 
-  private def connectionError(error: Throwable): String =
+  private[server] def connectionError(error: Throwable): String =
     val message = error match
       case sql: SQLException =>
         val state = Option(sql.getSQLState).fold("")(value => s" [$value]")

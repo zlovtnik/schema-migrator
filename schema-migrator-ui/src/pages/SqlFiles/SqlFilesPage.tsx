@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type SyntheticEvent } from "react";
+import { zipSync } from "fflate";
 import { BracketsCurlyIcon } from "@phosphor-icons/react/dist/csr/BracketsCurly";
 import { CopyIcon } from "@phosphor-icons/react/dist/csr/Copy";
 import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
@@ -241,10 +242,10 @@ const SqlFilesPage = () => {
             style={{ display: "none" }}
             id="sql-dir-picker"
           />
-          <label htmlFor="sql-dir-picker" className="button button--primary" role="button" tabIndex={0}>
+          <button className="button button--primary" type="button" onClick={() => dirInputRef.current?.click()}>
             <Icon source={FolderOpenIcon} size={16} />
             {uploading ? "Uploading..." : "Choose SQL directory"}
-          </label>
+          </button>
           {uploading ? <span className="inline-result">Zipping and uploading...</span> : null}
         </div>
 
@@ -408,17 +409,13 @@ async function createZip(files: { path: string; file: File }[]): Promise<Blob> {
 }
 
 /**
- * Minimal ZIP file writer that creates a valid ZIP archive in the browser.
- * Stores entries uncompressed using ZIP method 0.
+ * Minimal wrapper around fflate for browser ZIP archive creation.
  */
 export class ZipWriter {
-  private static readonly StoredMethod = 0;
-  private static readonly StoredVersionNeeded = 10;
-
-  private files: { path: string; bytes: Uint8Array }[] = [];
+  private files: Record<string, Uint8Array> = {};
 
   addFile(path: string, bytes: Uint8Array): void {
-    this.files.push({ path, bytes });
+    this.files[path] = bytes;
   }
 
   toBlob(): Blob {
@@ -426,105 +423,9 @@ export class ZipWriter {
   }
 
   toBytes(): Uint8Array<ArrayBuffer> {
-    const localHeader = (path: string, storedSize: number, uncompressedSize: number, crc32: number): Uint8Array => {
-      const nameBytes = new TextEncoder().encode(path);
-      const header = new Uint8Array(30 + nameBytes.length);
-      const dv = new DataView(header.buffer);
-      dv.setUint32(0, 0x04034b50, true); // local file header signature
-      dv.setUint16(4, ZipWriter.StoredVersionNeeded, true); // version needed (1.0 for stored)
-      dv.setUint16(6, 0, true); // general purpose bit flag
-      dv.setUint16(8, ZipWriter.StoredMethod, true); // compression method: stored (no compression)
-      dv.setUint16(10, 0, true); // last mod time
-      dv.setUint16(12, 0, true); // last mod date
-      dv.setUint32(14, crc32, true); // crc-32
-      dv.setUint32(18, storedSize, true); // compressed size
-      dv.setUint32(22, uncompressedSize, true); // uncompressed size
-      dv.setUint16(26, nameBytes.length, true); // file name length
-      dv.setUint16(28, 0, true); // extra field length
-      header.set(nameBytes, 30);
-      return header;
-    };
-
-    const centralDir = (path: string, compressedSize: number, uncompressedSize: number, crc32: number, offset: number): Uint8Array => {
-      const nameBytes = new TextEncoder().encode(path);
-      const entry = new Uint8Array(46 + nameBytes.length);
-      const dv = new DataView(entry.buffer);
-      dv.setUint32(0, 0x02014b50, true); // central directory file header signature
-      dv.setUint16(4, 20, true); // version made by
-      dv.setUint16(6, ZipWriter.StoredVersionNeeded, true); // version needed (1.0 for stored)
-      dv.setUint16(8, 0, true); // general purpose bit flag
-      dv.setUint16(10, ZipWriter.StoredMethod, true); // compression method: stored (no compression)
-      dv.setUint16(12, 0, true); // last mod time
-      dv.setUint16(14, 0, true); // last mod date
-      dv.setUint32(16, crc32, true); // crc-32
-      dv.setUint32(20, compressedSize, true); // compressed size
-      dv.setUint32(24, uncompressedSize, true); // uncompressed size
-      dv.setUint16(28, nameBytes.length, true); // file name length
-      dv.setUint16(30, 0, true); // extra field length
-      dv.setUint16(32, 0, true); // file comment length
-      dv.setUint16(34, 0, true); // disk number start
-      dv.setUint16(36, 0, true); // internal file attributes
-      dv.setUint32(38, 0, true); // external file attributes
-      dv.setUint32(42, offset, true); // relative offset of local header
-      entry.set(nameBytes, 46);
-      return entry;
-    };
-
-    const crc32 = (input: Uint8Array | null): number => {
-      if (!input) return 0;
-      const buf: Uint8Array = input;
-      let crc = 0xffffffff;
-      for (let i = 0; i < buf.length; i++) {
-        crc ^= buf[i]!;
-        for (let j = 0; j < 8; j++) {
-          crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-        }
-      }
-      return (crc ^ 0xffffffff) >>> 0;
-    };
-
-    const parts: Uint8Array[] = [];
-    const centralEntries: Uint8Array[] = [];
-    let offset = 0;
-
-    for (const file of this.files) {
-      const stored = file.bytes;
-      const crc = crc32(file.bytes);
-      const header = localHeader(file.path, stored.length, file.bytes.length, crc);
-      parts.push(header);
-      parts.push(stored);
-      centralEntries.push(centralDir(file.path, stored.length, file.bytes.length, crc, offset));
-      offset += header.length + stored.length;
-    }
-
-    // Central directory
-    const centralStart = offset;
-    for (const entry of centralEntries) {
-      parts.push(entry);
-    }
-    const centralSize = centralEntries.reduce((sum, p) => sum + p.length, 0);
-
-    // End of central directory record
-    const eocd = new Uint8Array(22);
-    const eocdDv = new DataView(eocd.buffer);
-    eocdDv.setUint32(0, 0x06054b50, true); // end of central directory signature
-    eocdDv.setUint16(4, 0, true); // disk number
-    eocdDv.setUint16(6, 0, true); // disk number with central directory
-    eocdDv.setUint16(8, centralEntries.length, true); // number of entries on this disk
-    eocdDv.setUint16(10, centralEntries.length, true); // total number of entries
-    eocdDv.setUint32(12, centralSize, true); // size of central directory
-    eocdDv.setUint32(16, centralStart, true); // offset of central directory
-    eocdDv.setUint16(20, 0, true); // comment length
-    parts.push(eocd);
-
-    const totalLength = parts.reduce((sum, p) => sum + p.length, 0);
-    const result = new Uint8Array(totalLength);
-    let pos = 0;
-    for (const part of parts) {
-      result.set(part, pos);
-      pos += part.length;
-    }
-
-    return result;
+    const zipped = zipSync(this.files, { level: 0 });
+    const bytes = new Uint8Array(zipped.byteLength);
+    bytes.set(zipped);
+    return bytes;
   }
 }

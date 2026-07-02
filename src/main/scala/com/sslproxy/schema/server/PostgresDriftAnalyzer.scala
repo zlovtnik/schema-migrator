@@ -229,7 +229,7 @@ private[server] object PostgresDriftAnalyzer:
           else index + 1
         tokenValue(tokens, kindIndex) match
           case "function" | "procedure" =>
-            parseRoutineKey(tokens, kindIndex + 1, tokenValue(tokens, kindIndex)).map { key =>
+            parseRoutineKey(sql, tokens, kindIndex + 1, tokenValue(tokens, kindIndex)).map { key =>
               val end = statementEnd(sql, tokens(index).start)
               RoutineDefinition(key, sql.substring(tokens(index).start, end).trim)
             }
@@ -256,7 +256,9 @@ private[server] object PostgresDriftAnalyzer:
   private object PreparedState:
     def apply(expected: List[ExpectedObject], control: List[ControlObject]): PreparedState =
       val controlByKey = control.map(item => item.key -> item).toMap
-      val controlBySource = control.map(item => item.sourceFile -> item).toMap
+      val controlBySource = control
+        .groupBy(_.sourceFile)
+        .collect { case (sourceFile, item :: Nil) => sourceFile -> item }
       val expectedControlByKey = expected.flatMap { item =>
         controlByKey.get(item.key).orElse(controlBySource.get(item.sourceFile)).map(item.key -> _)
       }.toMap
@@ -356,7 +358,7 @@ private[server] object PostgresDriftAnalyzer:
       val afterCreate = skipCreateModifiers(tokens, index + 1)
       tokenValue(tokens, afterCreate) match
         case "function" | "procedure" =>
-          parseRoutineKey(tokens, afterCreate + 1, tokenValue(tokens, afterCreate)).map { key =>
+          parseRoutineKey(sql, tokens, afterCreate + 1, tokenValue(tokens, afterCreate)).map { key =>
             DdlDefinition(key, sql.substring(createStart, statementEnd(sql, createStart)).trim)
           }
         case "schema" =>
@@ -542,18 +544,127 @@ private[server] object PostgresDriftAnalyzer:
     appendPlain(value.length)
     output.toString
 
-  private def parseRoutineKey(tokens: List[Token], start: Int, objectType: String): Option[ObjectKey] =
+  private def parseRoutineKey(sql: String, tokens: List[Token], start: Int, objectType: String): Option[ObjectKey] =
     tokens.lift(start).filter(token => isIdentifierToken(token.value)).flatMap { first =>
       if tokens.lift(start + 1).exists(_.value == ".") then
         tokens.lift(start + 2)
           .filter(token => isIdentifierToken(token.value))
           .filter(_ => tokens.lift(start + 3).exists(_.value == "("))
-          .map(second => ObjectKey(normalizeIdentifier(first.value), normalizeIdentifier(second.value), objectType))
+          .flatMap { second =>
+            routineSignature(sql, tokens(start + 3).start).map { signature =>
+              ObjectKey(normalizeIdentifier(first.value), s"${normalizeIdentifier(second.value)}($signature)", objectType)
+            }
+          }
       else
-        Option.when(tokens.lift(start + 1).exists(_.value == "(")) {
-          ObjectKey("public", normalizeIdentifier(first.value), objectType)
+        Option.when(tokens.lift(start + 1).exists(_.value == "("))(tokens(start + 1).start).flatMap { openParen =>
+          routineSignature(sql, openParen).map { signature =>
+            ObjectKey("public", s"${normalizeIdentifier(first.value)}($signature)", objectType)
+          }
         }
     }
+
+  private def routineSignature(sql: String, openParen: Int): Option[String] =
+    matchingParen(sql, openParen).map { closeParen =>
+      splitTopLevel(sql.substring(openParen + 1, closeParen), ',')
+        .flatMap(identityParameterType)
+        .mkString(", ")
+    }
+
+  private def matchingParen(value: String, openParen: Int): Option[Int] =
+    var index = openParen
+    var depth = 0
+    while index < value.length do
+      val current = value.charAt(index)
+      val next = if index + 1 < value.length then value.charAt(index + 1) else 0.toChar
+      if current == '-' && next == '-' then index = skipLineComment(value, index + 2)
+      else if current == '/' && next == '*' then index = skipBlockComment(value, index + 2)
+      else if current == '\'' then index = skipSingleQuoted(value, index)
+      else if current == '"' then index = skipDoubleQuoted(value, index)
+      else if current == '$' then
+        parseDollarTag(value, index) match
+          case Some(tag) =>
+            val bodyStart = index + tag.length
+            val bodyEnd = value.indexOf(tag, bodyStart)
+            index = if bodyEnd >= 0 then bodyEnd + tag.length else value.length
+          case None => index += 1
+      else if current == '(' then
+        depth += 1
+        index += 1
+      else if current == ')' then
+        depth -= 1
+        if depth == 0 then return Some(index)
+        index += 1
+      else index += 1
+    None
+
+  private def splitTopLevel(value: String, delimiter: Char): List[String] =
+    val parts = ListBuffer.empty[String]
+    var index = 0
+    var start = 0
+    var depth = 0
+    while index < value.length do
+      val current = value.charAt(index)
+      val next = if index + 1 < value.length then value.charAt(index + 1) else 0.toChar
+      if current == '-' && next == '-' then index = skipLineComment(value, index + 2)
+      else if current == '/' && next == '*' then index = skipBlockComment(value, index + 2)
+      else if current == '\'' then index = skipSingleQuoted(value, index)
+      else if current == '"' then index = skipDoubleQuoted(value, index)
+      else if current == '$' then
+        parseDollarTag(value, index) match
+          case Some(tag) =>
+            val bodyStart = index + tag.length
+            val bodyEnd = value.indexOf(tag, bodyStart)
+            index = if bodyEnd >= 0 then bodyEnd + tag.length else value.length
+          case None => index += 1
+      else if current == '(' then
+        depth += 1
+        index += 1
+      else if current == ')' then
+        depth = (depth - 1).max(0)
+        index += 1
+      else if current == delimiter && depth == 0 then
+        parts += value.substring(start, index)
+        start = index + 1
+        index += 1
+      else index += 1
+    parts += value.substring(start)
+    parts.toList
+
+  private def identityParameterType(parameter: String): Option[String] =
+    val withoutDefault = stripParameterDefault(parameter).trim
+    if withoutDefault.isEmpty then None
+    else
+      val (mode, afterMode) = takeLeadingWord(withoutDefault) match
+        case Some((word, rest)) if parameterModes.contains(word.toLowerCase(Locale.ROOT)) =>
+          word.toLowerCase(Locale.ROOT) -> rest.trim
+        case _ => "" -> withoutDefault
+      if mode == "out" || afterMode.isEmpty then None
+      else Some(parameterTypeOnly(afterMode).replaceAll("\\s+", " ").trim)
+
+  private def stripParameterDefault(parameter: String): String =
+    val withoutDefault = parameter.split("(?i)\\s+default\\s+", 2).headOption.getOrElse(parameter)
+    splitTopLevel(withoutDefault, '=').headOption.getOrElse(withoutDefault)
+
+  private def parameterTypeOnly(parameter: String): String =
+    takeLeadingWord(parameter) match
+      case Some((first, rest)) if rest.trim.nonEmpty && isParameterName(first) =>
+        rest.trim
+      case _ => parameter.trim
+
+  private def isParameterName(firstWord: String): Boolean =
+    val normalized = firstWord.stripPrefix("\"").stripSuffix("\"").toLowerCase(Locale.ROOT)
+    firstWord.startsWith("\"") || !typeLeadingWords.contains(normalized)
+
+  private def takeLeadingWord(value: String): Option[(String, String)] =
+    val trimmed = value.trim
+    if trimmed.isEmpty then None
+    else if trimmed.startsWith("\"") then
+      val end = skipDoubleQuoted(trimmed, 0)
+      Some(trimmed.substring(0, end) -> trimmed.substring(end))
+    else
+      val end = trimmed.indexWhere(_.isWhitespace)
+      if end < 0 then Some(trimmed -> "")
+      else Some(trimmed.substring(0, end) -> trimmed.substring(end))
 
   private def tokenize(sql: String): List[Token] =
     val tokens = ListBuffer.empty[Token]
@@ -675,3 +786,78 @@ private[server] object PostgresDriftAnalyzer:
 
   private def isRoutineType(objectType: String): Boolean =
     objectType == "function" || objectType == "procedure"
+
+  private val parameterModes: Set[String] =
+    Set("in", "out", "inout", "variadic")
+
+  private val typeLeadingWords: Set[String] =
+    Set(
+      "anyarray",
+      "anycompatible",
+      "anycompatiblearray",
+      "anycompatiblemultirange",
+      "anycompatiblenonarray",
+      "anycompatiblerange",
+      "anyelement",
+      "anyenum",
+      "anymultirange",
+      "anynonarray",
+      "anyrange",
+      "bigint",
+      "bigserial",
+      "bit",
+      "bool",
+      "boolean",
+      "box",
+      "bytea",
+      "char",
+      "character",
+      "cidr",
+      "circle",
+      "date",
+      "decimal",
+      "double",
+      "inet",
+      "int",
+      "int2",
+      "int4",
+      "int8",
+      "integer",
+      "interval",
+      "json",
+      "jsonb",
+      "line",
+      "lseg",
+      "macaddr",
+      "macaddr8",
+      "money",
+      "name",
+      "numeric",
+      "oid",
+      "path",
+      "point",
+      "polygon",
+      "real",
+      "record",
+      "regclass",
+      "regnamespace",
+      "regoper",
+      "regoperator",
+      "regproc",
+      "regprocedure",
+      "regrole",
+      "regtype",
+      "serial",
+      "smallint",
+      "smallserial",
+      "text",
+      "time",
+      "timestamp",
+      "trigger",
+      "tsquery",
+      "tsvector",
+      "uuid",
+      "varchar",
+      "void",
+      "xml"
+    )
