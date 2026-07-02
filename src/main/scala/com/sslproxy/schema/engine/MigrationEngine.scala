@@ -31,26 +31,33 @@ final class MigrationEngine(provider: DbProvider, discoveryService: DiscoverySer
       _ <- ReportPrinter.warnings(discovery.warnings)
       manifest <- ManifestBuilder[IO](provider.dialect).build(discovery.files)
       sorted <- IO.fromEither(Graph.topologicalSort(manifest))
-      report <- provider.session.use { session =>
-        val schemaLock = Lock.fromAcquireRelease(session.acquireLock, session.releaseLock)
-        session.bootstrap *>
-          schemaLock.withLock(applyWithLock(session, sorted, config))
+      report <- provider.session.use { (session: DbSession) =>
+        val lock: Lock[IO] = Lock.fromAcquireRelease(session.acquireLock, session.releaseLock)
+        val action: IO[ApplyReport] = session.bootstrap *> lock.withLock[ApplyReport](applyWithLock(session, sorted, config))
+        action
       }
     yield report
 
   private def applyWithLock(session: DbSession, manifest: List[SchemaObject], config: MigratorConfig): IO[ApplyReport] =
-    for
-      prepared <- session.prepare(manifest)
-      structural = prepared.filter(_.objectDef.phase == Phase.Structural)
-      behavioral = prepared.filter(_.objectDef.phase == Phase.Behavioral)
-      structuralReport <-
+    session.prepare(manifest).flatMap { prepared =>
+      val structural = prepared.filter(_.objectDef.phase == Phase.Structural)
+      val behavioral = prepared.filter(_.objectDef.phase == Phase.Behavioral)
+
+      val structuralReportIO: IO[ApplyReport] =
         if structural.isEmpty then IO.pure(ApplyReport())
         else IO.println("-- Phase 1/2: Structural objects --") *> applyPhase(session, structural, config)
-      behavioralReport <-
-        if behavioral.isEmpty || (structuralReport.failedFiles > 0 && !config.continueOnError) then
-          IO.pure(ApplyReport())
-        else IO.println("-- Phase 2/2: Behavioral objects --") *> applyPhase(session, behavioral, config)
-    yield structuralReport.combine(behavioralReport)
+
+      structuralReportIO.flatMap { structuralReport =>
+        val behavioralReportIO: IO[ApplyReport] =
+          if behavioral.isEmpty || (structuralReport.failedFiles > 0 && !config.continueOnError) then
+            IO.pure(ApplyReport())
+          else IO.println("-- Phase 2/2: Behavioral objects --") *> applyPhase(session, behavioral, config)
+
+        behavioralReportIO.map { behavioralReport =>
+          structuralReport.combine(behavioralReport)
+        }
+      }
+    }
 
   private def applyPhase(session: DbSession, objects: List[PreparedObject], config: MigratorConfig): IO[ApplyReport] =
     objects.zipWithIndex.foldM(ApplyReport()) { case (report, (prepared, index)) =>

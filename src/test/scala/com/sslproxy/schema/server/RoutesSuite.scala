@@ -374,6 +374,75 @@ class RoutesSuite extends FunSuite:
     assert(!warnings.exists(_.contains("has no files in store")))
   }
 
+  test("sql zip upload over compressed size limit returns payload too large") {
+    val limits = SqlFileRoutes.UploadLimits(
+      maxUploadBytes = 1024,
+      maxZipBytes = 8,
+      maxZipEntryBytes = 1024,
+      maxZipUncompressedBytes = 1024
+    )
+    val result = sqlFileRoutesWithLimits(limits)
+      .use { routes =>
+        for
+          response <- routes.run(sqlZipUploadRequestBytes(Vector.fill(9)(0.toByte)))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.PayloadTooLarge)
+    assertEquals(json.hcursor.get[String]("error"), Right("uploaded zip exceeds 8 bytes limit"))
+  }
+
+  test("sql zip upload enforces uncompressed entry limit") {
+    val limits = SqlFileRoutes.UploadLimits(
+      maxUploadBytes = 1024,
+      maxZipBytes = 1024,
+      maxZipEntryBytes = 10,
+      maxZipUncompressedBytes = 1024
+    )
+    val result = sqlFileRoutesWithLimits(limits)
+      .use { routes =>
+        for
+          response <- routes.run(sqlZipUploadRequest(List("sql/tables/001_large.sql" -> "select 1;\n--x")))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.PayloadTooLarge)
+    assertEquals(
+      json.hcursor.get[String]("error"),
+      Right("zip entry 'sql/tables/001_large.sql' exceeds 10 bytes uncompressed limit")
+    )
+  }
+
+  test("sql zip upload enforces total uncompressed SQL limit") {
+    val limits = SqlFileRoutes.UploadLimits(
+      maxUploadBytes = 1024,
+      maxZipBytes = 1024,
+      maxZipEntryBytes = 1024,
+      maxZipUncompressedBytes = 12
+    )
+    val result = sqlFileRoutesWithLimits(limits)
+      .use { routes =>
+        for
+          response <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_a.sql" -> "select;",
+            "sql/tables/002_b.sql" -> "select;"
+          )))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.PayloadTooLarge)
+    assertEquals(json.hcursor.get[String]("error"), Right("zip archive exceeds 12 bytes uncompressed SQL limit"))
+  }
+
   test("drift route returns warnings instead of failing when Postgres live catalog is unavailable") {
     val result = routeFixture
       .use { routes =>
@@ -540,6 +609,11 @@ class RoutesSuite extends FunSuite:
           .orNotFound
       }
 
+  private def sqlFileRoutesWithLimits(limits: SqlFileRoutes.UploadLimits): cats.effect.Resource[IO, HttpApp[IO]] =
+    cats.effect.Resource.eval(
+      SqlFileStore.inMemory.map(store => SqlFileRoutes.routes(store, limits).orNotFound)
+    )
+
   private def migratorConfig(stageDir: Path, sqlDir: Path, allowedHosts: Set[String]): MigratorConfig =
     MigratorConfig(
       dbKind = DbKind.Postgres,
@@ -624,9 +698,12 @@ class RoutesSuite extends FunSuite:
     Request[IO](Method.POST, Uri.unsafeFromString("/patches")).withEntity(multipart).putHeaders(multipart.headers)
 
   private def sqlZipUploadRequest(entries: List[(String, String)]): Request[IO] =
+    sqlZipUploadRequestBytes(zipBytes(entries).toVector)
+
+  private def sqlZipUploadRequestBytes(bytes: Vector[Byte]): Request[IO] =
     val multipart = Multipart[IO](
       Vector(
-        Part.fileData[IO]("file", "sql.zip", Stream.emits(zipBytes(entries).toVector).covary[IO])
+        Part.fileData[IO]("file", "sql.zip", Stream.emits(bytes).covary[IO])
       )
     )
     Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload-zip")).withEntity(multipart).putHeaders(multipart.headers)

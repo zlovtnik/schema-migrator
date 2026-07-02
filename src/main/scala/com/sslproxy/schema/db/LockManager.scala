@@ -84,7 +84,7 @@ final class OracleLockManager(connection: Connection) extends LockManager[IO]:
   private def queryLockInfo(): Option[(String, String)] =
     queryOne(connection, OracleStatements.lockQueryInfoSql) { row =>
       row.getString("locked_by") -> row.getString("locked_at_char")
-    }.headOption
+    }
 
   private def appliedBy(connection: Connection): String =
     s"${System.getenv().getOrDefault("HOSTNAME", "unknown-host")}:${ProcessHandle.current().pid()}"

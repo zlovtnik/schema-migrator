@@ -445,6 +445,25 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     assertEquals(items.head.apply_status, Some("pending"))
   }
 
+  test("applied control rows do not suppress live definition drift") {
+    val expectedSql = "create or replace view demo_view as select 1 as id;"
+    val actualSql = "create or replace view demo_view as select 2 as id;"
+    val key = ObjectKey("public", "demo_view", "view")
+    val sourceFile = "views/001_demo_view.sql"
+    val expectedObjects = List(expected(key, sourceFile = sourceFile, expectedDdl = Some(expectedSql)))
+    val actualObjects = List(LiveObject(key, Some(actualSql)))
+    val control = controlSnapshot(
+      List(controlRow("view", "demo_view", sourceFile, "skipped", Some(expectedSql)))
+    )
+
+    val items = driftItems(now, expectedObjects, actualObjects, control)
+    val catalog = mergeCatalog(now, expectedObjects, actualObjects, control)
+
+    assertEquals(items.map(_.drift_type), List("definition_changed"))
+    assertEquals(items.head.apply_status, Some("skipped"))
+    assertEquals(catalog.head.status, "drift_detected")
+  }
+
   test("control summary counts applied skipped pending and failed rows") {
     val snapshot = controlSnapshot(
       List(

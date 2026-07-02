@@ -101,9 +101,6 @@ private[server] object PostgresDriftAnalyzer:
         applyStatus match
           case Some("pending" | "failed") => "pending_migration"
           case _
-              if controlConfirmsExpected(expectedItem, controlItem) =>
-            "in_sync"
-          case _
               if definitionChanged(
                 key,
                 expectedItem.flatMap(_.expectedDdl).orElse(controlItem.flatMap(_.expectedDdl)),
@@ -196,7 +193,7 @@ private[server] object PostgresDriftAnalyzer:
     val changedDefinitions =
       state.trackedByKey.values.toList.flatMap { expectedItem =>
         val controlItem = state.controlForKey(expectedItem.key)
-        if pendingOrFailedKeys.contains(expectedItem.key) || controlConfirmsExpected(Some(expectedItem), controlItem) then None
+        if pendingOrFailedKeys.contains(expectedItem.key) then None
         else
           actualByKey.get(expectedItem.key).flatMap { actualItem =>
             actualItem.actualDdl
@@ -316,15 +313,6 @@ private[server] object PostgresDriftAnalyzer:
       expectedDdl.exists(expected =>
         actualDdl.exists(actual => comparableDefinition(key, expected) != comparableDefinition(key, actual))
       )
-
-  private def controlConfirmsExpected(
-    expectedItem: Option[ExpectedObject],
-    controlItem: Option[ControlObject]
-  ): Boolean =
-    (expectedItem, controlItem) match
-      case (Some(expected), Some(control)) =>
-        Set("applied", "skipped").contains(control.applyStatus) && control.checksum == expected.checksum
-      case _ => false
 
   private def comparableDefinition(key: ObjectKey, value: String): String =
     if isRoutineType(key.objectType) then routineComparableDdl(key, value).getOrElse(comparableDdl(key, value))

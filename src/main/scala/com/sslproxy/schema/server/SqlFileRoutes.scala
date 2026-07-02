@@ -11,11 +11,28 @@ import org.http4s.dsl.io.*
 import org.http4s.multipart.{Multipart, Part}
 
 object SqlFileRoutes:
-  private val maxUploadBytes = 50L * 1024L * 1024L // 50 MiB
-  private val maxZipBytes = 100L * 1024L * 1024L // 100 MiB zip limit
+  private[server] final case class UploadLimits(
+    maxUploadBytes: Long,
+    maxZipBytes: Long,
+    maxZipEntryBytes: Long,
+    maxZipUncompressedBytes: Long
+  )
+
+  private[server] object UploadLimits:
+    val default: UploadLimits =
+      UploadLimits(
+        maxUploadBytes = 50L * 1024L * 1024L,
+        maxZipBytes = 100L * 1024L * 1024L,
+        maxZipEntryBytes = 50L * 1024L * 1024L,
+        maxZipUncompressedBytes = 100L * 1024L * 1024L
+      )
+
   private final class UploadTooLarge(message: String) extends IllegalArgumentException(message)
 
   def routes(sqlFileStore: SqlFileStore): HttpRoutes[IO] =
+    routes(sqlFileStore, UploadLimits.default)
+
+  private[server] def routes(sqlFileStore: SqlFileStore, limits: UploadLimits): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
       // GET /sql-files — list all stored SQL files
       case GET -> Root / "sql-files" =>
@@ -50,7 +67,7 @@ object SqlFileRoutes:
       case request @ POST -> Root / "sql-files" / "upload" =>
         val result = for
           multipart <- request.as[Multipart[IO]]
-          files <- fileUploads(multipart)
+          files <- fileUploads(multipart, limits)
         yield
           val now = java.time.Clock.systemUTC.instant().toString
           val stored = files.map { upload =>
@@ -74,35 +91,39 @@ object SqlFileRoutes:
 
       // POST /sql-files/upload-zip — upload a zip containing SQL directory tree
       case request @ POST -> Root / "sql-files" / "upload-zip" =>
-        request
-          .as[Multipart[IO]]
-          .flatMap { multipart =>
-            zipPart(multipart).flatMap {
-              case None => RouteJson.badRequest("A zip file part named 'file' is required")
-              case Some(zipBytes) =>
-                extractZip(zipBytes).flatMap { extracted =>
-                  if extracted.isEmpty then
-                    RouteJson.badRequest("No .sql files found in zip archive")
-                  else
-                    val now = java.time.Clock.systemUTC.instant().toString
-                    val stored = extracted.map { item =>
-                      StoredSqlFile.fromBytes(
-                        path = item.path,
-                        folder = item.folder,
-                        filename = item.filename,
-                        bytes = item.bytes,
-                        uploadedAt = now
-                      )
-                    }
-                    sqlFileStore.replaceAll(stored) *>
-                      IO.println(s"Extracted ${stored.size} SQL files from zip") *>
-                      RouteJson.created(Json.obj(
-                        "uploaded" -> Json.fromInt(stored.size),
-                        "folders" -> Json.fromValues(stored.map(_.folder).distinct.sorted.map(Json.fromString))
-                      ))
-                }
+        val result =
+          request
+            .as[Multipart[IO]]
+            .flatMap { multipart =>
+              zipPart(multipart, limits).flatMap {
+                case None => RouteJson.badRequest("A zip file part named 'file' is required")
+                case Some(zipBytes) =>
+                  extractZip(zipBytes, limits).flatMap { extracted =>
+                    if extracted.isEmpty then
+                      RouteJson.badRequest("No .sql files found in zip archive")
+                    else
+                      val now = java.time.Clock.systemUTC.instant().toString
+                      val stored = extracted.map { item =>
+                        StoredSqlFile.fromBytes(
+                          path = item.path,
+                          folder = item.folder,
+                          filename = item.filename,
+                          bytes = item.bytes,
+                          uploadedAt = now
+                        )
+                      }
+                      sqlFileStore.replaceAll(stored) *>
+                        IO.println(s"Extracted ${stored.size} SQL files from zip") *>
+                        RouteJson.created(Json.obj(
+                          "uploaded" -> Json.fromInt(stored.size),
+                          "folders" -> Json.fromValues(stored.map(_.folder).distinct.sorted.map(Json.fromString))
+                        ))
+                  }
+              }
             }
-          }
+        result.handleErrorWith { case error: UploadTooLarge =>
+          RouteJson.payloadTooLarge(error.getMessage)
+        }
 
       // DELETE /sql-files — clear all stored SQL files
       case DELETE -> Root / "sql-files" =>
@@ -123,7 +144,7 @@ object SqlFileRoutes:
     bytes: Array[Byte]
   )
 
-  private def fileUploads(multipart: Multipart[IO]): IO[List[FileUpload]] =
+  private def fileUploads(multipart: Multipart[IO], limits: UploadLimits): IO[List[FileUpload]] =
     multipart.parts
       .filter(_.name.contains("files"))
       .zipWithIndex
@@ -131,33 +152,34 @@ object SqlFileRoutes:
       .traverse { case (part, index) =>
         for
           folder <- IO.fromOption(part.name.flatMap(n => extractFolderFromName(n)))(UploadTooLarge("folder is required"))
-          bytes <- part.body.take(maxUploadBytes + 1).compile.toVector
-          _ <- IO.raiseWhen(bytes.length.toLong > maxUploadBytes)(
-            UploadTooLarge("uploaded file exceeds 50 MiB limit")
+          bytes <- part.body.take(limits.maxUploadBytes + 1).compile.toVector
+          _ <- IO.raiseWhen(bytes.length.toLong > limits.maxUploadBytes)(
+            UploadTooLarge(s"uploaded file exceeds ${limitLabel(limits.maxUploadBytes)} limit")
           )
           filename = safeFilename(part.filename, index)
           normalized = SqlPathNormalizer.normalizeUploadPath(s"$folder/$filename")
         yield FileUpload(normalized.path, normalized.folder, normalized.filename, bytes.toArray)
       }
 
-  private def zipPart(multipart: Multipart[IO]): IO[Option[Array[Byte]]] =
+  private def zipPart(multipart: Multipart[IO], limits: UploadLimits): IO[Option[Array[Byte]]] =
     multipart.parts
       .find(_.name.contains("file"))
       .traverse { part =>
-        part.body.take(maxZipBytes + 1).compile.toVector.flatMap { bytes =>
-          if bytes.length.toLong > maxZipBytes then
-            IO.raiseError(UploadTooLarge("uploaded zip exceeds 100 MiB limit"))
+        part.body.take(limits.maxZipBytes + 1).compile.toVector.flatMap { bytes =>
+          if bytes.length.toLong > limits.maxZipBytes then
+            IO.raiseError(UploadTooLarge(s"uploaded zip exceeds ${limitLabel(limits.maxZipBytes)} limit"))
           else
             IO.pure(bytes.toArray)
         }
       }
 
-  private def extractZip(zipBytes: Array[Byte]): IO[List[ZipEntry]] =
+  private def extractZip(zipBytes: Array[Byte], limits: UploadLimits): IO[List[ZipEntry]] =
     IO.blocking {
       val stream = new java.io.ByteArrayInputStream(zipBytes)
       val zipIn = new java.util.zip.ZipInputStream(stream)
       try
         val entries = List.newBuilder[ZipEntry]
+        var totalUncompressedBytes = 0L
         var entry = zipIn.getNextEntry
         while entry != null do
           if !entry.isDirectory && entry.getName.toLowerCase.endsWith(".sql") then
@@ -167,8 +189,19 @@ object SqlFileRoutes:
             // Read entry bytes
             val buf = new java.io.ByteArrayOutputStream()
             val buffer = new Array[Byte](8192)
+            var entryUncompressedBytes = 0L
             var len = zipIn.read(buffer)
             while len >= 0 do
+              entryUncompressedBytes += len.toLong
+              totalUncompressedBytes += len.toLong
+              if entryUncompressedBytes > limits.maxZipEntryBytes then
+                throw UploadTooLarge(
+                  s"zip entry '$normalized' exceeds ${limitLabel(limits.maxZipEntryBytes)} uncompressed limit"
+                )
+              if totalUncompressedBytes > limits.maxZipUncompressedBytes then
+                throw UploadTooLarge(
+                  s"zip archive exceeds ${limitLabel(limits.maxZipUncompressedBytes)} uncompressed SQL limit"
+                )
               buf.write(buffer, 0, len)
               len = zipIn.read(buffer)
             val bytes = buf.toByteArray
@@ -179,6 +212,10 @@ object SqlFileRoutes:
         entries.result()
       finally zipIn.close()
     }
+
+  private def limitLabel(bytes: Long): String =
+    val mib = 1024L * 1024L
+    if bytes % mib == 0 then s"${bytes / mib} MiB" else s"$bytes bytes"
 
   private def extractFolderFromName(name: String): Option[String] =
     val parts = name.split("/").toList
