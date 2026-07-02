@@ -3,7 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
-import com.sslproxy.schema.store.{Models, PatchStore, RunStore, TargetPayload, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{Models, PatchStore, RunStore, SqlFileStore, TargetPayload, TargetStore, ValidationStore}
 import fs2.Stream
 import io.circe.Json
 import io.circe.parser.parse
@@ -13,8 +13,10 @@ import org.http4s.dsl.io.*
 import org.http4s.multipart.{Multipart, Part}
 import munit.FunSuite
 
+import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
+import java.util.zip.{ZipEntry, ZipOutputStream}
 import scala.jdk.CollectionConverters.*
 import scala.concurrent.duration.*
 
@@ -327,6 +329,51 @@ class RoutesSuite extends FunSuite:
     assertEquals(json.hcursor.downField("warnings").values.exists(_.nonEmpty), true)
   }
 
+  test("schema route normalizes uploaded SQL manifest for Postgres targets") {
+    val uploadedSql =
+      """-- object: public.uploaded_devices
+        |-- folder: tables
+        |-- depends_on: -
+        |create table if not exists public.uploaded_devices (
+        |  id bigint primary key
+        |);
+        |""".stripMargin
+    val result = routeFixture
+      .use { routes =>
+        for
+          uploadResponse <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_uploaded_devices.sql" -> uploadedSql,
+            "sql/oracle/functions/001_oracle_only.sql" -> "create or replace function oracle_only return number as begin return 1; end;",
+            "sql/000_baseline.sql" -> "select 1;"
+          )))
+          uploadJson <- bodyJson(uploadResponse)
+          targetResponse <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/targets",
+              targetPayload("Target", jdbcUrl = "jdbc:postgresql://127.0.0.1:1/app?user=app&connectTimeout=1")
+            )
+          )
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/schema?target_id=$targetId")))
+          json <- bodyJson(response)
+        yield (uploadResponse.status, uploadJson, response.status, json)
+      }
+      .unsafeRunSync()
+
+    val (uploadStatus, uploadJson, schemaStatus, schemaJson) = result
+    val warnings = schemaJson.hcursor.downField("warnings").as[List[String]].getOrElse(Nil)
+
+    assertEquals(uploadStatus, Status.Created)
+    assertEquals(uploadJson.hcursor.downField("folders").as[List[String]], Right(List("baseline", "oracle/functions", "tables")))
+    assertEquals(schemaStatus, Status.Ok)
+    assertEquals(schemaJson.hcursor.downField("objects").downArray.get[String]("name"), Right("uploaded_devices"))
+    assertEquals(schemaJson.hcursor.downField("objects").downArray.get[String]("source_file"), Right("tables/001_uploaded_devices.sql"))
+    assert(!warnings.exists(_.contains("unrecognized sql folder")))
+    assert(!warnings.exists(_.contains("has no files in store")))
+  }
+
   test("drift route returns warnings instead of failing when Postgres live catalog is unavailable") {
     val result = routeFixture
       .use { routes =>
@@ -487,8 +534,9 @@ class RoutesSuite extends FunSuite:
           patchStore <- PatchStore.inMemory(patchStageDir)
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
+          sqlFileStore <- SqlFileStore.inMemory
         yield Routes
-          .all(migratorConfig(patchStageDir, sqlDir, allowedHosts), targetStore, patchStore, runStore, validationStore)
+          .all(migratorConfig(patchStageDir, sqlDir, allowedHosts), targetStore, patchStore, runStore, validationStore, sqlFileStore)
           .orNotFound
       }
 
@@ -574,6 +622,26 @@ class RoutesSuite extends FunSuite:
       )
     )
     Request[IO](Method.POST, Uri.unsafeFromString("/patches")).withEntity(multipart).putHeaders(multipart.headers)
+
+  private def sqlZipUploadRequest(entries: List[(String, String)]): Request[IO] =
+    val multipart = Multipart[IO](
+      Vector(
+        Part.fileData[IO]("file", "sql.zip", Stream.emits(zipBytes(entries).toVector).covary[IO])
+      )
+    )
+    Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload-zip")).withEntity(multipart).putHeaders(multipart.headers)
+
+  private def zipBytes(entries: List[(String, String)]): Array[Byte] =
+    val bytes = new ByteArrayOutputStream()
+    val zip = new ZipOutputStream(bytes)
+    try
+      entries.foreach { case (path, content) =>
+        zip.putNextEntry(new ZipEntry(path))
+        zip.write(content.getBytes(StandardCharsets.UTF_8))
+        zip.closeEntry()
+      }
+    finally zip.close()
+    bytes.toByteArray
 
   private def bodyJson(response: Response[IO]): IO[Json] =
     response.body.compile.toVector

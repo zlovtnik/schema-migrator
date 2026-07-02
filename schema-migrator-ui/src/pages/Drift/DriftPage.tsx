@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type SyntheticEvent } from "react";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { PageHeader } from "../../components/PageHeader";
 import { SqlPreviewPane } from "../../components/SqlPreviewPane";
@@ -10,26 +10,47 @@ import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useDrift } from "../../hooks/useSchema";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
-import type { DriftItem } from "../../types";
+import type { DriftItem, DriftType, SchemaControlSummary } from "../../types";
+
+type DriftFilter = DriftType | "all";
 
 export const DriftPage = () => {
   const selectedTarget = useSelectedTargetId();
   const { data, isLoading, error } = useDrift(selectedTarget);
-  const [filter, setFilter] = useState("");
+  const [textFilter, setTextFilter] = useState("");
+  const [driftFilter, setDriftFilter] = useState<DriftFilter>("all");
+  const [openKey, setOpenKey] = useState<string | null>(null);
 
   const items = useMemo(() => {
-    const query = filter.trim().toLowerCase();
-    if (!query) {
-      return data?.items ?? [];
-    }
-    return (data?.items ?? []).filter(
-      (item) =>
+    const query = textFilter.trim().toLowerCase();
+    return (data?.items ?? []).filter((item) => {
+      const driftMatch = driftFilter === "all" || item.drift_type === driftFilter;
+      const textMatch =
+        !query ||
         item.name.toLowerCase().includes(query) ||
         item.schema.toLowerCase().includes(query) ||
         item.object_type.toLowerCase().includes(query) ||
-        item.drift_type.toLowerCase().includes(query)
-    );
-  }, [data?.items, filter]);
+        item.drift_type.toLowerCase().includes(query);
+      return driftMatch && textMatch;
+    });
+  }, [data?.items, driftFilter, textFilter]);
+
+  const driftCounts = useMemo(() => countByDriftType(data?.items ?? []), [data?.items]);
+
+  const openDriftDetail = useCallback((item: DriftItem) => {
+    const key = driftItemKey(item);
+    setOpenKey(key);
+    document.getElementById(driftDetailId(item))?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, []);
+
+  const handleDetailToggle = (item: DriftItem, event: SyntheticEvent<HTMLDetailsElement>) => {
+    const key = driftItemKey(item);
+    if (event.currentTarget.open) {
+      setOpenKey(key);
+      return;
+    }
+    setOpenKey((current) => (current === key ? null : current));
+  };
 
   const columns = useMemo<DataTableColumn<DriftItem>[]>(
     () => [
@@ -37,7 +58,21 @@ export const DriftPage = () => {
         id: "object",
         header: "Object",
         sortValue: (item) => item.name,
-        cell: (item) => <code>{item.name}</code>
+        cell: (item) => {
+          const key = driftItemKey(item);
+          const isOpen = openKey === key;
+          return (
+            <button
+              aria-controls={driftDetailId(item)}
+              aria-expanded={isOpen}
+              className={isOpen ? "link-button link-button--active" : "link-button"}
+              type="button"
+              onClick={() => openDriftDetail(item)}
+            >
+              <code>{item.name}</code>
+            </button>
+          );
+        }
       },
       {
         id: "type",
@@ -70,7 +105,7 @@ export const DriftPage = () => {
         cell: (item) => <time dateTime={item.detected_at}>{new Date(item.detected_at).toLocaleString()}</time>
       }
     ],
-    []
+    [openDriftDetail, openKey]
   );
 
   return (
@@ -111,50 +146,153 @@ export const DriftPage = () => {
       ) : null}
 
       {data?.supported ? (
-        data.items.length === 0 ? (
-          <EmptyState icon={<Icon source={ShieldCheckIcon} size={24} />} title="No drift detected">
-            All returned objects match the available manifest and schema-control state.
-          </EmptyState>
-        ) : (
-          <div className="drift-workspace">
-            <label className="list-filter">
-              Filter drift results
-              <input
-                data-list-filter
-                name="drift-filter"
-                autoComplete="off"
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-              />
-            </label>
-            <DataTable
-              caption="Drift results"
-              columns={columns}
-              rows={items}
-              rowKey={driftItemKey}
-              empty={filter ? `No drift results match "${filter}".` : "No drift detected."}
-            />
-            <section className="section-block">
-              <h2>Drift details</h2>
-              <div className="drift-detail-grid">
-                {items.map((item) => (
-                  <article className="drift-detail" key={driftItemKey(item)}>
-                    <header>
-                      <StatusBadge status={item.drift_type} />
-                      <strong>
-                        <code>{item.schema}.{item.name}</code>
-                      </strong>
-                    </header>
-                    <div className="sql-preview-grid">
-                      <SqlPreviewPane code={item.expected} title="Expected" />
-                      <SqlPreviewPane code={item.actual} title="Actual" />
-                    </div>
-                  </article>
+        <div className="drift-page-stack">
+          <ControlSummaryPanel summary={data.control_summary} />
+          {data.items.length === 0 ? (
+            <EmptyState icon={<Icon source={ShieldCheckIcon} size={24} />} title="No drift detected">
+              All returned objects match the available manifest and schema-control state.
+            </EmptyState>
+          ) : (
+            <div className="drift-workspace">
+              <label className="list-filter">
+                Filter drift results
+                <input
+                  data-list-filter
+                  name="drift-filter"
+                  autoComplete="off"
+                  value={textFilter}
+                  onChange={(event) => setTextFilter(event.target.value)}
+                />
+              </label>
+              <div className="drift-chip-row" aria-label="Drift type filters">
+                <button
+                  className={driftFilter === "all" ? "drift-chip drift-chip--active" : "drift-chip"}
+                  type="button"
+                  onClick={() => setDriftFilter("all")}
+                  aria-pressed={driftFilter === "all"}
+                >
+                  <span>All drift</span>
+                  <strong>{data.items.length}</strong>
+                </button>
+                {Array.from(driftCounts.entries()).map(([type, count]) => (
+                  <button
+                    className={driftFilter === type ? "drift-chip drift-chip--active" : "drift-chip"}
+                    key={type}
+                    type="button"
+                    onClick={() => setDriftFilter(type)}
+                    aria-pressed={driftFilter === type}
+                  >
+                    <StatusBadge status={type} />
+                    <strong>{count}</strong>
+                  </button>
                 ))}
               </div>
-            </section>
+              <DataTable
+                caption="Drift results"
+                columns={columns}
+                rows={items}
+                rowKey={driftItemKey}
+                getRowState={(item) => ({ selected: driftItemKey(item) === openKey })}
+                empty={textFilter ? `No drift results match "${textFilter}".` : "No drift detected."}
+              />
+              <section className="section-block">
+                <h2>Drift details</h2>
+                <div className="drift-detail-grid">
+                  {items.map((item) => {
+                    const key = driftItemKey(item);
+                    const isOpen = openKey === key;
+                    return (
+                      <details
+                        className="drift-detail"
+                        id={driftDetailId(item)}
+                        key={key}
+                        open={isOpen}
+                        onToggle={(event) => handleDetailToggle(item, event)}
+                      >
+                        <summary className="drift-detail__summary">
+                          <span className="drift-detail__title">
+                            <StatusBadge status={item.drift_type} />
+                            <strong>
+                              <code>{item.schema}.{item.name}</code>
+                            </strong>
+                          </span>
+                          <span className="drift-detail__meta">{formatLabel(item.object_type)}</span>
+                        </summary>
+                        {isOpen ? (
+                          <>
+                            {item.apply_status ? (
+                              <div className="drift-detail__control">
+                                schema_control status <strong>{item.apply_status}</strong>
+                              </div>
+                            ) : null}
+                            <div className="sql-preview-grid">
+                              <SqlPreviewPane code={item.expected} title="Expected" />
+                              <SqlPreviewPane code={item.actual} title="Actual" />
+                            </div>
+                          </>
+                        ) : null}
+                      </details>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+};
+
+const ControlSummaryPanel = ({ summary }: { summary: SchemaControlSummary | null | undefined }) => {
+  if (!summary) {
+    return null;
+  }
+
+  const counts = [
+    ["Total", summary.total_count],
+    ["Applied", summary.applied_count],
+    ["Skipped", summary.skipped_count],
+    ["Pending", summary.pending_count],
+    ["Failed", summary.failed_count]
+  ] as const;
+
+  return (
+    <section className="control-summary" aria-label="Schema control summary">
+      <header className="control-summary__header">
+        <div>
+          <span className="eyebrow">Schema control</span>
+          <h2>Control state</h2>
+        </div>
+        <StatusBadge status={summary.ready ? "clean" : "warnings"} />
+      </header>
+      <div className="control-summary__grid">
+        {counts.map(([label, value]) => (
+          <div className="control-summary__metric" key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
           </div>
-        )
+        ))}
+      </div>
+      <dl className="control-summary__timestamps">
+        <div>
+          <dt>Last applied</dt>
+          <dd>{formatOptionalDate(summary.last_applied_at)}</dd>
+        </div>
+        <div>
+          <dt>Last updated</dt>
+          <dd>{formatOptionalDate(summary.last_updated_at)}</dd>
+        </div>
+      </dl>
+      {summary.failed_objects.length ? (
+        <div className="control-summary__failed">
+          <span>Failed objects</span>
+          <div>
+            {summary.failed_objects.map((object) => (
+              <code key={object}>{object}</code>
+            ))}
+          </div>
+        </div>
       ) : null}
     </section>
   );
@@ -175,3 +313,21 @@ const driftItemKey = (item: DriftItem): string =>
     item.source_file ?? "live",
     item.checksum ?? item.actual
   ]);
+
+const driftDetailId = (item: DriftItem): string => `drift-detail-${hashString(driftItemKey(item))}`;
+
+const hashString = (value: string): string => {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(36);
+};
+
+const countByDriftType = (items: DriftItem[]): Map<DriftType, number> => {
+  const counts = new Map<DriftType, number>();
+  items.forEach((item) => counts.set(item.drift_type, (counts.get(item.drift_type) ?? 0) + 1));
+  return new Map(Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0])));
+};
+
+const formatOptionalDate = (value?: string | null): string => (value ? new Date(value).toLocaleString() : "Not recorded");

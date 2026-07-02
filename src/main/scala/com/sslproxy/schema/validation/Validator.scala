@@ -6,8 +6,6 @@ import com.sslproxy.schema.config.DbKind
 import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.parser.{BalanceChecker, HeaderParser}
 
-import java.nio.file.Files
-
 final class Validator[F[_]: Sync](dbKind: DbKind):
   private val tableColumnWarningLimit = 15
   private val createOrReplaceRoutine =
@@ -26,7 +24,7 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
 
   private def validateOne(report: ValidationReport, file: SqlFile): ValidationReport =
     val sql =
-      try Files.readString(file.path)
+      try file.readString
       catch
         case error: Exception =>
           return report.addError(s"${file.relativePath}: unreadable SQL file (${error.getMessage})")

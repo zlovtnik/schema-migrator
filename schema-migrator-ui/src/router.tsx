@@ -15,6 +15,7 @@ const ValidationReportPage = lazy(() =>
   import("./pages/Validation/ValidationReportPage").then((module) => ({ default: module.ValidationReportPage }))
 );
 const SettingsPage = lazy(() => import("./pages/Settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
+const SqlFilesPage = lazy(() => import("./pages/SqlFiles/SqlFilesPage").then((module) => ({ default: module.default })));
 
 const PatchDetailRedirect = () => {
   const { id } = useParams();
@@ -93,6 +94,11 @@ export const router = createBrowserRouter([
           parents: [{ breadcrumb: "Runs", breadcrumbTo: "/runs", targetAware: true }],
           title: "Validation"
         }
+      },
+      {
+        path: "sql-files",
+        element: routeElement(SqlFilesPage),
+        handle: { breadcrumb: "SQL Files", title: "SQL Files" }
       },
       { path: "settings", element: routeElement(SettingsPage), handle: { breadcrumb: "Settings", title: "Settings" } },
       {

@@ -8,12 +8,18 @@ export interface DataTableColumn<T> {
   className?: string;
 }
 
+export interface DataTableRowState {
+  className?: string | undefined;
+  selected?: boolean | undefined;
+}
+
 interface DataTableProps<T> {
   caption: string;
   columns: DataTableColumn<T>[];
   rows: T[];
   rowKey: (row: T) => string;
   empty: ReactNode;
+  getRowState?: (row: T) => DataTableRowState | undefined;
 }
 
 type SortState = {
@@ -21,7 +27,7 @@ type SortState = {
   direction: "ascending" | "descending";
 };
 
-export const DataTable = <T,>({ caption, columns, rows, rowKey, empty }: DataTableProps<T>) => {
+export const DataTable = <T,>({ caption, columns, rows, rowKey, empty, getRowState }: DataTableProps<T>) => {
   const [sort, setSort] = useState<SortState | null>(null);
 
   const sortedRows = useMemo(() => {
@@ -77,15 +83,18 @@ export const DataTable = <T,>({ caption, columns, rows, rowKey, empty }: DataTab
           </tr>
         </thead>
         <tbody>
-          {sortedRows.map((row) => (
-            <tr key={rowKey(row)}>
-              {columns.map((column) => (
-                <td className={column.className} key={column.id}>
-                  {column.cell(row)}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {sortedRows.map((row) => {
+            const rowState = getRowState?.(row);
+            return (
+              <tr className={rowState?.className} data-selected={rowState?.selected ? "true" : undefined} key={rowKey(row)}>
+                {columns.map((column) => (
+                  <td className={column.className} key={column.id}>
+                    {column.cell(row)}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

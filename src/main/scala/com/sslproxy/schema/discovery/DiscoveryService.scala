@@ -8,8 +8,40 @@ import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
 
 final class DiscoveryService[F[_]: Sync]:
+  /** Discover SQL files from the filesystem. */
   def discover(sqlDir: Path, dbKind: DbKind): F[DiscoveryResult] =
     Sync[F].blocking(discoverUnsafe(sqlDir, dbKind))
+
+  /** Discover SQL files from a pre-loaded list of SqlFile objects
+    * (e.g. from MongoDB store). The caller is responsible for
+    * obtaining the list from the store.
+    */
+  def discoverFromFiles(files: List[SqlFile], dbKind: DbKind): DiscoveryResult =
+    val ordered = FolderOrder.forDb(dbKind)
+    val normalized = files.map(file => SqlPathNormalizer.normalizeForDb(file, dbKind))
+    val filesByFolder = normalized.collect { case Right(Some(file)) => file }.groupBy(_.folder)
+
+    val extraFolderWarnings = normalized.collect { case Left(folder) => folder }.distinct.sorted
+      .filterNot(folder => folder == "uncategorized")
+      .map(folder => s"unrecognized sql folder '$folder' contains .sql files but is not part of $dbKind folder order")
+
+    dbKind match
+      case DbKind.Postgres =>
+        val cronFiles = filesByFolder.getOrElse("cron", Nil).sortBy(_.name)
+        val (preApplyHooks, cronJobs) = cronFiles.partition(_.name.startsWith("000_"))
+        val discovered =
+          ordered
+            .filterNot(folder => folder == "cron" || folder == "materialized_views")
+            .flatMap(folder => filesByFolder.getOrElse(folder, Nil).sortBy(_.name)) :::
+            preApplyHooks :::
+            filesByFolder.getOrElse("materialized_views", Nil).sortBy(_.name) :::
+            cronJobs
+        DiscoveryResult(discovered, extraFolderWarnings)
+
+      case DbKind.Oracle =>
+        val baseline = filesByFolder.getOrElse("baseline", Nil).sortBy(_.name)
+        val discovered = baseline ::: ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil).sortBy(_.name))
+        DiscoveryResult(discovered, extraFolderWarnings)
 
   private def discoverUnsafe(sqlDir: Path, dbKind: DbKind): DiscoveryResult =
     val ordered = FolderOrder.forDb(dbKind)

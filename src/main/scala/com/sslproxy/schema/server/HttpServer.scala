@@ -7,7 +7,7 @@ import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.server.auth.JwtMiddleware
 import com.sslproxy.schema.server.compress.Bzip2Middleware
 import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
-import com.sslproxy.schema.store.{PatchStore, RunStore, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{PatchStore, RunStore, SqlFileStore, TargetStore, ValidationStore}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Router
 
@@ -36,10 +36,11 @@ object HttpServer:
         IO.fromEither(config.server.mongoConfig.leftMap(message => new IllegalArgumentException(message)))
       )
       targetStore <- TargetStore.mongo(mongoConfig)
+      sqlFileStore <- SqlFileStore.mongo(mongoConfig, config.server.sqlFilesCollection)
       patchStore <- Resource.eval(PatchStore.inMemory(config.server.patchStageDir))
       runStore <- Resource.eval(RunStore.inMemory)
       validationStore <- Resource.eval(ValidationStore.inMemory)
-      apiRoutes = Routes.all(config, targetStore, patchStore, runStore, validationStore)
+      apiRoutes = Routes.all(config, targetStore, patchStore, runStore, validationStore, sqlFileStore)
       routed = Router("/api" -> apiRoutes)
       authed = JwtMiddleware(config.server)(routed)
       encrypted = AesGcmMiddleware(encryptKey)(authed)

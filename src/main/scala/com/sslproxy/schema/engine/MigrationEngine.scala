@@ -9,7 +9,6 @@ import com.sslproxy.schema.effect.{Lock, Retry, RetryPolicy}
 import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.output.ReportPrinter
 
-import java.nio.file.Files
 import scala.concurrent.duration.*
 
 final class MigrationEngine(provider: DbProvider, discoveryService: DiscoveryService[IO]):
@@ -20,7 +19,7 @@ final class MigrationEngine(provider: DbProvider, discoveryService: DiscoverySer
     discover(config).flatMap { discovery =>
       discovery.files.traverse { file =>
         IO.blocking {
-          val sql = Files.readString(file.path)
+          val sql = file.readString
           file.relativePath -> compactPreview(sql, 120)
         }
       }

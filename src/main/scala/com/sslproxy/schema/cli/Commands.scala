@@ -131,7 +131,7 @@ object Commands:
       _ <- if config.json then IO.unit else ReportPrinter.warnings(discovery.warnings)
       previews <- discovery.files.traverse { file =>
         IO.blocking {
-          val sql = java.nio.file.Files.readString(file.path)
+          val sql = file.readString
           val compact = sql.split("\\s+").filter(_.nonEmpty).mkString(" ")
           val preview = if compact.length <= 120 then compact else compact.take(119) + "..."
           file.relativePath -> preview

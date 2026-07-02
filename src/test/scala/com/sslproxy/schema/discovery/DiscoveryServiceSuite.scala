@@ -42,6 +42,25 @@ class DiscoveryServiceSuite extends FunSuite:
     }
   }
 
+  test("normalizes stored sql root paths and ignores Oracle folders for Postgres") {
+    val files = List(
+      SqlFile("sql/tables", Path.of("sql/tables/001_table.sql"), "001_table.sql", "sql/tables/001_table.sql"),
+      SqlFile(
+        "sql/oracle/functions",
+        Path.of("sql/oracle/functions/001_function.sql"),
+        "001_function.sql",
+        "sql/oracle/functions/001_function.sql"
+      ),
+      SqlFile("sql", Path.of("sql/000_baseline.sql"), "000_baseline.sql", "sql/000_baseline.sql")
+    )
+
+    val discovered = DiscoveryService[IO]().discoverFromFiles(files, DbKind.Postgres)
+
+    assertEquals(discovered.files.map(_.folder), List("tables"))
+    assertEquals(discovered.files.map(_.relativePath), List("tables/001_table.sql"))
+    assertEquals(discovered.warnings, Nil)
+  }
+
   test("discovers split Oracle baseline folders in deterministic order") {
     withTempDir { dir =>
       FolderOrder.oracle.foreach(folder => Files.createDirectories(dir.resolve(folder)))

@@ -3,7 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.config.MigratorConfig
-import com.sslproxy.schema.store.{PatchStore, RunStore, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{PatchStore, RunStore, SqlFileStore, TargetStore, ValidationStore}
 import org.http4s.HttpRoutes
 
 object Routes:
@@ -12,12 +12,14 @@ object Routes:
     targetStore: TargetStore,
     patchStore: PatchStore,
     runStore: RunStore,
-    validationStore: ValidationStore
+    validationStore: ValidationStore,
+    sqlFileStore: SqlFileStore
   ): HttpRoutes[IO] =
     HealthRoute.routes <+>
       AuthRoutes.routes(config.server) <+>
       TargetRoutes.routes(config.server, targetStore, patchStore, runStore, validationStore) <+>
-      SchemaRoutes.routes(config, targetStore) <+>
+      SchemaRoutes.routes(config, targetStore, sqlFileStore) <+>
       PatchRoutes.routes(targetStore, patchStore) <+>
       RunRoutes.routes(targetStore, patchStore, runStore, validationStore) <+>
-      ValidationRoutes.routes(runStore, validationStore)
+      ValidationRoutes.routes(runStore, validationStore) <+>
+      SqlFileRoutes.routes(sqlFileStore)

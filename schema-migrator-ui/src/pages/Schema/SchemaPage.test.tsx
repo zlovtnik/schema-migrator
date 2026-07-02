@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { SchemaPage } from "./SchemaPage";
 import { renderApp } from "../../test/render";
@@ -61,6 +62,8 @@ describe("SchemaPage", () => {
   });
 
   afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -79,6 +82,25 @@ describe("SchemaPage", () => {
 
     expect((await screen.findAllByText("devices")).length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Filter schema objects")).toBeInTheDocument();
+  });
+
+  it("highlights the selected object row and copies the checksum chip", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
+    });
+
+    renderApp(<SchemaPage />, { route: "/schema?target=target-1" });
+
+    const objectButton = await screen.findByRole("button", { name: "devices" });
+    expect(objectButton.closest("tr")).toHaveAttribute("data-selected", "true");
+
+    await user.click(screen.getByRole("button", { name: /copy checksum for devices/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("abc"));
+    expect(await screen.findByText("Checksum copied for devices")).toBeInTheDocument();
   });
 
   it("has no axe violations for the loaded catalog surface", async () => {

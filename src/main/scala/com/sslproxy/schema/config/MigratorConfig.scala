@@ -77,7 +77,8 @@ final case class ServerConfig(
   dbTestAllowedHosts: Set[String],
   patchStageDir: Path,
   apiBearerToken: Option[String] = None,
-  mongo: Option[MongoConfig] = None
+  mongo: Option[MongoConfig] = None,
+  sqlFilesCollection: String = "sql_files"
 ):
   def validate: Either[String, Unit] =
     if host.trim.isEmpty then Left("server host must not be empty")

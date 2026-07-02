@@ -120,6 +120,12 @@ object CliOpts:
       .orNone
       .map(_.orElse(env.get("BEDROCK_MONGO_TARGETS_COLLECTION")).flatMap(nonBlank))
 
+  private val sqlFilesCollectionOpt: Opts[String] =
+    Opts
+      .option[String]("sql-files-collection", help = "MongoDB collection for uploaded SQL files")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_SQL_FILES_COLLECTION")).flatMap(nonBlank).getOrElse("sql_files"))
+
   private val serverOpts: Opts[ServerConfig] =
     (
       hostOpt,
@@ -133,7 +139,8 @@ object CliOpts:
       patchStageDirOpt,
       mongoUriOpt,
       mongoDatabaseOpt,
-      mongoTargetsCollectionOpt
+      mongoTargetsCollectionOpt,
+      sqlFilesCollectionOpt
     ).mapN {
       (
         host,
@@ -147,7 +154,8 @@ object CliOpts:
         patchStageDir,
         mongoUri,
         mongoDatabase,
-        mongoTargetsCollection
+        mongoTargetsCollection,
+        sqlFilesCollection
       ) =>
         ServerConfig(
           host = host,
@@ -159,7 +167,8 @@ object CliOpts:
           apiBearerToken = apiBearerToken,
           dbTestAllowedHosts = dbTestAllowedHosts,
           patchStageDir = patchStageDir,
-          mongo = (mongoUri, mongoDatabase, mongoTargetsCollection).mapN(MongoConfig.apply)
+          mongo = (mongoUri, mongoDatabase, mongoTargetsCollection).mapN(MongoConfig.apply),
+          sqlFilesCollection = sqlFilesCollection
         )
     }
 
