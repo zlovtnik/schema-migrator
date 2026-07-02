@@ -84,9 +84,11 @@ describe("DriftPage", () => {
   it("loads drift results for the selected target", async () => {
     renderApp(<DriftPage />, { route: "/drift?target=target-1" });
 
+    expect(await screen.findByRole("heading", { name: "Schema drift" })).toBeInTheDocument();
     expect(await screen.findByText("devices")).toBeInTheDocument();
     expect(screen.getAllByText("Missing actual").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Filter drift results")).toBeInTheDocument();
+    expect(screen.queryByText("Drift detection")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Filter results")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Schema control summary" })).toBeInTheDocument();
     expect(screen.getByText("Control state")).toBeInTheDocument();
   });
@@ -126,13 +128,41 @@ describe("DriftPage", () => {
     renderApp(<DriftPage />, { route: "/drift?target=target-1" });
 
     await screen.findByText("devices");
-    expect(screen.getByRole("button", { name: /all drift\s+2/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /all\s+2/i })).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText("Filter drift results"), "devices");
+    await user.type(screen.getByLabelText("Filter results"), "devices");
 
-    expect(screen.getByRole("button", { name: /all drift\s+1/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /all\s+1/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /missing actual\s+1/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /definition changed/i })).not.toBeInTheDocument();
+  });
+
+  it("renders long object names without truncating the table text", async () => {
+    const longName = "process_ingest_ledger(text[], text[], integer, integer, integer)";
+    driftPayload = {
+      ...(driftPayload as Record<string, unknown>),
+      items: [
+        {
+          schema: "coordinator",
+          name: longName,
+          object_type: "function",
+          drift_type: "definition_changed",
+          expected: "create function coordinator.process_ingest_ledger() returns integer language sql as $$ select 1 $$;",
+          actual: "create function coordinator.process_ingest_ledger() returns integer language sql as $$ select 2 $$;",
+          source_file: "functions/023_coordinator_process_ingest_ledger.sql",
+          checksum: "long",
+          apply_status: "skipped",
+          detected_at: "2026-06-28T12:00:00Z"
+        }
+      ]
+    };
+
+    renderApp(<DriftPage />, { route: "/drift?target=target-1" });
+
+    const objectButton = await screen.findByRole("button", { name: longName });
+
+    expect(objectButton).toHaveAttribute("title", longName);
+    expect(objectButton).toHaveTextContent(longName);
   });
 
   it("opens a lazy-rendered drift detail from the table", async () => {
@@ -175,6 +205,6 @@ describe("DriftPage", () => {
 
     expect(await screen.findByText("No drift detected")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Schema control summary" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Filter drift results")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Filter results")).not.toBeInTheDocument();
   });
 });

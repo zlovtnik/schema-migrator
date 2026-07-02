@@ -1047,7 +1047,7 @@ label {
 .schema-workspace__main,
 .drift-workspace {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -1187,6 +1187,57 @@ dd {
   font-weight: 800;
 }
 
+.drift-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.drift-filter {
+  width: min(360px, 100%);
+  max-width: none;
+}
+
+.drift-table__object {
+  width: 38%;
+  min-width: 280px;
+}
+
+.drift-table__type,
+.drift-table__schema,
+.drift-table__status,
+.drift-table__detected {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.drift-table__source {
+  width: 24%;
+}
+
+.drift-table__source code {
+  display: block;
+  max-width: 280px;
+}
+
+.drift-object-button {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.drift-object-name {
+  display: block;
+  white-space: normal;
+  line-height: 1.45;
+}
+
 .sql-preview-grid,
 .drift-detail-grid {
   display: grid;
@@ -1294,31 +1345,12 @@ dd {
 
 .drift-detail__summary {
   display: grid;
-  grid-template-columns: 12px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-3);
   align-items: center;
   min-height: 48px;
   padding: var(--space-3) var(--space-4);
-  cursor: pointer;
-  list-style: none;
-}
-
-.drift-detail__summary::-webkit-details-marker {
-  display: none;
-}
-
-.drift-detail__summary::before {
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  content: "";
-  transform: rotate(-45deg);
-  transition: transform var(--motion-fast) var(--ease-standard);
-}
-
-.drift-detail[open] .drift-detail__summary::before {
-  transform: rotate(45deg);
+  border-bottom: 1px solid var(--border);
 }
 
 .drift-detail__title {
@@ -1330,9 +1362,8 @@ dd {
 
 .drift-detail__title strong {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .drift-detail__meta {
@@ -2145,12 +2176,19 @@ kbd {
     justify-self: start;
   }
 
+  .drift-toolbar {
+    display: grid;
+  }
+
+  .drift-filter {
+    width: 100%;
+  }
+
   .drift-detail__summary {
-    grid-template-columns: 12px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .drift-detail__meta {
-    grid-column: 2;
     justify-self: start;
   }
 

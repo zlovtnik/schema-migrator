@@ -273,13 +273,13 @@ object SchemaRoutes:
 
   private val postgresCatalogSql: String =
     s"""
-    select n.nspname as schema_name, n.nspname as object_name, 'schema' as object_type,
+    select n.nspname as schema_name, n.nspname::text as object_name, 'schema' as object_type,
            format('create schema %I', n.nspname) as actual_ddl
       from pg_namespace n
      where $excludedSchemas
        and ${notExtensionOwned("n.oid", "pg_namespace")}
     union all
-    select n.nspname, c.relname,
+    select n.nspname, c.relname::text,
            case when c.relkind = 'S' then 'sequence' else 'table' end,
            null::text
       from pg_class c
@@ -289,7 +289,7 @@ object SchemaRoutes:
        and ${notExtensionOwned("c.oid", "pg_class")}
        and (c.relkind <> 'S' or ${notAutoDependencyOwned("c.oid", "pg_class")})
     union all
-    select n.nspname, c.relname,
+    select n.nspname, c.relname::text,
            case when c.relkind = 'm' then 'materialized_view' else 'view' end,
            case
              when c.relkind = 'm' then format('create materialized view %I.%I as %s', n.nspname, c.relname, pg_get_viewdef(c.oid, true))
@@ -301,7 +301,7 @@ object SchemaRoutes:
        and c.relkind in ('v', 'm')
        and ${notExtensionOwned("c.oid", "pg_class")}
     union all
-    select n.nspname, c.relname, 'index', pg_get_indexdef(c.oid)
+    select n.nspname, c.relname::text, 'index', pg_get_indexdef(c.oid)
       from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
      where $excludedSchemas
@@ -309,14 +309,14 @@ object SchemaRoutes:
        and ${notExtensionOwned("c.oid", "pg_class")}
        and ${notConstraintBackedIndex("c.oid")}
     union all
-    select n.nspname, e.extname, 'extension',
+    select n.nspname, e.extname::text, 'extension',
            format('create extension if not exists %I with schema %I', e.extname, n.nspname)
       from pg_extension e
       join pg_namespace n on n.oid = e.extnamespace
      where $excludedSchemas
     union all
     select n.nspname,
-           p.proname || '(' || oidvectortypes(p.proargtypes) || ')',
+           concat(p.proname::text, '(', oidvectortypes(p.proargtypes)::text, ')'),
            case when p.prokind = 'p' then 'procedure' else 'function' end,
            pg_get_functiondef(p.oid)
       from pg_proc p
@@ -325,14 +325,14 @@ object SchemaRoutes:
        and p.prokind in ('f', 'p')
        and ${notExtensionOwned("p.oid", "pg_proc")}
     union all
-    select n.nspname, c.relname || '.' || t.tgname, 'trigger', pg_get_triggerdef(t.oid, true)
+    select n.nspname, concat(c.relname::text, '.', t.tgname::text), 'trigger', pg_get_triggerdef(t.oid, true)
       from pg_trigger t
       join pg_class c on c.oid = t.tgrelid
       join pg_namespace n on n.oid = c.relnamespace
      where $excludedSchemas and not t.tgisinternal
        and ${notExtensionOwned("t.oid", "pg_trigger")}
     union all
-    select n.nspname, typ.typname, 'type', null::text
+    select n.nspname, typ.typname::text, 'type', null::text
       from pg_type typ
       join pg_namespace n on n.oid = typ.typnamespace
       left join pg_class c on c.oid = typ.typrelid

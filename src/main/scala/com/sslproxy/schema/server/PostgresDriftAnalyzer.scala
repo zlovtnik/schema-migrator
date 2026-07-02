@@ -83,6 +83,10 @@ private[server] object PostgresDriftAnalyzer:
   def unavailableControlSnapshot(message: String): ControlSnapshot =
     ControlSnapshot(Nil, None, List(message))
 
+  def normalizeObjectKey(key: ObjectKey): ObjectKey =
+    if isRoutineType(key.objectType) then key.copy(name = normalizeRoutineObjectName(key.name))
+    else key
+
   def mergeCatalog(
     now: String,
     expected: List[ExpectedObject],
@@ -90,7 +94,7 @@ private[server] object PostgresDriftAnalyzer:
     control: ControlSnapshot
   ): List[SchemaCatalogObject] =
     val state = PreparedState(expected, control.objects)
-    val actualByKey = actual.map(item => item.key -> item).toMap
+    val actualByKey = liveObjectsByKey(actual)
     val keys = (state.trackedByKey.keySet ++ actualByKey.keySet).toList.sorted
     keys.map { key =>
       val expectedItem = state.trackedByKey.get(key)
@@ -131,7 +135,7 @@ private[server] object PostgresDriftAnalyzer:
     control: ControlSnapshot
   ): List[DriftItem] =
     val state = PreparedState(expected, control.objects)
-    val actualByKey = actual.map(item => item.key -> item).toMap
+    val actualByKey = liveObjectsByKey(actual)
     val pendingOrFailedKeys = state.pendingOrFailedKeys
 
     val missingActual =
@@ -158,6 +162,7 @@ private[server] object PostgresDriftAnalyzer:
       actualByKey.values.toList
         .filterNot(item => state.trackedByKey.contains(item.key))
         .filterNot(item => item.key.schema == "schema_control")
+        .filterNot(item => ignoredUntrackedActual(item.key))
         .map(item =>
           DriftItem(
             schema = item.key.schema,
@@ -240,6 +245,14 @@ private[server] object PostgresDriftAnalyzer:
     val tokens = tokenize(sql)
     tokens.indices.toList.flatMap(index => parseCreateDefinition(sql, tokens, index))
 
+  private def liveObjectsByKey(actual: List[LiveObject]): Map[ObjectKey, LiveObject] =
+    actual
+      .map(item =>
+        val normalizedKey = normalizeObjectKey(item.key)
+        normalizedKey -> item.copy(key = normalizedKey)
+      )
+      .toMap
+
   private final case class PreparedState(
     trackedByKey: Map[ObjectKey, ExpectedObject],
     controlByKey: Map[ObjectKey, ControlObject],
@@ -255,14 +268,16 @@ private[server] object PostgresDriftAnalyzer:
 
   private object PreparedState:
     def apply(expected: List[ExpectedObject], control: List[ControlObject]): PreparedState =
-      val controlByKey = control.map(item => item.key -> item).toMap
-      val controlBySource = control
+      val normalizedControl = control.map(item => item.copy(key = normalizeObjectKey(item.key)))
+      val normalizedExpected = expected.map(item => item.copy(key = normalizeObjectKey(item.key)))
+      val controlByKey = normalizedControl.map(item => item.key -> item).toMap
+      val controlBySource = normalizedControl
         .groupBy(_.sourceFile)
         .collect { case (sourceFile, item :: Nil) => sourceFile -> item }
-      val expectedControlByKey = expected.flatMap { item =>
+      val expectedControlByKey = normalizedExpected.flatMap { item =>
         controlByKey.get(item.key).orElse(controlBySource.get(item.sourceFile)).map(item.key -> _)
       }.toMap
-      val expectedWithControl = expected.map { item =>
+      val expectedWithControl = normalizedExpected.map { item =>
         val controlItem = expectedControlByKey.get(item.key)
         item.key -> item.copy(applyStatus = controlItem.map(_.applyStatus).orElse(item.applyStatus))
       }.toMap
@@ -313,22 +328,53 @@ private[server] object PostgresDriftAnalyzer:
   private def definitionChanged(key: ObjectKey, expectedDdl: Option[String], actualDdl: Option[String]): Boolean =
     comparableDefinitionTypes.contains(key.objectType) &&
       expectedDdl.exists(expected =>
-        actualDdl.exists(actual => comparableDefinition(key, expected) != comparableDefinition(key, actual))
+        actualDdl.exists(actual => !definitionsEquivalent(key, expected, actual))
       )
+
+  private def definitionsEquivalent(key: ObjectKey, expected: String, actual: String): Boolean =
+    val expectedComparable = comparableDefinition(key, expected)
+    val actualComparable = comparableDefinition(key, actual)
+    expectedComparable == actualComparable ||
+      (isViewType(key.objectType) && starExpansionEquivalent(expectedComparable, actualComparable))
 
   private def comparableDefinition(key: ObjectKey, value: String): String =
     if isRoutineType(key.objectType) then routineComparableDdl(key, value).getOrElse(comparableDdl(key, value))
+    else if isViewType(key.objectType) then viewComparableDdl(key, value)
     else comparableDdl(key, value)
 
   private def routineComparableDdl(key: ObjectKey, value: String): Option[String] =
     routineDefinitions(value)
-      .find(_.key == key)
+      .find(routine => normalizeObjectKey(routine.key) == normalizeObjectKey(key))
       .flatMap(routineBodyParts)
       .map { case (header, body) =>
-        val comparableHeader = comparableDdl(key, header).stripSuffix(" as").trim
-        val comparableBody = body.trim
+        val comparableHeader = routineHeaderComparable(key, header)
+        val comparableBody = normalizeSqlTypeAliases(comparableDdl(key, body))
         s"$comparableHeader as $$\n$comparableBody\n$$"
       }
+
+  private def routineHeaderComparable(key: ObjectKey, header: String): String =
+    val normalizedKey = normalizeObjectKey(key)
+    val comparableHeader = normalizeSqlTypeAliases(comparableDdl(key, header)).stripSuffix(" as").trim
+    val suffix =
+      comparableHeader.indexOf('(') match
+        case -1 => comparableHeader
+        case openParen =>
+          matchingParen(comparableHeader, openParen)
+            .map(closeParen => comparableHeader.substring(closeParen + 1).trim)
+            .getOrElse(comparableHeader)
+    s"${normalizedKey.objectType} ${normalizedKey.name} ${normalizeRoutineHeaderDefaults(suffix)}".trim
+
+  private def normalizeRoutineHeaderDefaults(value: String): String =
+    compactSqlSurface(
+      transformUnquotedSql(value) { text =>
+        text
+          .replaceAll("(?i)\\breturns\\s+table\\s*\\(", "returns table(")
+          .replaceAll("(?i)\\bcalled\\s+on\\s+null\\s+input\\b", " ")
+          .replaceAll("(?i)\\bsecurity\\s+invoker\\b", " ")
+          .replaceAll("(?i)\\bparallel\\s+unsafe\\b", " ")
+          .replaceAll("(?i)\\bvolatile\\b", " ")
+      }
+    )
 
   private def routineBodyParts(routine: RoutineDefinition): Option[(String, String)] =
     val ddl = routine.ddl
@@ -496,7 +542,40 @@ private[server] object PostgresDriftAnalyzer:
       .stripSuffix(";")
       .trim
     val withoutDefaultPublic = if key.schema == "public" then stripDefaultPublicQualifier(canonical) else canonical
-    lowerUnquotedSql(withoutDefaultPublic)
+    compactSqlSurface(normalizeSqlTypeAliases(lowerUnquotedSql(withoutDefaultPublic)))
+
+  private def viewComparableDdl(key: ObjectKey, value: String): String =
+    compactViewExpression(stripViewCreateWrapper(comparableDdl(key, value)))
+
+  private def stripViewCreateWrapper(value: String): String =
+    val tokens = tokenize(value)
+    val asIndex = tokens.indices.find(index => tokenValue(tokens, index) == "as")
+    asIndex.map(index => value.substring(tokens(index).end).trim).getOrElse(value)
+
+  private def compactViewExpression(value: String): String =
+    compactSqlSurface(
+      transformUnquotedSql(value) { text =>
+        text
+          .replaceAll("\\(([^()]+)\\)\\s+as\\s+", "$1 as ")
+      }
+    )
+
+  private def starExpansionEquivalent(left: String, right: String): Boolean =
+    (selectStarSource(left), selectStarSource(right)) match
+      case (Some(leftSource), Some(rightSource)) => leftSource == rightSource
+      case (Some(source), None) => selectSource(right).contains(source)
+      case (None, Some(source)) => selectSource(left).contains(source)
+      case _ => false
+
+  private def selectStarSource(value: String): Option[String] =
+    selectSource(value).filter(_ => value.matches("(?is)^select\\s+\\*\\s+from\\s+.+$"))
+
+  private def selectSource(value: String): Option[String] =
+    val normalized = value.trim.stripSuffix(";").trim
+    val pattern = "(?is)^select\\s+.+\\s+from\\s+([a-z_][a-z0-9_$]*(?:\\.[a-z_][a-z0-9_$]*)?)\\s*$".r
+    normalized match
+      case pattern(source) => Some(source.stripPrefix("public."))
+      case _ => None
 
   private def stripDefaultPublicQualifier(value: String): String =
     transformUnquotedSql(value) { text =>
@@ -505,6 +584,39 @@ private[server] object PostgresDriftAnalyzer:
 
   private def lowerUnquotedSql(value: String): String =
     transformUnquotedSql(value)(_.toLowerCase(Locale.ROOT))
+
+  private def normalizeSqlTypeAliases(value: String): String =
+    transformUnquotedSql(value) { text =>
+      text
+        .replaceAll("(?i)\\btimestamp\\s+with\\s+time\\s+zone\\b", "timestamp with time zone")
+        .replaceAll("(?i)\\btimestamp\\s+without\\s+time\\s+zone\\b", "timestamp without time zone")
+        .replaceAll("(?i)\\btime\\s+with\\s+time\\s+zone\\b", "time with time zone")
+        .replaceAll("(?i)\\btime\\s+without\\s+time\\s+zone\\b", "time without time zone")
+        .replaceAll("(?i)\\bdouble\\s+precision\\b", "double precision")
+        .replaceAll("(?i)\\bcharacter\\s+varying\\b", "character varying")
+        .replaceAll("(?i)\\btimestamptz\\b", "timestamp with time zone")
+        .replaceAll("(?i)\\btimetz\\b", "time with time zone")
+        .replaceAll("(?i)\\bint8\\b", "bigint")
+        .replaceAll("(?i)\\bint4\\b", "integer")
+        .replaceAll("(?i)\\bint2\\b", "smallint")
+        .replaceAll("(?i)\\bbool\\b", "boolean")
+        .replaceAll("(?i)\\bfloat8\\b", "double precision")
+        .replaceAll("(?i)\\bfloat4\\b", "real")
+        .replaceAll("(?i)\\bvarchar\\b", "character varying")
+        .replaceAll("(?i)\\bdecimal\\b", "numeric")
+        .replaceAll("(?i)\\bint\\b", "integer")
+    }
+
+  private def compactSqlSurface(value: String): String =
+    transformUnquotedSql(value) { text =>
+      text
+        .replaceAll("\\(\\s+", "(")
+        .replaceAll("\\s+\\)", ")")
+        .replaceAll("\\s*,\\s*", ", ")
+        .replaceAll("\\s*::\\s*", "::")
+        .replaceAll("\\s*\\.\\s*", ".")
+        .replaceAll("\\s+", " ")
+    }.trim
 
   private def transformUnquotedSql(value: String)(transform: String => String): String =
     val output = StringBuilder()
@@ -551,9 +663,9 @@ private[server] object PostgresDriftAnalyzer:
           .filter(token => isIdentifierToken(token.value))
           .filter(_ => tokens.lift(start + 3).exists(_.value == "("))
           .flatMap { second =>
-            routineSignature(sql, tokens(start + 3).start).map { signature =>
-              ObjectKey(normalizeIdentifier(first.value), s"${normalizeIdentifier(second.value)}($signature)", objectType)
-            }
+          routineSignature(sql, tokens(start + 3).start).map { signature =>
+            ObjectKey(normalizeIdentifier(first.value), s"${normalizeIdentifier(second.value)}($signature)", objectType)
+          }
           }
       else
         Option.when(tokens.lift(start + 1).exists(_.value == "("))(tokens(start + 1).start).flatMap { openParen =>
@@ -639,7 +751,31 @@ private[server] object PostgresDriftAnalyzer:
           word.toLowerCase(Locale.ROOT) -> rest.trim
         case _ => "" -> withoutDefault
       if mode == "out" || afterMode.isEmpty then None
-      else Some(parameterTypeOnly(afterMode).replaceAll("\\s+", " ").trim)
+      else Some(normalizeParameterType(parameterTypeOnly(afterMode)))
+
+  private def normalizeRoutineObjectName(name: String): String =
+    val openParen = name.indexOf('(')
+    val closeParen = name.lastIndexOf(')')
+    if openParen < 0 || closeParen < openParen then name.toLowerCase(Locale.ROOT)
+    else
+      val routineName = name.substring(0, openParen).toLowerCase(Locale.ROOT)
+      val signature = name.substring(openParen + 1, closeParen)
+      val suffix = name.substring(closeParen + 1)
+      val normalizedSignature = splitTopLevel(signature, ',').map(normalizeParameterType).mkString(", ")
+      s"$routineName($normalizedSignature)$suffix"
+
+  private def normalizeParameterType(value: String): String =
+    val lowered = normalizeSqlTypeAliases(value)
+      .toLowerCase(Locale.ROOT)
+      .replaceAll("\\s+", " ")
+      .trim
+    val arraySuffix = "[]"
+    if lowered.endsWith(arraySuffix) then normalizeTypeName(lowered.stripSuffix(arraySuffix).trim) + arraySuffix
+    else normalizeTypeName(lowered)
+
+  private def normalizeTypeName(value: String): String =
+    val compact = value.replaceAll("\\s+", " ").trim
+    exactTypeAliases.getOrElse(compact, compact)
 
   private def stripParameterDefault(parameter: String): String =
     val withoutDefault = parameter.split("(?i)\\s+default\\s+", 2).headOption.getOrElse(parameter)
@@ -782,13 +918,38 @@ private[server] object PostgresDriftAnalyzer:
   private final case class Token(value: String, start: Int, end: Int)
 
   private val comparableDefinitionTypes: Set[String] =
-    Set("function", "procedure", "view", "materialized_view", "trigger")
+    Set("function", "procedure", "trigger")
 
   private def isRoutineType(objectType: String): Boolean =
     objectType == "function" || objectType == "procedure"
 
+  private def isViewType(objectType: String): Boolean =
+    objectType == "view" || objectType == "materialized_view"
+
+  private def ignoredUntrackedActual(key: ObjectKey): Boolean =
+    (key.objectType == "schema" && key.schema == "public" && key.name == "public") ||
+      (key.objectType == "extension" && key.schema == "public" && key.name == "pg_stat_statements") ||
+      (key.objectType == "trigger" && key.schema == "cron" && key.name.startsWith("job.cron_"))
+
   private val parameterModes: Set[String] =
     Set("in", "out", "inout", "variadic")
+
+  private val exactTypeAliases: Map[String, String] =
+    Map(
+      "timestamptz" -> "timestamp with time zone",
+      "timestamp" -> "timestamp without time zone",
+      "timetz" -> "time with time zone",
+      "time" -> "time without time zone",
+      "int" -> "integer",
+      "int4" -> "integer",
+      "int2" -> "smallint",
+      "int8" -> "bigint",
+      "bool" -> "boolean",
+      "float8" -> "double precision",
+      "float4" -> "real",
+      "varchar" -> "character varying",
+      "decimal" -> "numeric"
+    )
 
   private val typeLeadingWords: Set[String] =
     Set(

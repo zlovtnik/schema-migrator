@@ -35,6 +35,29 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     assertEquals(routines.map(_.key), List(ObjectKey("public", "sync_stable_uuid(text)", "function")))
   }
 
+  test("normalizes routine signature aliases and type case") {
+    val routines = routineDefinitions(
+      """create or replace function search_purge_expired_queries(p_now timestamptz default now())
+        |returns bigint
+        |language plpgsql
+        |as $$ begin return 0; end; $$;
+        |
+        |create or replace function vec_reembed_changed_jobs(p_limit INTEGER default 100)
+        |returns integer
+        |language plpgsql
+        |as $$ begin return p_limit; end; $$;
+        |""".stripMargin
+    )
+
+    assertEquals(
+      routines.map(_.key),
+      List(
+        ObjectKey("public", "search_purge_expired_queries(timestamp with time zone)", "function"),
+        ObjectKey("public", "vec_reembed_changed_jobs(integer)", "function")
+      )
+    )
+  }
+
   test("extracts multiple routines from grouped files and ignores quoted bodies") {
     val sql =
       """-- create function ignored_comment()
@@ -430,6 +453,172 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     )
   }
 
+  test("routine aliases do not produce paired missing and untracked drift") {
+    val sql =
+      """create or replace function vec_build_baseline_profiles(
+        |  p_from timestamptz default now(),
+        |  p_to timestamptz default now(),
+        |  p_window interval default interval '15 minutes'
+        |)
+        |returns integer
+        |language plpgsql
+        |as $$
+        |begin
+        |  return 1;
+        |end;
+        |$$;
+        |""".stripMargin
+    val actualSql =
+      """CREATE OR REPLACE FUNCTION public.vec_build_baseline_profiles(
+        |  p_from timestamp with time zone DEFAULT now(),
+        |  p_to timestamp with time zone DEFAULT now(),
+        |  p_window interval DEFAULT interval '15 minutes'
+        |)
+        | RETURNS integer
+        | LANGUAGE plpgsql
+        |AS $function$
+        |begin
+        |  return 1;
+        |end;
+        |$function$
+        |""".stripMargin
+    val expectedObjects = expectedFromManifest(
+      schemaObject("function", "vec_build_baseline_profiles", "functions/009_vec_build_baseline_profiles.sql", sql)
+    )
+    val actualObjects = List(
+      LiveObject(
+        ObjectKey("public", "vec_build_baseline_profiles(timestamp with time zone, timestamp with time zone, interval)", "function"),
+        Some(actualSql)
+      )
+    )
+
+    assertEquals(driftItems(now, expectedObjects, actualObjects, ControlSnapshot(Nil, None, Nil)), Nil)
+  }
+
+  test("long routine signatures keep the full key instead of truncating at 63 characters") {
+    val sql =
+      """create or replace function coordinator.process_ingest_ledger(
+        |  p_stream_names text[],
+        |  p_oracle_stream_names text[],
+        |  p_max_attempts integer,
+        |  p_backoff_secs integer,
+        |  p_batch_size integer default 200
+        |)
+        |returns integer
+        |language plpgsql
+        |as $$ begin return p_batch_size; end; $$;
+        |""".stripMargin
+    val expectedObjects = expectedFromManifest(
+      schemaObject("function", "coordinator.process_ingest_ledger", "functions/023_coordinator_process_ingest_ledger.sql", sql)
+    )
+    val key = ObjectKey("coordinator", "process_ingest_ledger(text[], text[], integer, integer, integer)", "function")
+
+    assert(key.name.length > 63)
+    assertEquals(
+      driftItems(now, expectedObjects, List(LiveObject(key, Some(sql))), ControlSnapshot(Nil, None, Nil)),
+      Nil
+    )
+  }
+
+  test("routine comparison ignores comments spacing case public qualification and type aliases") {
+    val expectedSql =
+      """create or replace function demo_compare(p_value int)
+        |returns int
+        |language plpgsql
+        |as $$
+        |begin
+        |  -- local comment should not affect comparison
+        |  return (p_value);
+        |end;
+        |$$;
+        |""".stripMargin
+    val actualSql =
+      """CREATE OR REPLACE FUNCTION public.demo_compare(p_value integer)
+        | RETURNS integer
+        | LANGUAGE plpgsql
+        |AS $function$
+        |BEGIN
+        |  return (p_value);
+        |END;
+        |$function$
+        |""".stripMargin
+    val key = ObjectKey("public", "demo_compare(integer)", "function")
+
+    assertEquals(
+      driftItems(now, List(expected(key, expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
+      Nil
+    )
+  }
+
+  test("routine comparison ignores default argument casts and omitted default volatility") {
+    val ensureExpectedSql =
+      """create or replace function coordinator.ensure_cursor(
+        |  p_stream_name text,
+        |  p_default_cursor text default '0'
+        |)
+        |returns text
+        |language plpgsql
+        |as $$
+        |begin
+        |  return p_default_cursor;
+        |end;
+        |$$;
+        |""".stripMargin
+    val ensureActualSql =
+      """CREATE OR REPLACE FUNCTION coordinator.ensure_cursor(p_stream_name text, p_default_cursor text DEFAULT '0'::text)
+        | RETURNS text
+        | LANGUAGE plpgsql
+        |AS $function$
+        |begin
+        |  return p_default_cursor;
+        |end;
+        |$function$
+        |""".stripMargin
+    val archiveExpectedSql =
+      """create or replace function coordinator.list_wireless_payload_archive_candidates(
+        |  p_hot_days integer default 7,
+        |  p_limit integer default 100
+        |)
+        |returns table (
+        |  dedupe_key text,
+        |  observed_at timestamptz
+        |)
+        |language sql
+        |volatile
+        |as $$
+        |  select event.dedupe_key, event.observed_at
+        |  from sync_events event
+        |  limit greatest(coalesce(p_limit, 100), 1)
+        |$$;
+        |""".stripMargin
+    val archiveActualSql =
+      """CREATE OR REPLACE FUNCTION coordinator.list_wireless_payload_archive_candidates(p_hot_days integer DEFAULT 7, p_limit integer DEFAULT 100)
+        | RETURNS TABLE(dedupe_key text, observed_at timestamp with time zone)
+        | LANGUAGE sql
+        |AS $function$
+        |  select event.dedupe_key, event.observed_at
+        |  from sync_events event
+        |  limit greatest(coalesce(p_limit, 100), 1)
+        |$function$
+        |""".stripMargin
+    val expectedObjects = List(
+      expected(ObjectKey("coordinator", "ensure_cursor(text, text)", "function"), expectedDdl = Some(ensureExpectedSql)),
+      expected(
+        ObjectKey("coordinator", "list_wireless_payload_archive_candidates(integer, integer)", "function"),
+        expectedDdl = Some(archiveExpectedSql)
+      )
+    )
+    val actualObjects = List(
+      LiveObject(ObjectKey("coordinator", "ensure_cursor(text, text)", "function"), Some(ensureActualSql)),
+      LiveObject(
+        ObjectKey("coordinator", "list_wireless_payload_archive_candidates(integer, integer)", "function"),
+        Some(archiveActualSql)
+      )
+    )
+
+    assertEquals(driftItems(now, expectedObjects, actualObjects, ControlSnapshot(Nil, None, Nil)), Nil)
+  }
+
   test("schema control canonical SQL tracks routines when manifest is absent") {
     val sql =
       """create or replace function coordinator.ensure_cursor(p_stream_name text)
@@ -458,6 +647,61 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     assertEquals(catalog.head.status, "in_sync")
   }
 
+  test("view comparison ignores Postgres deparser casing public qualification and redundant expression parentheses") {
+    val expectedSql =
+      """create view sync_events_expanded as
+        |select
+        |  (archive.dedupe_key is not null and e.payload is null) as payload_archived,
+        |  e.status
+        |from sync_events e
+        |left join sync_event_payload_archives archive on archive.dedupe_key = e.dedupe_key;
+        |""".stripMargin
+    val actualSql =
+      """create view public.sync_events_expanded as
+        |SELECT archive.dedupe_key IS NOT NULL AND e.payload IS NULL AS payload_archived,
+        |       e.status
+        |FROM sync_events e
+        |LEFT JOIN sync_event_payload_archives archive ON archive.dedupe_key = e.dedupe_key
+        |""".stripMargin
+    val key = ObjectKey("public", "sync_events_expanded", "view")
+
+    assertEquals(
+      driftItems(now, List(expected(key, sourceFile = "views/001_sync_events_expanded.sql", expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
+      Nil
+    )
+  }
+
+  test("materialized view comparison accepts Postgres expansion of select star source views") {
+    val expectedSql =
+      """create materialized view mv_ap_risk_score as
+        |select * from v_ap_risk_score;
+        |""".stripMargin
+    val actualSql =
+      """create materialized view public.mv_ap_risk_score as
+        |SELECT bssid, deauth_score, composite_risk
+        |FROM v_ap_risk_score
+        |""".stripMargin
+    val key = ObjectKey("public", "mv_ap_risk_score", "materialized_view")
+
+    assertEquals(
+      driftItems(now, List(expected(key, sourceFile = "materialized_views/001_mv_ap_risk_score.sql", expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
+      Nil
+    )
+  }
+
+  test("known built-in untracked catalog objects are hidden while user objects remain visible") {
+    val actualObjects = List(
+      LiveObject(ObjectKey("public", "public", "schema"), Some("create schema public")),
+      LiveObject(ObjectKey("public", "pg_stat_statements", "extension"), Some("create extension if not exists pg_stat_statements")),
+      LiveObject(ObjectKey("cron", "job.cron_job_cache_invalidate", "trigger"), Some("CREATE TRIGGER cron_job_cache_invalidate")),
+      LiveObject(ObjectKey("public", "custom_live_only", "view"), Some("create view custom_live_only as select 1 as id"))
+    )
+
+    val items = driftItems(now, Nil, actualObjects, ControlSnapshot(Nil, None, Nil))
+
+    assertEquals(items.map(item => (item.schema, item.object_type, item.name, item.drift_type)), List(("public", "view", "custom_live_only", "untracked_actual")))
+  }
+
   test("pending and failed control rows take precedence over definition drift") {
     val expectedSql = "create or replace function coordinator.ensure_cursor(p_stream_name text) returns text language sql as $$ select 'expected' $$;"
     val actualSql = "create or replace function coordinator.ensure_cursor(p_stream_name text) returns text language sql as $$ select 'actual' $$;"
@@ -478,14 +722,14 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
   }
 
   test("applied control rows do not suppress live definition drift") {
-    val expectedSql = "create or replace view demo_view as select 1 as id;"
-    val actualSql = "create or replace view demo_view as select 2 as id;"
-    val key = ObjectKey("public", "demo_view", "view")
-    val sourceFile = "views/001_demo_view.sql"
+    val expectedSql = "create or replace function demo_fn() returns integer language sql as $$ select 1 $$;"
+    val actualSql = "create or replace function public.demo_fn() returns integer language sql as $$ select 2 $$;"
+    val key = ObjectKey("public", "demo_fn()", "function")
+    val sourceFile = "functions/001_demo_fn.sql"
     val expectedObjects = List(expected(key, sourceFile = sourceFile, expectedDdl = Some(expectedSql)))
     val actualObjects = List(LiveObject(key, Some(actualSql)))
     val control = controlSnapshot(
-      List(controlRow("view", "demo_view", sourceFile, "skipped", Some(expectedSql)))
+      List(controlRow("function", "demo_fn", sourceFile, "skipped", Some(expectedSql)))
     )
 
     val items = driftItems(now, expectedObjects, actualObjects, control)

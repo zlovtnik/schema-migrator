@@ -20,6 +20,7 @@ services:
       dockerfile: Dockerfile.backend
     restart: unless-stopped
     environment:
+      - BEDROCK_ENCRYPT_KEY=${BEDROCK_ENCRYPT_KEY:?BEDROCK_ENCRYPT_KEY is required}
       - BEDROCK_HTTP_HOST=0.0.0.0
       - BEDROCK_HTTP_PORT=8080
       - BEDROCK_CORS_ORIGINS=http://localhost

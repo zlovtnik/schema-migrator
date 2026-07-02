@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type SyntheticEvent } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { PageHeader } from "../../components/PageHeader";
 import { SqlPreviewPane } from "../../components/SqlPreviewPane";
@@ -39,27 +39,25 @@ export const DriftPage = () => {
   }, [driftFilter, textFilteredItems]);
 
   const driftCounts = useMemo(() => countByDriftType(textFilteredItems), [textFilteredItems]);
+  const selectedItem = useMemo(
+    () => items.find((item) => driftItemKey(item) === openKey) ?? null,
+    [items, openKey]
+  );
 
   const openDriftDetail = useCallback((item: DriftItem) => {
     const key = driftItemKey(item);
     setOpenKey(key);
-    document.getElementById(driftDetailId(item))?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    window.requestAnimationFrame(() => {
+      document.getElementById(driftDetailId(item))?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+    });
   }, []);
-
-  const handleDetailToggle = (item: DriftItem, event: SyntheticEvent<HTMLDetailsElement>) => {
-    const key = driftItemKey(item);
-    if (event.currentTarget.open) {
-      setOpenKey(key);
-      return;
-    }
-    setOpenKey((current) => (current === key ? null : current));
-  };
 
   const columns = useMemo<DataTableColumn<DriftItem>[]>(
     () => [
       {
         id: "object",
         header: "Object",
+        className: "drift-table__object",
         sortValue: (item) => item.name,
         cell: (item) => {
           const key = driftItemKey(item);
@@ -68,11 +66,12 @@ export const DriftPage = () => {
             <button
               aria-controls={driftDetailId(item)}
               aria-expanded={isOpen}
-              className={isOpen ? "link-button link-button--active" : "link-button"}
+              className={isOpen ? "link-button link-button--active drift-object-button" : "link-button drift-object-button"}
+              title={item.name}
               type="button"
               onClick={() => openDriftDetail(item)}
             >
-              <code>{item.name}</code>
+              <code className="drift-object-name">{item.name}</code>
             </button>
           );
         }
@@ -80,30 +79,35 @@ export const DriftPage = () => {
       {
         id: "type",
         header: "Type",
+        className: "drift-table__type",
         sortValue: (item) => item.object_type,
         cell: (item) => <span className="object-type-chip">{formatLabel(item.object_type)}</span>
       },
       {
         id: "schema",
         header: "Schema",
+        className: "drift-table__schema",
         sortValue: (item) => item.schema,
         cell: (item) => <code>{item.schema}</code>
       },
       {
         id: "drift",
         header: "Drift",
+        className: "drift-table__status",
         sortValue: (item) => item.drift_type,
         cell: (item) => <StatusBadge status={item.drift_type} />
       },
       {
         id: "source",
         header: "Source",
+        className: "drift-table__source",
         sortValue: (item) => item.source_file ?? "",
         cell: (item) => item.source_file ? <code>{item.source_file}</code> : <span className="cell-subtle">Live catalog</span>
       },
       {
         id: "detected",
         header: "Detected",
+        className: "drift-table__detected",
         sortValue: (item) => item.detected_at,
         cell: (item) => <time dateTime={item.detected_at}>{new Date(item.detected_at).toLocaleString()}</time>
       }
@@ -114,9 +118,9 @@ export const DriftPage = () => {
   return (
     <section className="page">
       <PageHeader
-        eyebrow="Drift"
-        title="Drift detection"
-        description="Compare manifest-defined schema objects with the selected target catalog."
+        eyebrow="Observe"
+        title="Schema drift"
+        description="Compare manifest-defined objects with the selected target catalog."
         actions={<TargetSelector />}
       />
 
@@ -157,38 +161,40 @@ export const DriftPage = () => {
             </EmptyState>
           ) : (
             <div className="drift-workspace">
-              <label className="list-filter">
-                Filter drift results
-                <input
-                  data-list-filter
-                  name="drift-filter"
-                  autoComplete="off"
-                  value={textFilter}
-                  onChange={(event) => setTextFilter(event.target.value)}
-                />
-              </label>
-              <div className="drift-chip-row" aria-label="Drift type filters">
-                <button
-                  className={driftFilter === "all" ? "drift-chip drift-chip--active" : "drift-chip"}
-                  type="button"
-                  onClick={() => setDriftFilter("all")}
-                  aria-pressed={driftFilter === "all"}
-                >
-                  <span>All drift</span>
-                  <strong>{textFilteredItems.length}</strong>
-                </button>
-                {Array.from(driftCounts.entries()).map(([type, count]) => (
+              <div className="drift-toolbar">
+                <label className="list-filter drift-filter">
+                  Filter results
+                  <input
+                    data-list-filter
+                    name="drift-filter"
+                    autoComplete="off"
+                    value={textFilter}
+                    onChange={(event) => setTextFilter(event.target.value)}
+                  />
+                </label>
+                <div className="drift-chip-row" aria-label="Drift type filters">
                   <button
-                    className={driftFilter === type ? "drift-chip drift-chip--active" : "drift-chip"}
-                    key={type}
+                    className={driftFilter === "all" ? "drift-chip drift-chip--active" : "drift-chip"}
                     type="button"
-                    onClick={() => setDriftFilter(type)}
-                    aria-pressed={driftFilter === type}
+                    onClick={() => setDriftFilter("all")}
+                    aria-pressed={driftFilter === "all"}
                   >
-                    <StatusBadge status={type} />
-                    <strong>{count}</strong>
+                    <span>All</span>
+                    <strong>{textFilteredItems.length}</strong>
                   </button>
-                ))}
+                  {Array.from(driftCounts.entries()).map(([type, count]) => (
+                    <button
+                      className={driftFilter === type ? "drift-chip drift-chip--active" : "drift-chip"}
+                      key={type}
+                      type="button"
+                      onClick={() => setDriftFilter(type)}
+                      aria-pressed={driftFilter === type}
+                    >
+                      <StatusBadge status={type} />
+                      <strong>{count}</strong>
+                    </button>
+                  ))}
+                </div>
               </div>
               <DataTable
                 caption="Drift results"
@@ -198,47 +204,7 @@ export const DriftPage = () => {
                 getRowState={(item) => ({ selected: driftItemKey(item) === openKey })}
                 empty={textFilter ? `No drift results match "${textFilter}".` : "No drift detected."}
               />
-              <section className="section-block">
-                <h2>Drift details</h2>
-                <div className="drift-detail-grid">
-                  {items.map((item) => {
-                    const key = driftItemKey(item);
-                    const isOpen = openKey === key;
-                    return (
-                      <details
-                        className="drift-detail"
-                        id={driftDetailId(item)}
-                        key={key}
-                        open={isOpen}
-                        onToggle={(event) => handleDetailToggle(item, event)}
-                      >
-                        <summary className="drift-detail__summary">
-                          <span className="drift-detail__title">
-                            <StatusBadge status={item.drift_type} />
-                            <strong>
-                              <code>{item.schema}.{item.name}</code>
-                            </strong>
-                          </span>
-                          <span className="drift-detail__meta">{formatLabel(item.object_type)}</span>
-                        </summary>
-                        {isOpen ? (
-                          <>
-                            {item.apply_status ? (
-                              <div className="drift-detail__control">
-                                schema_control status <strong>{item.apply_status}</strong>
-                              </div>
-                            ) : null}
-                            <div className="sql-preview-grid">
-                              <SqlPreviewPane code={item.expected} title="Expected" />
-                              <SqlPreviewPane code={item.actual} title="Actual" />
-                            </div>
-                          </>
-                        ) : null}
-                      </details>
-                    );
-                  })}
-                </div>
-              </section>
+              {selectedItem ? <DriftDetail item={selectedItem} /> : null}
             </div>
           )}
         </div>
@@ -246,6 +212,29 @@ export const DriftPage = () => {
     </section>
   );
 };
+
+const DriftDetail = ({ item }: { item: DriftItem }) => (
+  <section className="drift-detail" id={driftDetailId(item)} aria-labelledby={`${driftDetailId(item)}-title`}>
+    <header className="drift-detail__summary">
+      <span className="drift-detail__title">
+        <StatusBadge status={item.drift_type} />
+        <strong id={`${driftDetailId(item)}-title`}>
+          <code>{item.schema}.{item.name}</code>
+        </strong>
+      </span>
+      <span className="drift-detail__meta">{formatLabel(item.object_type)}</span>
+    </header>
+    {item.apply_status ? (
+      <div className="drift-detail__control">
+        schema_control status <strong>{item.apply_status}</strong>
+      </div>
+    ) : null}
+    <div className="sql-preview-grid">
+      <SqlPreviewPane code={item.expected} title="Expected" />
+      <SqlPreviewPane code={item.actual} title="Actual" />
+    </div>
+  </section>
+);
 
 const ControlSummaryPanel = ({ summary }: { summary: SchemaControlSummary | null | undefined }) => {
   if (!summary) {
