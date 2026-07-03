@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "@phosphor-icons/react/dist/csr/ArrowDown";
@@ -5,6 +6,14 @@ import { ArrowUpIcon } from "@phosphor-icons/react/dist/csr/ArrowUp";
 import { CaretDownIcon } from "@phosphor-icons/react/dist/csr/CaretDown";
 import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 import { Icon } from "./Icon";
+||||||| parent of 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
+import { useMemo, useState, type ReactNode } from "react";
+=======
+import { useMemo, useState, type ReactNode } from "react";
+import { ArrowDownIcon } from "@phosphor-icons/react/dist/csr/ArrowDown";
+import { ArrowUpIcon } from "@phosphor-icons/react/dist/csr/ArrowUp";
+import { Icon } from "./Icon";
+>>>>>>> 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
 
 export interface DataTableColumn<T> {
   id: string;
@@ -156,6 +165,7 @@ export const DataTable = <T,>({
 
   return (
     <div className="table-panel">
+<<<<<<< HEAD
       {toolbar ? <div className="table-toolbar">{toolbar}</div> : null}
       {rows.length === 0 ? (
         <div className="empty-state data-table__empty">{empty}</div>
@@ -189,6 +199,79 @@ export const DataTable = <T,>({
                     </th>
                   );
                 })}
+||||||| parent of 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
+      <table className="data-table">
+        <caption className="sr-only">{caption}</caption>
+        <thead>
+          <tr>
+            {columns.map((column) => {
+              const sorted = sort?.columnId === column.id ? sort.direction : undefined;
+              return (
+                <th aria-sort={sorted} className={column.className} key={column.id} scope="col">
+                  {column.sortValue ? (
+                    <button className="table-sort-button" type="button" onClick={() => toggleSort(column)}>
+                      {column.header}
+                    </button>
+                  ) : (
+                    column.header
+                  )}
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {sortedRows.map((row) => {
+            const rowState = getRowState?.(row);
+            return (
+              <tr className={rowState?.className} data-selected={rowState?.selected ? "true" : undefined} key={rowKey(row)}>
+                {columns.map((column) => (
+                  <td className={column.className} key={column.id}>
+                    {column.cell(row)}
+                  </td>
+                ))}
+=======
+      <table className="data-table">
+        <caption className="sr-only">{caption}</caption>
+        <thead>
+          <tr>
+            {columns.map((column) => {
+              const sorted = sort?.columnId === column.id ? sort.direction : undefined;
+              return (
+                <th aria-sort={sorted} className={column.className} key={column.id} scope="col">
+                  {column.sortValue ? (
+                    <button className="table-sort-button" type="button" onClick={() => toggleSort(column)}>
+                      <span className="table-sort-button__content">
+                        <span className="table-sort-button__label">{column.header}</span>
+                        {sorted ? (
+                          <Icon
+                            className="table-sort-button__icon"
+                            source={sorted === "ascending" ? ArrowUpIcon : ArrowDownIcon}
+                            size={16}
+                            weight="bold"
+                          />
+                        ) : null}
+                      </span>
+                    </button>
+                  ) : (
+                    column.header
+                  )}
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {sortedRows.map((row) => {
+            const rowState = getRowState?.(row);
+            return (
+              <tr className={rowState?.className} data-selected={rowState?.selected ? "true" : undefined} key={rowKey(row)}>
+                {columns.map((column) => (
+                  <td className={column.className} key={column.id}>
+                    {column.cell(row)}
+                  </td>
+                ))}
+>>>>>>> 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
               </tr>
             </thead>
             <tbody>

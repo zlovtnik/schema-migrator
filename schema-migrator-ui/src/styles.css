@@ -1069,16 +1069,26 @@ label {
   vertical-align: middle;
 }
 
+<<<<<<< HEAD
 .data-table thead th {
   position: sticky;
   top: 0;
   z-index: 2;
+||||||| parent of 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
+.data-table th {
+=======
+.data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+>>>>>>> 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
   background: var(--surface-strong);
   color: var(--muted);
   font-size: var(--font-size-12);
   font-weight: 800;
 }
 
+<<<<<<< HEAD
 .data-table td code {
   display: inline-block;
   max-width: 100%;
@@ -1116,6 +1126,47 @@ label {
   max-width: 100%;
   min-width: 0;
   overflow: hidden;
+||||||| parent of 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
+.data-table th button {
+=======
+.data-table td code {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.data-table td time {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--font-size-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table .link-button {
+  justify-content: flex-start;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.data-table .link-button code {
+  display: block;
+}
+
+.data-table .status-badge {
+  max-width: 100%;
+  min-width: min(90px, 100%);
+}
+
+.data-table th button {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+>>>>>>> 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
   padding: 0;
   border: 0;
   background: transparent;
@@ -1124,6 +1175,7 @@ label {
   text-align: left;
 }
 
+<<<<<<< HEAD
 .table-select {
   width: min(220px, 100%);
   min-height: 32px;
@@ -1133,9 +1185,16 @@ label {
 
 .data-table__sort {
   display: block;
+||||||| parent of 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
+.table-sort-button {
+=======
+.table-sort-button {
+  display: block;
+>>>>>>> 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
   cursor: pointer;
 }
 
+<<<<<<< HEAD
 .data-table__sort-content {
   display: inline-flex;
   align-items: center;
@@ -1205,6 +1264,30 @@ label {
   box-shadow: none;
 }
 
+||||||| parent of 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
+=======
+.table-sort-button__content {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.table-sort-button__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-sort-button__icon {
+  flex: 0 0 auto;
+  color: var(--schema-accent);
+}
+
+>>>>>>> 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
 .schema-workspace {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr) 380px;

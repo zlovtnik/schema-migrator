@@ -103,7 +103,7 @@ export const SchemaPage = () => {
               type="button"
               onClick={() => setSelectedKey(objectKey(object))}
             >
-              <code>{object.name}</code>
+              <code title={object.name}>{object.name}</code>
             </button>
           );
         }
@@ -421,6 +421,7 @@ const formatObjectType = (type: ObjectFilter): string =>
     .join(" ");
 
 const formatDate = (value: string): string => new Date(value).toLocaleString();
+<<<<<<< HEAD
 
 const relativeDateFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
@@ -463,3 +464,46 @@ const formatObjectCount = (type: ObjectFilter, count: number): string => {
 
 const formatDensity = (density: TableDensity): string =>
   density === "compact" ? "Compact" : "Comfortable";
+||||||| parent of 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
+=======
+
+const formatRelativeDate = (value: string): string => {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return "Unknown";
+  }
+  const diffMs = timestamp - Date.now();
+  const absDiffMs = Math.abs(diffMs);
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ["year", 365 * 24 * 60 * 60 * 1000],
+    ["month", 30 * 24 * 60 * 60 * 1000],
+    ["week", 7 * 24 * 60 * 60 * 1000],
+    ["day", 24 * 60 * 60 * 1000],
+    ["hour", 60 * 60 * 1000],
+    ["minute", 60 * 1000],
+    ["second", 1000]
+  ];
+  const [unit, unitMs] = units.find(([, threshold]) => absDiffMs >= threshold) ?? ["second", 1000];
+  const amount = Math.round(diffMs / unitMs);
+  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(amount, unit);
+};
+
+const formatObjectCount = (type: ObjectFilter, count: number): string => {
+  if (type === "all") {
+    return count === 1 ? "object" : "objects";
+  }
+  if (count === 1) {
+    return formatObjectType(type).toLowerCase();
+  }
+  if (type === "index") {
+    return "indexes";
+  }
+  if (type === "schema") {
+    return "schemas";
+  }
+  return `${formatObjectType(type).toLowerCase()}s`;
+};
+
+const formatDensity = (density: TableDensity): string =>
+  density === "compact" ? "Compact" : "Comfortable";
+>>>>>>> 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
