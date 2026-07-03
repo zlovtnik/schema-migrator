@@ -863,6 +863,7 @@ label {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
   width: fit-content;
   white-space: nowrap;
   padding: 4px 8px;
@@ -872,6 +873,16 @@ label {
   color: var(--muted);
   font-size: var(--font-size-12);
   font-weight: 750;
+}
+
+.status-badge svg {
+  flex: 0 0 auto;
+}
+
+.status-badge__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-badge--running svg {
@@ -923,7 +934,7 @@ label {
 .table-panel {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
@@ -936,6 +947,7 @@ label {
 
 .data-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
@@ -959,20 +971,60 @@ label {
 
 .data-table th,
 .data-table td {
-  padding: 11px 12px;
+  min-width: 0;
+  padding: 7px 12px;
   border-bottom: 1px solid var(--border);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   background: var(--surface-strong);
   color: var(--muted);
   font-size: var(--font-size-12);
   font-weight: 800;
 }
 
+.data-table td code {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.data-table td time {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--font-size-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-table .link-button {
+  justify-content: flex-start;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.data-table .link-button code {
+  display: block;
+}
+
+.data-table .status-badge {
+  max-width: 100%;
+  min-width: min(90px, 100%);
+}
+
 .data-table th button {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding: 0;
   border: 0;
   background: transparent;
@@ -982,12 +1034,34 @@ label {
 }
 
 .table-sort-button {
+  display: block;
   cursor: pointer;
+}
+
+.table-sort-button__content {
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  gap: var(--space-1);
+}
+
+.table-sort-button__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-sort-button__icon {
+  flex: 0 0 auto;
+  color: var(--schema-accent);
 }
 
 .schema-workspace {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) minmax(320px, 0.8fr);
+  grid-template-columns: 220px minmax(0, 1fr) 380px;
   gap: var(--space-4);
   align-items: start;
 }
@@ -1033,6 +1107,9 @@ label {
   align-items: center;
   min-width: 0;
   gap: var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .schema-tree__label svg {
@@ -1040,6 +1117,7 @@ label {
 }
 
 .schema-tree__item strong {
+  flex: 0 0 auto;
   font-family: var(--font-mono);
   color: var(--muted);
 }
@@ -1049,6 +1127,151 @@ label {
   display: grid;
   gap: var(--space-3);
   min-width: 0;
+}
+
+.schema-workspace__main {
+  container: schema-table / inline-size;
+}
+
+.schema-table-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 520px) minmax(190px, 1fr) auto;
+  gap: var(--space-3);
+  align-items: end;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.schema-table-toolbar__filter {
+  max-width: none;
+}
+
+.schema-table-toolbar__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 38px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--font-size-12);
+  font-weight: 800;
+}
+
+.schema-table-toolbar__meta strong {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-16);
+}
+
+.schema-table-toolbar__meta span {
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  color: var(--muted);
+}
+
+.density-toggle {
+  display: inline-flex;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+}
+
+.density-toggle__item {
+  min-height: 32px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--font-size-12);
+  font-weight: 800;
+}
+
+.density-toggle__item--active {
+  background: var(--surface);
+  color: var(--schema-accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.schema-workspace__main[data-density="compact"] .data-table th,
+.schema-workspace__main[data-density="compact"] .data-table td {
+  padding-block: 4px;
+}
+
+.schema-table__object {
+  width: 34%;
+}
+
+.schema-table__type,
+.schema-table__schema {
+  width: 8%;
+}
+
+.schema-table__status {
+  width: 16%;
+}
+
+.schema-table__source {
+  width: 24%;
+}
+
+.schema-table__checked {
+  width: 10%;
+}
+
+@container schema-table (max-width: 620px) {
+  .schema-table-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container schema-table (max-width: 560px) {
+  .schema-table__checked {
+    display: none;
+  }
+
+  .schema-table__object {
+    width: 38%;
+  }
+
+  .schema-table__status {
+    width: 17%;
+  }
+
+  .schema-table__source {
+    width: 29%;
+  }
+}
+
+@container schema-table (max-width: 520px) {
+  .schema-table__schema {
+    display: none;
+  }
+
+  .schema-table__object {
+    width: 46%;
+  }
+
+  .schema-table__type {
+    width: 14%;
+  }
+
+  .schema-table__status {
+    width: 18%;
+  }
+
+  .schema-table__source {
+    width: 22%;
+  }
 }
 
 .drift-page-stack {
@@ -1149,6 +1372,7 @@ label {
   flex-direction: column;
   gap: var(--space-4);
   min-width: 0;
+  overflow: hidden;
   padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -1165,8 +1389,21 @@ label {
   border-bottom: 1px solid var(--border);
 }
 
+.object-detail__header > div {
+  min-width: 0;
+}
+
 .object-detail h2 {
   font-size: var(--font-size-16);
+}
+
+.object-detail h2 code,
+.object-detail .detail-grid code {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 dt,
@@ -1177,7 +1414,10 @@ dd {
 .object-type-chip {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
+  min-width: 0;
   min-height: 24px;
+  overflow: hidden;
   padding: 3px 7px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1185,6 +1425,8 @@ dd {
   color: var(--muted);
   font-size: var(--font-size-12);
   font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .drift-toolbar {
@@ -1299,7 +1541,10 @@ dd {
 .migration-timeline {
   display: grid;
   gap: var(--space-2);
+  max-height: 220px;
+  min-width: 0;
   margin: 0;
+  overflow-y: auto;
   padding: 0;
   list-style: none;
 }
@@ -1317,6 +1562,16 @@ dd {
 .migration-timeline li > div {
   display: grid;
   gap: 2px;
+  min-width: 0;
+}
+
+.migration-timeline strong,
+.migration-timeline span,
+.migration-timeline time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .migration-timeline span,
@@ -1783,7 +2038,9 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+  max-width: 100%;
   min-height: 28px;
+  overflow: hidden;
   padding: 3px var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -2237,6 +2494,36 @@ kbd {
   }
 }
 
+@media (max-width: 1280px) {
+  .schema-workspace {
+    grid-template-columns: 200px minmax(0, 1fr) 340px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .schema-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .schema-tree {
+    position: static;
+    display: flex;
+    flex-direction: row;
+    gap: var(--space-2);
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
+  }
+
+  .schema-tree__item {
+    flex: 0 0 auto;
+    min-width: 164px;
+  }
+
+  .schema-workspace__detail {
+    position: static;
+  }
+}
+
 @media (max-width: 920px) {
   .app-shell,
   .app-shell--collapsed {
@@ -2390,8 +2677,11 @@ kbd {
 
   .schema-tree {
     position: static;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-direction: row;
+    gap: var(--space-2);
+    overflow-x: auto;
+    padding-bottom: var(--space-1);
   }
 
   .schema-workspace__detail {

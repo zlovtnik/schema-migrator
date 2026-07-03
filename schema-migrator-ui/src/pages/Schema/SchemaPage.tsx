@@ -21,6 +21,7 @@ import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import type { ObjectType, SchemaCatalogObject } from "../../types";
 
 type ObjectFilter = ObjectType | "all";
+type TableDensity = "comfortable" | "compact";
 
 export const SchemaPage = () => {
   const selectedTarget = useSelectedTargetId();
@@ -30,6 +31,7 @@ export const SchemaPage = () => {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
+  const [density, setDensity] = useState<TableDensity>("comfortable");
 
   const objects = data?.objects ?? [];
   const filteredObjects = useMemo(
@@ -64,6 +66,10 @@ export const SchemaPage = () => {
 
   const selectedObject = filteredObjects.find((object) => objectKey(object) === selectedKey);
   const counts = useMemo(() => countByType(objects), [objects]);
+  const driftedCount = useMemo(
+    () => filteredObjects.filter((object) => object.status === "drift_detected").length,
+    [filteredObjects]
+  );
 
   const handleCopyChecksum = useCallback(async (object: SchemaCatalogObject) => {
     if (!object.checksum) {
@@ -84,17 +90,20 @@ export const SchemaPage = () => {
       {
         id: "name",
         header: "Object",
+        className: "schema-table__object",
         sortValue: (object) => object.name,
         cell: (object) => {
           const isSelected = objectKey(object) === selectedKey;
           return (
             <button
+              aria-label={object.name}
               aria-current={isSelected ? "true" : undefined}
               className={isSelected ? "link-button link-button--active" : "link-button"}
+              title={object.name}
               type="button"
               onClick={() => setSelectedKey(objectKey(object))}
             >
-              <code>{object.name}</code>
+              <code title={object.name}>{object.name}</code>
             </button>
           );
         }
@@ -102,32 +111,56 @@ export const SchemaPage = () => {
       {
         id: "type",
         header: "Type",
+        className: "schema-table__type",
         sortValue: (object) => object.object_type,
-        cell: (object) => <span className="object-type-chip">{formatObjectType(object.object_type)}</span>
+        cell: (object) => {
+          const label = formatObjectType(object.object_type);
+          return (
+            <span className="object-type-chip" title={label}>
+              {label}
+            </span>
+          );
+        }
       },
       {
         id: "schema",
         header: "Schema",
+        className: "schema-table__schema",
         sortValue: (object) => object.schema,
-        cell: (object) => <code>{object.schema}</code>
+        cell: (object) => <code title={object.schema}>{object.schema}</code>
       },
       {
         id: "status",
         header: "Status",
+        className: "schema-table__status",
         sortValue: (object) => object.status,
         cell: (object) => <StatusBadge status={object.status} />
       },
       {
         id: "source",
         header: "Source",
+        className: "schema-table__source",
         sortValue: (object) => object.source_file ?? "",
-        cell: (object) => object.source_file ? <code>{object.source_file}</code> : <span className="cell-subtle">Live catalog</span>
+        cell: (object) =>
+          object.source_file ? (
+            <code title={object.source_file}>{object.source_file}</code>
+          ) : (
+            <span className="cell-subtle">Live catalog</span>
+          )
       },
       {
         id: "checked",
         header: "Checked",
+        className: "schema-table__checked",
         sortValue: (object) => object.last_checked,
-        cell: (object) => <time dateTime={object.last_checked}>{formatDate(object.last_checked)}</time>
+        cell: (object) => {
+          const absoluteDate = formatDate(object.last_checked);
+          return (
+            <time aria-label={absoluteDate} dateTime={object.last_checked} title={absoluteDate}>
+              {formatRelativeDate(object.last_checked)}
+            </time>
+          );
+        }
       }
     ],
     [selectedKey]
@@ -202,17 +235,36 @@ export const SchemaPage = () => {
             ))}
           </nav>
 
-          <div className="schema-workspace__main">
-            <label className="list-filter">
-              Filter schema objects
-              <input
-                data-list-filter
-                name="schema-object-filter"
-                autoComplete="off"
-                value={textFilter}
-                onChange={(event) => setTextFilter(event.target.value)}
-              />
-            </label>
+          <div className="schema-workspace__main" data-density={density}>
+            <div className="schema-table-toolbar">
+              <label className="list-filter schema-table-toolbar__filter">
+                Filter schema objects
+                <input
+                  data-list-filter
+                  name="schema-object-filter"
+                  autoComplete="off"
+                  value={textFilter}
+                  onChange={(event) => setTextFilter(event.target.value)}
+                />
+              </label>
+              <div className="schema-table-toolbar__meta" aria-live="polite">
+                <strong>{filteredObjects.length}</strong> {formatObjectCount(filter, filteredObjects.length)}
+                <span>{driftedCount} drifted</span>
+              </div>
+              <div className="density-toggle" role="group" aria-label="Table density">
+                {(["comfortable", "compact"] as const).map((option) => (
+                  <button
+                    aria-pressed={density === option}
+                    className={density === option ? "density-toggle__item density-toggle__item--active" : "density-toggle__item"}
+                    key={option}
+                    type="button"
+                    onClick={() => setDensity(option)}
+                  >
+                    {formatDensity(option)}
+                  </button>
+                ))}
+              </div>
+            </div>
             <DataTable
               caption="Schema objects"
               columns={columns}
@@ -369,3 +421,43 @@ const formatObjectType = (type: ObjectFilter): string =>
     .join(" ");
 
 const formatDate = (value: string): string => new Date(value).toLocaleString();
+
+const formatRelativeDate = (value: string): string => {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return "Unknown";
+  }
+  const diffMs = timestamp - Date.now();
+  const absDiffMs = Math.abs(diffMs);
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ["year", 365 * 24 * 60 * 60 * 1000],
+    ["month", 30 * 24 * 60 * 60 * 1000],
+    ["week", 7 * 24 * 60 * 60 * 1000],
+    ["day", 24 * 60 * 60 * 1000],
+    ["hour", 60 * 60 * 1000],
+    ["minute", 60 * 1000],
+    ["second", 1000]
+  ];
+  const [unit, unitMs] = units.find(([, threshold]) => absDiffMs >= threshold) ?? ["second", 1000];
+  const amount = Math.round(diffMs / unitMs);
+  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(amount, unit);
+};
+
+const formatObjectCount = (type: ObjectFilter, count: number): string => {
+  if (type === "all") {
+    return count === 1 ? "object" : "objects";
+  }
+  if (count === 1) {
+    return formatObjectType(type).toLowerCase();
+  }
+  if (type === "index") {
+    return "indexes";
+  }
+  if (type === "schema") {
+    return "schemas";
+  }
+  return `${formatObjectType(type).toLowerCase()}s`;
+};
+
+const formatDensity = (density: TableDensity): string =>
+  density === "compact" ? "Compact" : "Comfortable";

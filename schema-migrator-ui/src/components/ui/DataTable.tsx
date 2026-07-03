@@ -1,4 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { ArrowDownIcon } from "@phosphor-icons/react/dist/csr/ArrowDown";
+import { ArrowUpIcon } from "@phosphor-icons/react/dist/csr/ArrowUp";
+import { Icon } from "./Icon";
 
 export interface DataTableColumn<T> {
   id: string;
@@ -72,7 +75,17 @@ export const DataTable = <T,>({ caption, columns, rows, rowKey, empty, getRowSta
                 <th aria-sort={sorted} className={column.className} key={column.id} scope="col">
                   {column.sortValue ? (
                     <button className="table-sort-button" type="button" onClick={() => toggleSort(column)}>
-                      {column.header}
+                      <span className="table-sort-button__content">
+                        <span className="table-sort-button__label">{column.header}</span>
+                        {sorted ? (
+                          <Icon
+                            className="table-sort-button__icon"
+                            source={sorted === "ascending" ? ArrowUpIcon : ArrowDownIcon}
+                            size={16}
+                            weight="bold"
+                          />
+                        ) : null}
+                      </span>
                     </button>
                   ) : (
                     column.header

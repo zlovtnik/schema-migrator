@@ -81,6 +81,6 @@ const statusIcons: Record<string, IconSource> = {
 export const StatusBadge = ({ status, title }: StatusBadgeProps) => (
   <span className={`status-badge status-badge--${status}`} title={title}>
     <Icon source={statusIcons[status] ?? ClockIcon} size={16} weight="bold" />
-    {statusLabels[status] ?? status}
+    <span className="status-badge__label">{statusLabels[status] ?? status}</span>
   </span>
 );
