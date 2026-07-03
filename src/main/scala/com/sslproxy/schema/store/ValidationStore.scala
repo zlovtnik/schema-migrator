@@ -1,16 +1,70 @@
 package com.sslproxy.schema.store
 
-import cats.effect.{Clock, IO, Ref}
+import cats.effect.{Clock, IO, Ref, Resource}
+import cats.syntax.all.*
+import com.mongodb.client.model.{Indexes, ReplaceOptions}
+import com.mongodb.client.{MongoClients, MongoCollection}
+import com.sslproxy.schema.config.{DbKind, MongoConfig}
+import com.sslproxy.schema.discovery.SqlFile
+import com.sslproxy.schema.validation.{ValidationReport, Validator}
+import org.bson.Document
+
+import scala.jdk.CollectionConverters.*
 
 trait ValidationStore:
   def list(targetId: Option[String]): IO[List[ValidationResult]]
   def get(runId: String): IO[Option[ValidationResult]]
-  def recordClean(runId: String, targetId: String): IO[ValidationResult]
-  def rerun(run: Run): IO[ValidationResult]
+  def record(runId: String, targetId: String, report: ValidationReport): IO[ValidationResult]
+
+  def validateFiles(run: Run, dbKind: DbKind, files: List[SqlFile]): IO[ValidationResult] =
+    Validator[IO](dbKind).validate(files).flatMap(report => record(run.id, run.target_id, report))
+
+  def validateRun(run: Run, patch: Patch, patchStore: PatchStore, dbKind: DbKind): IO[ValidationResult] =
+    patchStore.sqlFiles(patch, dbKind).flatMap(files => validateFiles(run, dbKind, files.map(_.sqlFile)))
 
 object ValidationStore:
+  def mongo(config: MongoConfig, collectionName: String): Resource[IO, ValidationStore] =
+    Resource
+      .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
+      .evalMap { client =>
+        val store = MongoValidationStore(client.getDatabase(config.database).getCollection(collectionName))
+        store.initialize.as(store: ValidationStore)
+      }
+
   def inMemory: IO[ValidationStore] =
     Ref.of[IO, Map[String, ValidationResult]](Map.empty).map(InMemoryValidationStore.apply)
+
+  private[store] def resultFromReport(
+    runId: String,
+    targetId: String,
+    checkedAt: String,
+    report: ValidationReport
+  ): ValidationResult =
+    val errors = report.errors.map(message => invalidObject(message, "error"))
+    val warnings = report.warnings.map(message => invalidObject(message, "warning"))
+    ValidationResult(
+      run_id = runId,
+      target_id = targetId,
+      checked_at = checkedAt,
+      invalid = errors ++ warnings,
+      status =
+        if errors.nonEmpty then "errors"
+        else if warnings.nonEmpty then "warnings"
+        else "clean"
+    )
+
+  private def invalidObject(message: String, severity: String): InvalidObject =
+    val name =
+      message.takeWhile(_ != ':').trim match
+        case "" => "validation"
+        case value => value
+    InvalidObject(
+      object_type = "other",
+      schema = "",
+      name = name,
+      error = message,
+      severity = severity
+    )
 
 private final class InMemoryValidationStore(ref: Ref[IO, Map[String, ValidationResult]]) extends ValidationStore:
   override def list(targetId: Option[String]): IO[List[ValidationResult]] =
@@ -23,21 +77,89 @@ private final class InMemoryValidationStore(ref: Ref[IO, Map[String, ValidationR
   override def get(runId: String): IO[Option[ValidationResult]] =
     ref.get.map(_.get(runId))
 
-  override def recordClean(runId: String, targetId: String): IO[ValidationResult] =
+  override def record(runId: String, targetId: String, report: ValidationReport): IO[ValidationResult] =
     for
       now <- nowString
-      result = ValidationResult(
-        run_id = runId,
-        target_id = targetId,
-        checked_at = now,
-        invalid = Nil,
-        status = "clean"
-      )
+      result = ValidationStore.resultFromReport(runId, targetId, now, report)
       _ <- ref.update(_ + (runId -> result))
     yield result
 
-  override def rerun(run: Run): IO[ValidationResult] =
-    recordClean(run.id, run.target_id)
-
   private def nowString: IO[String] =
     Clock[IO].realTimeInstant.map(_.toString)
+
+private final class MongoValidationStore(collection: MongoCollection[Document]) extends ValidationStore:
+  override def list(targetId: Option[String]): IO[List[ValidationResult]] =
+    IO.blocking {
+      val filter = targetId.fold(new Document())(id => new Document("target_id", id))
+      collection
+        .find(filter)
+        .sort(Indexes.ascending("checked_at"))
+        .into(new java.util.ArrayList[Document]())
+        .asScala
+        .toList
+        .map(fromDocument)
+    }
+
+  override def get(runId: String): IO[Option[ValidationResult]] =
+    IO.blocking(Option(collection.find(idFilter(runId)).first()).map(fromDocument))
+
+  override def record(runId: String, targetId: String, report: ValidationReport): IO[ValidationResult] =
+    for
+      now <- Clock[IO].realTimeInstant.map(_.toString)
+      result = ValidationStore.resultFromReport(runId, targetId, now, report)
+      _ <- IO.blocking(collection.replaceOne(idFilter(runId), toDocument(result), ReplaceOptions().upsert(true))).void
+    yield result
+
+  private[store] def initialize: IO[Unit] =
+    IO.blocking {
+      collection.createIndex(Indexes.ascending("target_id", "checked_at"))
+      collection.createIndex(Indexes.ascending("status"))
+    }.void
+
+  private def toDocument(result: ValidationResult): Document =
+    new Document()
+      .append("_id", result.run_id)
+      .append("run_id", result.run_id)
+      .append("target_id", result.target_id)
+      .append("checked_at", result.checked_at)
+      .append("status", result.status)
+      .append("invalid", result.invalid.map(invalidDocument).asJava)
+
+  private def invalidDocument(invalid: InvalidObject): Document =
+    new Document()
+      .append("object_type", invalid.object_type)
+      .append("schema", invalid.schema)
+      .append("name", invalid.name)
+      .append("error", invalid.error)
+      .append("severity", invalid.severity)
+
+  private def fromDocument(document: Document): ValidationResult =
+    ValidationResult(
+      run_id = requiredString(document, "run_id"),
+      target_id = requiredString(document, "target_id"),
+      checked_at = requiredString(document, "checked_at"),
+      invalid = invalidDocuments(document).map(invalidFromDocument),
+      status = requiredString(document, "status")
+    )
+
+  private def invalidFromDocument(document: Document): InvalidObject =
+    InvalidObject(
+      object_type = requiredString(document, "object_type"),
+      schema = requiredString(document, "schema"),
+      name = requiredString(document, "name"),
+      error = requiredString(document, "error"),
+      severity = requiredString(document, "severity")
+    )
+
+  private def invalidDocuments(document: Document): List[Document] =
+    Option(document.get("invalid")) match
+      case Some(values: java.util.List[?]) =>
+        values.asScala.toList.collect { case doc: Document => doc }
+      case _ => Nil
+
+  private def idFilter(runId: String): Document =
+    new Document("_id", runId)
+
+  private def requiredString(document: Document, field: String): String =
+    Option(document.getString(field))
+      .getOrElse(throw IllegalStateException(s"validation document is missing required field '$field'"))

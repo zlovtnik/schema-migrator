@@ -40,6 +40,9 @@ final case class MigratorConfig(
       _ <- validateSqlDir()
     yield ()
 
+  def validateSqlOnly: Either[String, Unit] =
+    validateSqlDir()
+
   def validateServer: Either[String, Unit] =
     server.validate
 
@@ -79,6 +82,9 @@ final case class ServerConfig(
   apiBearerToken: Option[String] = None,
   mongo: Option[MongoConfig] = None,
   sqlFilesCollection: String = "sql_files",
+  patchesCollection: String = "patches",
+  runsCollection: String = "runs",
+  validationsCollection: String = "validations",
   mongoConfigError: Option[String] = None
 ):
   def validate: Either[String, Unit] =

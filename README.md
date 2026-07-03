@@ -152,9 +152,15 @@ If no command is given, `apply` is used as the default.
 | `BEDROCK_DB_TEST_ALLOWED_HOSTS` | Comma-separated database hosts allowed for HTTP target connection tests and catalog reads. |
 | `BEDROCK_API_BEARER_TOKEN` | Static bearer token accepted by the HTTP API and injected by nginx for the bundled UI. |
 | `BEDROCK_ENCRYPT_KEY` | Base64 AES-256-GCM key used to encrypt persisted target passwords and API responses. |
-| `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist database targets. |
-| `BEDROCK_MONGO_DATABASE` | MongoDB database for persisted target records. |
+| `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist targets, uploaded SQL files, patches, runs, and validations. |
+| `BEDROCK_MONGO_DATABASE` | MongoDB database for persisted HTTP API state. |
 | `BEDROCK_MONGO_TARGETS_COLLECTION` | MongoDB collection for persisted target records. |
+| `BEDROCK_SQL_FILES_COLLECTION` | MongoDB collection for uploaded repository SQL files. Defaults to `sql_files`. |
+| `BEDROCK_PATCHES_COLLECTION` | MongoDB collection for uploaded migration patches. Defaults to `patches`. |
+| `BEDROCK_RUNS_COLLECTION` | MongoDB collection for migration run history and active-run guards. Defaults to `runs`. |
+| `BEDROCK_VALIDATIONS_COLLECTION` | MongoDB collection for validation results. Defaults to `validations`. |
+
+Oracle schema catalog and drift endpoints currently return `supported = false`; Oracle targets are limited to connection-level checks and JDBC migration execution until Oracle catalog introspection is added.
 
 ---
 

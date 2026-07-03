@@ -644,6 +644,38 @@ class RoutesSuite extends FunSuite:
     assertEquals(firstScriptOrder, 1)
   }
 
+  test("validation rerun uses real SQL validators") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          patchResponse <- routes.run(patchUploadRequest(targetId))
+          patchJson <- bodyJson(patchResponse)
+          patchId <- IO.fromEither(patchJson.hcursor.get[String]("id"))
+          runResponse <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/runs",
+              Json.obj("target_id" -> Json.fromString(targetId), "patch_id" -> Json.fromString(patchId))
+            )
+          )
+          runJson <- bodyJson(runResponse)
+          runId <- IO.fromEither(runJson.hcursor.get[String]("id"))
+          _ <- awaitValidation(routes, runId)
+          rerun <- routes.run(Request[IO](Method.POST, Uri.unsafeFromString(s"/validation/$runId/rerun")))
+          rerunJson <- bodyJson(rerun)
+        yield (rerun.status, rerunJson.hcursor.get[String]("status"), rerunJson.hcursor.downField("invalid").values.map(_.size))
+      }
+      .unsafeRunSync()
+
+    val (status, validationStatus, invalidCount) = result
+    assertEquals(status, Status.Ok)
+    assertEquals(validationStatus, Right("errors"))
+    assertEquals(invalidCount.exists(_ > 0), true)
+  }
+
   test("patch upload over the size limit returns payload too large") {
     val result = routeFixture
       .use { routes =>
@@ -679,9 +711,18 @@ class RoutesSuite extends FunSuite:
           patchStore <- PatchStore.inMemory(patchStageDir)
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
+          runExecutor = RunExecutor.simulated(patchStore, runStore, validationStore)
           sqlFileStore <- SqlFileStore.inMemory
         yield Routes
-          .all(migratorConfig(patchStageDir, sqlDir, allowedHosts), targetStore, patchStore, runStore, validationStore, sqlFileStore)
+          .all(
+            migratorConfig(patchStageDir, sqlDir, allowedHosts),
+            targetStore,
+            patchStore,
+            runStore,
+            validationStore,
+            sqlFileStore,
+            runExecutor
+          )
           .orNotFound
       }
 

@@ -235,6 +235,22 @@ object OracleProvider:
       }
     yield provider
 
+  def fromJdbcUrl(config: MigratorConfig, jdbcUrl: String, password: Option[String]): IO[OracleProvider] =
+    for
+      filePassword <- config.oraclePasswordFile.traverse(JdbcSupport.readPasswordFile)
+      provider <- IO.delay {
+        configureWallet(config)
+        OracleProvider(
+          JdbcConnectionConfig(
+            driver = "oracle.jdbc.OracleDriver",
+            url = jdbcUrl,
+            user = config.oracleUser,
+            password = password.orElse(filePassword)
+          )
+        )
+      }
+    yield provider
+
   private def configureWallet(config: MigratorConfig): Unit =
     config.oracleWallet.foreach { path =>
       val wallet = path.toAbsolutePath.toString

@@ -15,11 +15,30 @@ object Routes:
     validationStore: ValidationStore,
     sqlFileStore: SqlFileStore
   ): HttpRoutes[IO] =
+    all(
+      config,
+      targetStore,
+      patchStore,
+      runStore,
+      validationStore,
+      sqlFileStore,
+      RunExecutor.real(config, patchStore, runStore, validationStore)
+    )
+
+  def all(
+    config: MigratorConfig,
+    targetStore: TargetStore,
+    patchStore: PatchStore,
+    runStore: RunStore,
+    validationStore: ValidationStore,
+    sqlFileStore: SqlFileStore,
+    runExecutor: RunExecutor
+  ): HttpRoutes[IO] =
     HealthRoute.routes <+>
       AuthRoutes.routes(config.server) <+>
       TargetRoutes.routes(config.server, targetStore, patchStore, runStore, validationStore) <+>
       SchemaRoutes.routes(config, targetStore, sqlFileStore) <+>
       PatchRoutes.routes(targetStore, patchStore) <+>
-      RunRoutes.routes(targetStore, patchStore, runStore, validationStore) <+>
-      ValidationRoutes.routes(runStore, validationStore) <+>
+      RunRoutes.routes(config, targetStore, patchStore, runStore, validationStore, runExecutor) <+>
+      ValidationRoutes.routes(targetStore, patchStore, runStore, validationStore) <+>
       SqlFileRoutes.routes(sqlFileStore)

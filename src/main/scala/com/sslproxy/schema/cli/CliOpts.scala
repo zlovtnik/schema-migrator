@@ -126,6 +126,24 @@ object CliOpts:
       .orNone
       .map(_.orElse(env.get("BEDROCK_SQL_FILES_COLLECTION")).flatMap(nonBlank).getOrElse("sql_files"))
 
+  private val patchesCollectionOpt: Opts[String] =
+    Opts
+      .option[String]("patches-collection", help = "MongoDB collection for migration patches")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_PATCHES_COLLECTION")).flatMap(nonBlank).getOrElse("patches"))
+
+  private val runsCollectionOpt: Opts[String] =
+    Opts
+      .option[String]("runs-collection", help = "MongoDB collection for migration runs")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_RUNS_COLLECTION")).flatMap(nonBlank).getOrElse("runs"))
+
+  private val validationsCollectionOpt: Opts[String] =
+    Opts
+      .option[String]("validations-collection", help = "MongoDB collection for validation results")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_VALIDATIONS_COLLECTION")).flatMap(nonBlank).getOrElse("validations"))
+
   private val serverOpts: Opts[ServerConfig] =
     (
       hostOpt,
@@ -140,7 +158,10 @@ object CliOpts:
       mongoUriOpt,
       mongoDatabaseOpt,
       mongoTargetsCollectionOpt,
-      sqlFilesCollectionOpt
+      sqlFilesCollectionOpt,
+      patchesCollectionOpt,
+      runsCollectionOpt,
+      validationsCollectionOpt
     ).mapN {
       (
         host,
@@ -155,7 +176,10 @@ object CliOpts:
         mongoUri,
         mongoDatabase,
         mongoTargetsCollection,
-        sqlFilesCollection
+        sqlFilesCollection,
+        patchesCollection,
+        runsCollection,
+        validationsCollection
       ) =>
         val mongoResult = mongoConfigFromOptions(mongoUri, mongoDatabase, mongoTargetsCollection)
         ServerConfig(
@@ -170,6 +194,9 @@ object CliOpts:
           patchStageDir = patchStageDir,
           mongo = mongoResult.toOption.flatten,
           sqlFilesCollection = sqlFilesCollection,
+          patchesCollection = patchesCollection,
+          runsCollection = runsCollection,
+          validationsCollection = validationsCollection,
           mongoConfigError = mongoResult.swap.toOption
         )
     }

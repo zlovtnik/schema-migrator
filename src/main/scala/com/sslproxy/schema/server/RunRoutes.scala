@@ -2,6 +2,7 @@ package com.sslproxy.schema.server
 
 import cats.effect.IO
 import cats.syntax.all.*
+import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.store.{
   Models,
   PatchStore,
@@ -30,35 +31,45 @@ object RunRoutes:
   private val log = LoggerFactory[IO].getLogger
 
   def routes(
+    config: MigratorConfig,
     targetStore: TargetStore,
     patchStore: PatchStore,
     runStore: RunStore,
-    validationStore: ValidationStore
+    validationStore: ValidationStore,
+    runExecutor: RunExecutor
   ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
       case request @ POST -> Root / "runs" =>
         request.as[TriggerRunPayload].flatMap { payload =>
-          (targetStore.get(payload.target_id), patchStore.get(payload.patch_id)).tupled.flatMap {
+          (targetStore.getStored(payload.target_id), patchStore.get(payload.patch_id)).tupled.flatMap {
             case (None, _) => RouteJson.notFound(s"target '${payload.target_id}' was not found")
             case (_, None) => RouteJson.notFound(s"patch '${payload.patch_id}' was not found")
             case (Some(_), Some(patch)) if patch.target_id != payload.target_id =>
               RouteJson.badRequest("patch does not belong to target")
-            case (Some(_), Some(patch)) =>
-              for
-                run <- runStore.create(payload, patch, "api")
-                _ <- log.info(
-                  Json
-                    .obj(
-                      "event" -> Json.fromString("run_triggered"),
-                      "run_id" -> Json.fromString(run.id),
-                      "target_id" -> Json.fromString(payload.target_id),
-                      "patch_id" -> Json.fromString(payload.patch_id)
-                    )
-                    .noSpaces
-                )
-                _ <- runStore.runPatch(run, patchStore, validationStore).start.void
-                response <- RouteJson.created(run.asJson)
-              yield response
+            case (Some(target), Some(patch)) =>
+              TargetRoutes.withDbAccessAllowed(
+                config.server,
+                target.target.jdbc_url,
+                "database migration execution is not allowed for this target"
+              ) {
+                (for
+                  run <- runStore.create(payload, patch, "api")
+                  _ <- log.info(
+                    Json
+                      .obj(
+                        "event" -> Json.fromString("run_triggered"),
+                        "run_id" -> Json.fromString(run.id),
+                        "target_id" -> Json.fromString(payload.target_id),
+                        "patch_id" -> Json.fromString(payload.patch_id)
+                      )
+                      .noSpaces
+                  )
+                  _ <- runExecutor.run(target, run, patch).start.void
+                  response <- RouteJson.created(run.asJson)
+                yield response).recoverWith { case _: RunStore.ConcurrentRun =>
+                  RouteJson.conflict(s"target '${payload.target_id}' already has an active run")
+                }
+              }
           }
         }
 
@@ -119,13 +130,14 @@ object RunRoutes:
           )
         )
       case "failed" | "aborted" =>
+        val failedScriptId = run.scripts.find(_.status == "failed").map(_.script_id).getOrElse("")
         Some(
           RunEvent(
             run.id,
             "run:failed",
             Json.obj(
               "run_id" -> Json.fromString(run.id),
-              "failed_script_id" -> Json.fromString(""),
+              "failed_script_id" -> Json.fromString(failedScriptId),
               "reason" -> Json.fromString(run.status)
             )
           )
