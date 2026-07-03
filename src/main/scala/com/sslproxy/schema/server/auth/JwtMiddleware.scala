@@ -13,6 +13,8 @@ import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.dsl.io.*
 import org.typelevel.ci.CIString
 
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.Date
 import scala.concurrent.duration.*
@@ -60,12 +62,17 @@ object JwtMiddleware:
           case None => OptionT.liftF(IO.pure(unauthorized("missing bearer token")))
           case Some(token) =>
             OptionT.liftF {
-              JwtTokens.verify(config.jwtSecret, token).flatMap {
+              verify(config, token).flatMap {
                 case Right(_) => routes.run(request).getOrElseF(NotFound())
                 case Left(error) => IO.pure(unauthorized(error))
               }
             }
     }
+
+  private def verify(config: ServerConfig, token: String): IO[Either[String, Claims]] =
+    config.apiBearerToken.filter(expected => constantTimeEquals(expected.trim, token)) match
+      case Some(_) => IO.pure(Right(Claims("static-api-token", None)))
+      case None => JwtTokens.verify(config.jwtSecret, token)
 
   private def bypassesAuth(request: Request[IO]): Boolean =
     request.method == Method.OPTIONS || {
@@ -83,6 +90,12 @@ object JwtMiddleware:
       .filter(_.regionMatches(true, 0, "Bearer ", 0, "Bearer ".length))
       .map(_.drop("Bearer ".length).trim)
       .filter(_.nonEmpty)
+
+  private def constantTimeEquals(expected: String, actual: String): Boolean =
+    MessageDigest.isEqual(
+      expected.getBytes(StandardCharsets.UTF_8),
+      actual.getBytes(StandardCharsets.UTF_8)
+    )
 
   private def unauthorized(message: String): Response[IO] =
     Response[IO](Status.Unauthorized).withEntity(Json.obj("error" -> Json.fromString(message)))

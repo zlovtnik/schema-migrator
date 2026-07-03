@@ -151,7 +151,20 @@ final case class DriftItem(
   actual: String,
   source_file: Option[String],
   checksum: Option[String],
+  apply_status: Option[String],
   detected_at: String
+)
+
+final case class SchemaControlSummary(
+  total_count: Long,
+  applied_count: Long,
+  skipped_count: Long,
+  pending_count: Long,
+  failed_count: Long,
+  ready: Boolean,
+  failed_objects: List[String],
+  last_applied_at: Option[String],
+  last_updated_at: Option[String]
 )
 
 final case class DriftResponse(
@@ -159,6 +172,7 @@ final case class DriftResponse(
   db_kind: String,
   supported: Boolean,
   checked_at: String,
+  control_summary: Option[SchemaControlSummary],
   items: List[DriftItem],
   warnings: List[String]
 )
@@ -190,5 +204,6 @@ object Models:
   given Encoder[SchemaCatalogObject] = deriveEncoder
   given Encoder[SchemaCatalogResponse] = deriveEncoder
   given Encoder[DriftItem] = deriveEncoder
+  given Encoder[SchemaControlSummary] = deriveEncoder
   given Encoder[DriftResponse] = deriveEncoder
   given Encoder[AuthTokenResponse] = deriveEncoder

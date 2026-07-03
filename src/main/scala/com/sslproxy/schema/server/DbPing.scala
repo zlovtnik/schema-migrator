@@ -9,7 +9,7 @@ import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
 
 import java.net.URI
-import java.sql.DriverManager
+import java.sql.{DriverManager, SQLException}
 import scala.concurrent.duration.*
 
 object DbPing:
@@ -25,11 +25,12 @@ object DbPing:
     run(stored.target.jdbc_url, stored.password)
 
   private def run(jdbcUrl: String, password: Option[String]): IO[ConnectionTestResult] =
+    val settings = JdbcConnectionProperties.normalize(jdbcUrl, password)
     for
       started <- Clock[IO].monotonic
       result <- IO
         .interruptibleMany {
-          val connection = connect(jdbcUrl, password)
+          val connection = connect(settings)
           try connection.isValid(connectTimeout.toSeconds.toInt)
           finally connection.close()
         }
@@ -41,8 +42,9 @@ object DbPing:
         case Right(true) => ConnectionTestResult(ok = true, latency_ms = Some(elapsed), error = None)
         case Right(false) =>
           ConnectionTestResult(ok = false, latency_ms = Some(elapsed), error = Some("connection is not valid"))
-        case Left(_) => ConnectionTestResult(ok = false, latency_ms = Some(elapsed), error = Some("connection test failed"))
-      host = extractHost(jdbcUrl)
+        case Left(error) =>
+          ConnectionTestResult(ok = false, latency_ms = Some(elapsed), error = Some(connectionError(error)))
+      host = extractHost(settings.jdbcUrl)
       _ <- logConnectionTest(host, testResult, elapsed)
     yield testResult
 
@@ -67,5 +69,22 @@ object DbPing:
     ) ++ result.error.map(err => "error" -> Json.fromString(err)).toList
     logger.info(Json.obj(fields*).noSpaces)
 
-  private def connect(jdbcUrl: String, password: Option[String]) =
-    DriverManager.getConnection(jdbcUrl, JdbcConnectionProperties.withTimeouts(jdbcUrl, password, connectTimeout))
+  private[server] def connectionError(error: Throwable): String =
+    val message = error match
+      case sql: SQLException =>
+        val state = Option(sql.getSQLState).fold("")(value => s" [$value]")
+        s"connection test failed$state: ${sql.getMessage}"
+      case other => s"connection test failed: ${other.getMessage}"
+    redact(message)
+
+  private def redact(value: String): String =
+    value
+      .replaceAll("(?i)(password=)[^&;\\s]+", "$1<redacted>")
+      .replaceAll("(?i)(pwd=)[^&;\\s]+", "$1<redacted>")
+      .replaceAll("(?i)(//[^:/?#]+:)[^@/?#]+(@)", "$1<redacted>$2")
+
+  private def connect(settings: JdbcConnectionSettings) =
+    DriverManager.getConnection(
+      settings.jdbcUrl,
+      JdbcConnectionProperties.withTimeouts(settings.jdbcUrl, settings.password, connectTimeout, user = settings.user)
+    )

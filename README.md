@@ -113,4 +113,107 @@ ORACLE_PASS_FILE=/run/secrets/oracle_password \
 | `list`    | Print discovered SQL files and objects in the precise order they will be applied. |
 | `status`  | Display the current schema configuration status.                           |
 
+If no command is given, `apply` is used as the default.
+
+---
+
+## Configuration
+
+### CLI flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--db-kind` | `postgres` | `postgres` or `oracle`. |
+| `--sql-dir` | `./sql` (or `./sql/oracle`) | Root directory containing SQL files. |
+| `--database-url` | — | JDBC URL (Oracle) or `postgres://` URL (Postgres). |
+| `--dry-run` | `false` | Print SQL without executing. |
+| `--verbose` | `false` | Echo each statement before running. |
+| `--continue-on-error` | `false` | Continue processing after SQL errors. |
+| `--connect-retries` | `0` | Number of connection retry attempts. |
+| `--connect-retry-backoff` | `2` | Base retry backoff in seconds. |
+| `--oracle-wallet` | — | Oracle wallet or TNS admin directory. |
+| `--oracle-tns-alias` | — | Oracle TNS alias. |
+| `--oracle-user` | — | Oracle username. |
+| `--oracle-pass-file` | — | File containing Oracle password. |
+| `--db-test-allowed-hosts` | — | Comma-separated database hosts allowed for HTTP target connection tests and catalog reads. |
+| `--json` | `false` | Print machine-readable JSON output. |
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres database URL. |
+| `ORACLE_JDBC_URL` | Oracle JDBC URL. |
+| `SCHEMA_MIGRATOR_DB_KIND` | `postgres` or `oracle`. |
+| `ORACLE_USER` | Oracle username. |
+| `ORACLE_CONN` | Oracle TNS alias / connection name. |
+| `ORACLE_PASS_FILE` | File path for Oracle password. |
+| `TNS_ADMIN` | Oracle wallet / TNS admin directory. |
+| `BEDROCK_DB_TEST_ALLOWED_HOSTS` | Comma-separated database hosts allowed for HTTP target connection tests and catalog reads. |
+| `BEDROCK_API_BEARER_TOKEN` | Static bearer token accepted by the HTTP API and injected by nginx for the bundled UI. |
+| `BEDROCK_ENCRYPT_KEY` | Base64 AES-256-GCM key used to encrypt persisted target passwords and API responses. |
+| `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist database targets. |
+| `BEDROCK_MONGO_DATABASE` | MongoDB database for persisted target records. |
+| `BEDROCK_MONGO_TARGETS_COLLECTION` | MongoDB collection for persisted target records. |
+
+---
+
+## Deterministic ordering
+
+Schema Migrator discovers SQL files from the repository tree and applies them in a fixed, version-agnostic order. This eliminates non-determinism caused by filesystem traversal, developer machine differences, or OS-dependent path sorting. The standard order is:
+
+1. Extensions
+2. Schemas
+3. Types
+4. Tables
+5. Indexes
+6. Functions
+7. Views
+8. Cron pre-apply hooks
+9. Materialized views
+10. Cron jobs
+
+Custom phases can be added by extending the `Phase` set in the engine.
+
+---
+
+## Validation without a database
+
+`validate` runs the full parser, canonicalizer, and dependency graph builder locally:
+
+- **Syntax & parsing** — detects malformed SQL and unsupported constructs.
+- **Dependency validation** — ensures references between objects are resolvable and ordered.
+- **Rollback completeness** — verifies every tracked object has a corresponding rollback path.
+
+This means teams can gate merges on validation alone, long before a shared database is available.
+
+---
+
+## Oracle setup
+
+Oracle connections are JDBC-based and support wallet/TNS configurations:
+
+- `.wallet` or TNS admin directories via `--oracle-wallet` or `TNS_ADMIN`.
+- TNS alias via `--oracle-tns-alias` or `ORACLE_CONN`.
+- Username via `--oracle-user` or `ORACLE_USER`.
+- Password files via `--oracle-pass-file` or `ORACLE_PASS_FILE`.
+
+Required runtime JARs are included in the build (ojdbc11, oraclepki, osdt_core, osdt_cert).
+
+---
+
+## Building and testing
+
+```bash
+# Build
+sbt compile
+
+# Run tests
+sbt test
+
+# Package
+sbt assembly
+```
+
+The project targets Scala 3.3.6 and uses Cats Effect 3.6.3, Doobie 1.0.0-RC10, and Decline 2.5.0.
 With Schema Migrator, streamline your migration processes and ensure a robust and efficient SQL environment.

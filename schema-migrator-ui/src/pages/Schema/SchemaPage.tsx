@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BracketsCurlyIcon } from "@phosphor-icons/react/dist/csr/BracketsCurly";
+import { CopyIcon } from "@phosphor-icons/react/dist/csr/Copy";
 import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
 import { FileSqlIcon } from "@phosphor-icons/react/dist/csr/FileSql";
+import { FunctionIcon } from "@phosphor-icons/react/dist/csr/Function";
+import { EyeIcon } from "@phosphor-icons/react/dist/csr/Eye";
+import { TableIcon } from "@phosphor-icons/react/dist/csr/Table";
+import { TreeStructureIcon } from "@phosphor-icons/react/dist/csr/TreeStructure";
 import { PageHeader } from "../../components/PageHeader";
 import { MigrationTimeline } from "../../components/MigrationTimeline";
 import { SqlPreviewPane } from "../../components/SqlPreviewPane";
@@ -9,20 +14,22 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
 import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { Icon } from "../../components/ui/Icon";
+import { Icon, type IconSource } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useSchemaCatalog } from "../../hooks/useSchema";
+import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import type { ObjectType, SchemaCatalogObject } from "../../types";
 
 type ObjectFilter = ObjectType | "all";
 
 export const SchemaPage = () => {
-  const [searchParams] = useSearchParams();
-  const selectedTarget = searchParams.get("target");
+  const selectedTarget = useSelectedTargetId();
   const { data, isLoading, error } = useSchemaCatalog(selectedTarget);
   const [filter, setFilter] = useState<ObjectFilter>("all");
   const [textFilter, setTextFilter] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   const objects = data?.objects ?? [];
   const filteredObjects = useMemo(
@@ -58,17 +65,39 @@ export const SchemaPage = () => {
   const selectedObject = filteredObjects.find((object) => objectKey(object) === selectedKey);
   const counts = useMemo(() => countByType(objects), [objects]);
 
+  const handleCopyChecksum = useCallback(async (object: SchemaCatalogObject) => {
+    if (!object.checksum) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(object.checksum);
+      setCopyStatus(`Checksum copied for ${object.name}`);
+      setCopyError(null);
+    } catch {
+      setCopyStatus(null);
+      setCopyError("Could not copy the checksum to the clipboard");
+    }
+  }, []);
+
   const columns = useMemo<DataTableColumn<SchemaCatalogObject>[]>(
     () => [
       {
         id: "name",
         header: "Object",
         sortValue: (object) => object.name,
-        cell: (object) => (
-          <button className="link-button" type="button" onClick={() => setSelectedKey(objectKey(object))}>
-            <code>{object.name}</code>
-          </button>
-        )
+        cell: (object) => {
+          const isSelected = objectKey(object) === selectedKey;
+          return (
+            <button
+              aria-current={isSelected ? "true" : undefined}
+              className={isSelected ? "link-button link-button--active" : "link-button"}
+              type="button"
+              onClick={() => setSelectedKey(objectKey(object))}
+            >
+              <code>{object.name}</code>
+            </button>
+          );
+        }
       },
       {
         id: "type",
@@ -101,7 +130,7 @@ export const SchemaPage = () => {
         cell: (object) => <time dateTime={object.last_checked}>{formatDate(object.last_checked)}</time>
       }
     ],
-    []
+    [selectedKey]
   );
 
   return (
@@ -150,7 +179,10 @@ export const SchemaPage = () => {
               onClick={() => setFilter("all")}
               aria-pressed={filter === "all"}
             >
-              <span>All objects</span>
+              <span className="schema-tree__label">
+                <Icon source={DatabaseIcon} size={16} weight="bold" />
+                All objects
+              </span>
               <strong>{objects.length}</strong>
             </button>
             {Array.from(counts.entries()).map(([type, count]) => (
@@ -161,7 +193,10 @@ export const SchemaPage = () => {
                 onClick={() => setFilter(type)}
                 aria-pressed={filter === type}
               >
-                <span>{formatObjectType(type)}</span>
+                <span className="schema-tree__label">
+                  <Icon source={objectTypeIconSource(type)} size={16} weight="bold" />
+                  {formatObjectType(type)}
+                </span>
                 <strong>{count}</strong>
               </button>
             ))}
@@ -183,6 +218,7 @@ export const SchemaPage = () => {
               columns={columns}
               rows={filteredObjects}
               rowKey={objectKey}
+              getRowState={(object) => ({ selected: objectKey(object) === selectedKey })}
               empty={
                 textFilter
                   ? `No schema objects match "${textFilter}".`
@@ -193,14 +229,32 @@ export const SchemaPage = () => {
             />
           </div>
 
-          <SchemaObjectDetail object={selectedObject} />
+          <div className="schema-workspace__detail">
+            {copyError ? (
+              <div className="status-banner status-banner--error" role="alert">
+                {copyError}
+              </div>
+            ) : null}
+            {copyStatus ? (
+              <div className="status-banner" role="status">
+                {copyStatus}
+              </div>
+            ) : null}
+            <SchemaObjectDetail object={selectedObject} onCopyChecksum={handleCopyChecksum} />
+          </div>
         </div>
       ) : null}
     </section>
   );
 };
 
-const SchemaObjectDetail = ({ object }: { object?: SchemaCatalogObject | undefined }) => {
+const SchemaObjectDetail = ({
+  object,
+  onCopyChecksum
+}: {
+  object?: SchemaCatalogObject | undefined;
+  onCopyChecksum: (object: SchemaCatalogObject) => void;
+}) => {
   if (!object) {
     return (
       <aside className="object-detail" aria-label="Schema object detail">
@@ -233,7 +287,22 @@ const SchemaObjectDetail = ({ object }: { object?: SchemaCatalogObject | undefin
         </div>
         <div>
           <dt className="field-label">Checksum</dt>
-          <dd>{object.checksum ? <code>{object.checksum}</code> : "Unavailable"}</dd>
+          <dd>
+            {object.checksum ? (
+              <button
+                className="hash-chip"
+                type="button"
+                title={object.checksum}
+                aria-label={`Copy checksum for ${object.name}`}
+                onClick={() => onCopyChecksum(object)}
+              >
+                <Icon source={CopyIcon} size={16} />
+                {object.checksum.slice(0, 10)}
+              </button>
+            ) : (
+              <span className="hash-chip hash-chip--empty">Unavailable</span>
+            )}
+          </dd>
         </div>
         <div>
           <dt className="field-label">Apply status</dt>
@@ -271,6 +340,27 @@ const countByType = (objects: SchemaCatalogObject[]): Map<ObjectType, number> =>
 };
 
 const objectKey = (object: SchemaCatalogObject): string => `${object.schema}:${object.object_type}:${object.name}`;
+
+const objectTypeIconSource = (type: ObjectType): IconSource => {
+  switch (type) {
+    case "table":
+      return TableIcon;
+    case "view":
+    case "materialized_view":
+      return EyeIcon;
+    case "function":
+    case "procedure":
+      return FunctionIcon;
+    case "index":
+    case "schema":
+      return TreeStructureIcon;
+    case "type":
+    case "trigger":
+      return BracketsCurlyIcon;
+    default:
+      return DatabaseIcon;
+  }
+};
 
 const formatObjectType = (type: ObjectFilter): string =>
   type

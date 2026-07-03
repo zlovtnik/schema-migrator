@@ -1,9 +1,11 @@
 package com.sslproxy.schema.store
 
-import cats.effect.{Clock, IO, Ref}
+import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
+import com.sslproxy.schema.config.MongoConfig
 
 import java.util.UUID
+import javax.crypto.spec.SecretKeySpec
 
 trait TargetStore:
   def list: IO[List[Target]]
@@ -16,6 +18,9 @@ trait TargetStore:
 object TargetStore:
   def inMemory: IO[TargetStore] =
     Ref.of[IO, Map[String, StoredTarget]](Map.empty).map(InMemoryTargetStore.apply)
+
+  def mongo(config: MongoConfig, passwordKey: SecretKeySpec): Resource[IO, TargetStore] =
+    MongoTargetStore.resource(config, passwordKey)
 
 private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]]) extends TargetStore:
   override def list: IO[List[Target]] =

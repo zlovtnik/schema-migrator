@@ -152,7 +152,7 @@ export const TargetListPage = () => {
                 <th scope="col">Label</th>
                 <th scope="col">App</th>
                 <th scope="col">Env</th>
-                <th scope="col">JDBC URL</th>
+                <th scope="col">Database URL</th>
                 <th scope="col">Status</th>
                 <th scope="col">Actions</th>
               </tr>

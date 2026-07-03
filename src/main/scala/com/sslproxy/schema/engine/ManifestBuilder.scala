@@ -7,8 +7,6 @@ import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.parser.{Canonicalizer, HeaderParser}
 
-import java.nio.file.Files
-
 final class ManifestBuilder[F[_]: Sync](dialect: SqlDialect):
   private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+(?:(?:non)?editionable\s+)?procedure\b".r
 
@@ -16,7 +14,7 @@ final class ManifestBuilder[F[_]: Sync](dialect: SqlDialect):
     files.traverse(file => Sync[F].blocking(fromFile(file)))
 
   private def fromFile(file: SqlFile): SchemaObject =
-    val rawSql = Files.readString(file.path)
+    val rawSql = file.readString
     val objectName = HeaderParser.value(rawSql, "object").getOrElse {
       if file.folder == "baseline" then "oracle_baseline"
       else throw MigratorError.Apply(s"${file.relativePath}: missing required '-- object:' header")

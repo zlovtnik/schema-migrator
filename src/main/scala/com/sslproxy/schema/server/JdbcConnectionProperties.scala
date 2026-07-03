@@ -1,11 +1,30 @@
 package com.sslproxy.schema.server
 
+import com.sslproxy.schema.db.postgres.PostgresProvider
+
 import java.util.Properties
 import scala.concurrent.duration.FiniteDuration
 
+private[server] final case class JdbcConnectionSettings(jdbcUrl: String, user: Option[String], password: Option[String])
+
 private[server] object JdbcConnectionProperties:
-  def withTimeouts(jdbcUrl: String, password: Option[String], timeout: FiniteDuration): Properties =
+  def normalize(jdbcUrl: String, password: Option[String]): JdbcConnectionSettings =
+    val trimmed = jdbcUrl.trim
+    if trimmed.startsWith("postgres://") || trimmed.startsWith("postgresql://") || trimmed.startsWith("jdbc:postgresql://") then
+      PostgresProvider
+        .normalize(trimmed)
+        .map(config => JdbcConnectionSettings(config.url, config.user, password.orElse(config.password)))
+        .getOrElse(JdbcConnectionSettings(trimmed, None, password))
+    else JdbcConnectionSettings(trimmed, None, password)
+
+  def withTimeouts(
+    jdbcUrl: String,
+    password: Option[String],
+    timeout: FiniteDuration,
+    user: Option[String] = None
+  ): Properties =
     val properties = Properties()
+    user.foreach(properties.setProperty("user", _))
     password.foreach(properties.setProperty("password", _))
 
     val trimmed = jdbcUrl.trim

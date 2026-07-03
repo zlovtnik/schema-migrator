@@ -4,13 +4,11 @@ import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.engine.Graph
 import com.sslproxy.schema.parser.HeaderParser
 
-import java.nio.file.Files
-
 object DependencyValidator:
   def validate(files: List[SqlFile]): List[String] =
     val objects =
       files.flatMap { file =>
-        val sql = Files.readString(file.path)
+        val sql = file.readString
         HeaderParser.value(sql, "object").map { name =>
           name -> HeaderParser.value(sql, "depends_on").map(HeaderParser.dependsOn).getOrElse(Nil)
         }

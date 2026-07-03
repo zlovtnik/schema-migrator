@@ -1,11 +1,13 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { HelmetProvider } from "react-helmet-async";
 import { RouterProvider } from "react-router-dom";
 import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { installDesignTokens } from "./design/tokens";
+import { SelectedTargetProvider } from "./hooks/useSelectedTarget";
 import { router } from "./router";
 import "./styles.css";
 
@@ -25,7 +27,11 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <HelmetProvider>
+          <SelectedTargetProvider>
+            <RouterProvider router={router} />
+          </SelectedTargetProvider>
+        </HelmetProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>

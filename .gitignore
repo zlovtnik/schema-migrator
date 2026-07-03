@@ -5,6 +5,7 @@ target/scala-*/
 target/streams/
 
 # Metals / Bloop / IDE
+.bsp/
 .metals/
 .bloop/
 .vscode/
@@ -14,6 +15,7 @@ target/streams/
 *~
 
 # Misc
+.omx/
 .env
 .env.*
 !.env.example

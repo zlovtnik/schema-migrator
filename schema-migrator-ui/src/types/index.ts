@@ -165,7 +165,20 @@ export interface DriftItem {
   actual: string;
   source_file?: string | null;
   checksum?: string | null;
+  apply_status?: string | null;
   detected_at: Rfc3339Timestamp;
+}
+
+export interface SchemaControlSummary {
+  total_count: number;
+  applied_count: number;
+  skipped_count: number;
+  pending_count: number;
+  failed_count: number;
+  ready: boolean;
+  failed_objects: string[];
+  last_applied_at?: Rfc3339Timestamp | null;
+  last_updated_at?: Rfc3339Timestamp | null;
 }
 
 export interface DriftResponse {
@@ -173,6 +186,7 @@ export interface DriftResponse {
   db_kind: DbKind;
   supported: boolean;
   checked_at: Rfc3339Timestamp;
+  control_summary?: SchemaControlSummary | null;
   items: DriftItem[];
   warnings: string[];
 }
@@ -300,7 +314,20 @@ export const driftItemSchema = z.object({
   actual: z.string(),
   source_file: nullableOptionalStringSchema,
   checksum: nullableOptionalStringSchema,
+  apply_status: nullableOptionalStringSchema,
   detected_at: rfc3339TimestampSchema
+});
+
+export const schemaControlSummarySchema = z.object({
+  total_count: z.number().int().nonnegative(),
+  applied_count: z.number().int().nonnegative(),
+  skipped_count: z.number().int().nonnegative(),
+  pending_count: z.number().int().nonnegative(),
+  failed_count: z.number().int().nonnegative(),
+  ready: z.boolean(),
+  failed_objects: z.array(z.string()),
+  last_applied_at: rfc3339TimestampSchema.nullish(),
+  last_updated_at: rfc3339TimestampSchema.nullish()
 });
 
 export const driftResponseSchema = z.object({
@@ -308,6 +335,7 @@ export const driftResponseSchema = z.object({
   db_kind: dbKindSchema,
   supported: z.boolean(),
   checked_at: rfc3339TimestampSchema,
+  control_summary: schemaControlSummarySchema.nullish(),
   items: z.array(driftItemSchema),
   warnings: z.array(z.string())
 });
@@ -337,7 +365,10 @@ export const parseDriftResponse = (value: unknown): DriftResponse => driftRespon
 
 const postgresJdbcPrefix = "jdbc:postgresql:";
 const oracleJdbcPrefix = "jdbc:oracle:thin:";
-const supportedJdbcUrlMessage = "Use jdbc:postgresql://host:5432/database?user=username or jdbc:oracle:thin:@...";
+const postgresUrlPrefix = "postgres://";
+const postgresqlUrlPrefix = "postgresql://";
+const supportedDatabaseUrlMessage =
+  "Use postgres://user:password@host:5432/database, jdbc:postgresql://host:5432/database?user=username, or jdbc:oracle:thin:@...";
 
 export const targetFormSchema = z.object({
   label: z.string().trim().min(1, "Label is required"),
@@ -346,10 +377,9 @@ export const targetFormSchema = z.object({
   jdbc_url: z
     .string()
     .trim()
-    .min(1, "JDBC URL is required")
+    .min(1, "Database URL is required")
     .superRefine((value, ctx) => {
-      if (!value.startsWith("jdbc:")) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "JDBC URL must start with jdbc:" });
+      if (value.startsWith(postgresUrlPrefix) || value.startsWith(postgresqlUrlPrefix)) {
         return;
       }
       if (value.startsWith("jdbc:postgres://")) {
@@ -357,7 +387,7 @@ export const targetFormSchema = z.object({
         return;
       }
       if (!value.startsWith(postgresJdbcPrefix) && !value.startsWith(oracleJdbcPrefix)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: supportedJdbcUrlMessage });
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: supportedDatabaseUrlMessage });
       }
     }),
   password: z.string().optional()

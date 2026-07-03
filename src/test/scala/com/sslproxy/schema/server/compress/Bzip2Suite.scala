@@ -1,6 +1,6 @@
 package com.sslproxy.schema.server.compress
 
-import cats.effect.IO
+import cats.effect.{IO, Ref}
 import cats.effect.unsafe.implicits.global
 import fs2.Stream
 import io.circe.Json
@@ -40,6 +40,61 @@ class Bzip2Suite extends FunSuite:
     assertEquals(response.headers.headers.find(_.name == CIString("Content-Encoding")).map(_.value), Some("bzip2"))
     assertEquals(response.headers.headers.find(_.name == CIString("Vary")).map(_.value), Some("Accept-Encoding"))
     assert(String(decoded, StandardCharsets.UTF_8).contains("x".repeat(800)))
+  }
+
+  test("middleware leaves small responses with content length uncompressed") {
+    val body = "small response".getBytes(StandardCharsets.UTF_8)
+    val routes = HttpRoutes.of[IO] { case GET -> Root / "small" =>
+      IO.pure(
+        Response[IO](Status.Ok)
+          .withBodyStream(Stream.emits(body.toVector).covary[IO])
+          .putHeaders(Header.Raw(CIString("Content-Length"), body.length.toString))
+      )
+    }
+    val request =
+      Request[IO](Method.GET, Uri.unsafeFromString("/small"))
+        .putHeaders(Header.Raw(CIString("Accept-Encoding"), "bzip2"))
+
+    val response = Bzip2Middleware(routes).orNotFound.run(request).unsafeRunSync()
+    val responseBody = response.body.compile.toVector.map(_.toArray).unsafeRunSync()
+
+    assertEquals(response.headers.headers.find(_.name == CIString("Content-Encoding")).map(_.value), None)
+    assertEquals(String(responseBody, StandardCharsets.UTF_8), "small response")
+  }
+
+  test("middleware compresses unknown-length responses without pre-buffering") {
+    val emitted = Ref.unsafe[IO, Int](0)
+    val body = "x".repeat(800).getBytes(StandardCharsets.UTF_8)
+    val routes = HttpRoutes.of[IO] { case GET -> Root / "streamed" =>
+      IO.pure(
+        Response[IO](Status.Ok).withBodyStream(
+          Stream.eval(emitted.update(_ + 1).as(())).drain ++ Stream.emits(body.toVector).covary[IO]
+        )
+      )
+    }
+    val request =
+      Request[IO](Method.GET, Uri.unsafeFromString("/streamed"))
+        .putHeaders(Header.Raw(CIString("Accept-Encoding"), "bzip2"))
+
+    val response = Bzip2Middleware(routes).orNotFound.run(request).unsafeRunSync()
+    assertEquals(emitted.get.unsafeRunSync(), 0)
+
+    val encoded = response.body.compile.toVector.map(_.toArray).unsafeRunSync()
+    val decoded = Bzip2.decompress(encoded).unsafeRunSync()
+
+    assertEquals(response.headers.headers.find(_.name == CIString("Content-Encoding")).map(_.value), Some("bzip2"))
+    assertEquals(emitted.get.unsafeRunSync(), 1)
+    assertEquals(String(decoded, StandardCharsets.UTF_8), "x".repeat(800))
+  }
+
+  test("decompress stream maps writer-side malformed input to bad input") {
+    val writerError = IllegalStateException("writer failed")
+
+    val error = intercept[Bzip2.BadInput] {
+      Bzip2.decompressStream(Stream.raiseError[IO](writerError)).compile.drain.unsafeRunSync()
+    }
+
+    assertEquals(error.getMessage, "invalid bzip2 request body")
   }
 
   test("middleware rejects invalid bzip2 request bodies as bad input") {
@@ -91,7 +146,10 @@ class Bzip2Suite extends FunSuite:
     val json = response.as[Json].unsafeRunSync()
 
     assertEquals(response.status, Status.PayloadTooLarge)
-    assertEquals(json.hcursor.get[String]("error"), Right(s"decompressed bzip2 payload exceeds $maxBzip2DecompressedBytes bytes"))
+    assertEquals(
+      json.hcursor.get[String]("error"),
+      Right(s"decompressed bzip2 payload exceeds $maxBzip2DecompressedBytes bytes")
+    )
   }
 
   test("middleware preserves earlier content encodings when decoding trailing bzip2 requests") {

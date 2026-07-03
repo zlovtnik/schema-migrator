@@ -29,6 +29,17 @@ class ProviderSuite extends FunSuite:
     assertEquals(config.user, None)
   }
 
+  test("rejects JDBC postgres URLs without a host") {
+    assertEquals(PostgresProvider.normalize("jdbc:postgresql:///sync").left.toOption, Some("invalid Postgres URL: host is required"))
+  }
+
+  test("normalizes JDBC postgres URL with username authority") {
+    val config = PostgresProvider.normalize("jdbc:postgresql://sync@192.168.1.221:5432/sync").toOption.get
+    assertEquals(config.url, "jdbc:postgresql://192.168.1.221:5432/sync")
+    assertEquals(config.user, Some("sync"))
+    assertEquals(config.password, None)
+  }
+
   test("postgres Doobie wiring keeps non-transactional strategy on same transactor kernel") {
     val config = JdbcConnectionConfig("org.h2.Driver", h2Url())
     val tx = DoobieSupport.postgresDriverManagerTransactor(config)

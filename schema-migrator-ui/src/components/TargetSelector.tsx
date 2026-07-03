@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
 import { useSearchParams } from "react-router-dom";
+import { useSelectedTarget, useSelectedTargetId } from "../hooks/useSelectedTarget";
 import { useTargets } from "../hooks/useTargets";
 import { StatusBadge } from "./StatusBadge";
 import { Icon } from "./ui/Icon";
@@ -12,20 +13,23 @@ interface TargetSelectorProps {
 
 export const TargetSelector = ({ compact = false, paramName = "target" }: TargetSelectorProps) => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { setSelectedTargetId } = useSelectedTarget();
+  const selectedId = useSelectedTargetId(paramName) ?? "";
   const { data: targets = [], isLoading, isSuccess } = useTargets();
-  const selectedId = searchParams.get(paramName) || "";
   const selectedTarget = targets.find((target) => target.id === selectedId);
 
   useEffect(() => {
     if (!isSuccess || isLoading || !selectedId || selectedTarget) {
       return;
     }
+    setSelectedTargetId("");
     const next = new URLSearchParams(searchParams);
     next.delete(paramName);
     setSearchParams(next, { replace: true });
-  }, [isSuccess, isLoading, paramName, searchParams, selectedId, selectedTarget, setSearchParams]);
+  }, [isSuccess, isLoading, paramName, searchParams, selectedId, selectedTarget, setSearchParams, setSelectedTargetId]);
 
   const updateTarget = (value: string) => {
+    setSelectedTargetId(value);
     const next = new URLSearchParams(searchParams);
     if (value) {
       next.set(paramName, value);

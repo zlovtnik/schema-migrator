@@ -18,13 +18,13 @@ object LoggingMiddleware:
     HttpApp[IO] { request =>
       for
         _ <- logRequest(request)
-        start <- IO.realTime
+        start <- IO.monotonic
         result <- app(request).attempt
-        end <- IO.realTime
+        end <- IO.monotonic
         durationMs = (end - start).toMillis
         _ <- result match
           case Right(response) => logResponse(request, response, durationMs)
-          case Left(error)     => logErrorResponse(request, error, durationMs)
+          case Left(error) => logErrorResponse(request, error, durationMs)
         response <- IO.fromEither(result)
       yield response
     }

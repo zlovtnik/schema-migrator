@@ -12,7 +12,7 @@ object RollbackValidator:
     val results = scala.collection.mutable.ListBuffer.empty[String]
     files.foreach { file =>
       var sql: String = null
-      try sql = Files.readString(file.path)
+      try sql = file.readString
       catch
         case error: Exception =>
           results += s"${file.relativePath}: unreadable SQL file (${error.getMessage})"

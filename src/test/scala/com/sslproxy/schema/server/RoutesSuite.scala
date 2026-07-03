@@ -3,7 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
-import com.sslproxy.schema.store.{Models, PatchStore, RunStore, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{Models, PatchStore, RunStore, SqlFileStore, StoredSqlFile, TargetPayload, TargetStore, ValidationStore}
 import fs2.Stream
 import io.circe.Json
 import io.circe.parser.parse
@@ -13,8 +13,10 @@ import org.http4s.dsl.io.*
 import org.http4s.multipart.{Multipart, Part}
 import munit.FunSuite
 
+import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
+import java.util.zip.{ZipEntry, ZipOutputStream}
 import scala.jdk.CollectionConverters.*
 import scala.concurrent.duration.*
 
@@ -101,6 +103,116 @@ class RoutesSuite extends FunSuite:
     )
   }
 
+  test("target routes reject hostless Postgres JDBC URLs") {
+    val result = routeFixture
+      .use { routes =>
+        val payload = targetPayload("Hostless", jdbcUrl = "jdbc:postgresql:///sync")
+
+        for
+          response <- routes.run(jsonRequest(Method.POST, "/targets", payload))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(json.hcursor.get[String]("error"), Right("invalid Postgres URL: host is required"))
+  }
+
+  test("target routes accept postgres URLs and store sanitized JDBC URLs") {
+    val result = routeFixture
+      .use { routes =>
+        val payload = targetPayload(
+          "Postgres URL",
+          password = None,
+          jdbcUrl = "postgres://sync:p%40ss@localhost:5432/sync?sslmode=disable"
+        )
+
+        for
+          response <- routes.run(jsonRequest(Method.POST, "/targets", payload))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.Created)
+    assertEquals(
+      json.hcursor.get[String]("jdbc_url"),
+      Right("jdbc:postgresql://localhost:5432/sync?sslmode=disable&user=sync")
+    )
+    assert(!json.noSpaces.contains("p@ss"))
+  }
+
+  test("target payload normalization extracts postgres URL passwords without storing them inline") {
+    val normalized = TargetRoutes
+      .validateTargetPayload(
+        TargetPayload(
+          label = "Postgres URL",
+          app_name = "app",
+          env = "dev",
+          jdbc_url = "postgres://sync:p%40ss@localhost:5432/sync",
+          password = None
+        )
+      )
+      .toOption
+      .get
+
+    assertEquals(normalized.jdbc_url, "jdbc:postgresql://localhost:5432/sync?user=sync")
+    assertEquals(normalized.password, Some("p@ss"))
+  }
+
+  test("target payload normalization converts JDBC postgres username authority to user parameter") {
+    val normalized = TargetRoutes
+      .validateTargetPayload(
+        TargetPayload(
+          label = "Postgres JDBC URL",
+          app_name = "app",
+          env = "dev",
+          jdbc_url = "jdbc:postgresql://sync@192.168.1.221:5432/sync",
+          password = Some("secret")
+        )
+      )
+      .toOption
+      .get
+
+    assertEquals(normalized.jdbc_url, "jdbc:postgresql://192.168.1.221:5432/sync?user=sync")
+    assertEquals(normalized.password, Some("secret"))
+  }
+
+  test("JDBC connection settings normalize stored postgres username authority") {
+    val settings = JdbcConnectionProperties.normalize(
+      "jdbc:postgresql://sync@192.168.1.221:5432/sync",
+      Some("secret")
+    )
+
+    assertEquals(settings.jdbcUrl, "jdbc:postgresql://192.168.1.221:5432/sync")
+    assertEquals(settings.user, Some("sync"))
+    assertEquals(settings.password, Some("secret"))
+  }
+
+  test("target routes reject conflicting postgres URL and password field passwords") {
+    val result = routeFixture
+      .use { routes =>
+        val payload = targetPayload(
+          "Conflicting passwords",
+          password = Some("field-secret"),
+          jdbcUrl = "postgres://sync:url-secret@localhost:5432/sync"
+        )
+
+        for
+          response <- routes.run(jsonRequest(Method.POST, "/targets", payload))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(json.hcursor.get[String]("error"), Right("Postgres URL password does not match the password field"))
+  }
+
   test("target routes reject inline JDBC credentials before storing targets") {
     val result = routeFixture
       .use { routes =>
@@ -142,6 +254,20 @@ class RoutesSuite extends FunSuite:
     val (status, json) = result
     assertEquals(status, Status.Forbidden)
     assertEquals(json.hcursor.get[String]("error"), Right("database connection tests are not allowed for this target"))
+  }
+
+  test("target test allowlist permits approved Postgres hosts") {
+    val response = TargetRoutes
+      .withDbAccessAllowed(
+        serverConfig(Path.of("."), Set("192.168.1.221")),
+        "jdbc:postgresql://192.168.1.221:5432/sync?user=sync",
+        "blocked"
+      ) {
+        Ok()
+      }
+      .unsafeRunSync()
+
+    assertEquals(response.status, Status.Ok)
   }
 
   test("target test wildcard allowlist permits URLs without a parsed host") {
@@ -218,6 +344,179 @@ class RoutesSuite extends FunSuite:
     assertEquals(json.hcursor.downField("objects").downArray.get[String]("name"), Right("devices"))
     assertEquals(json.hcursor.downField("objects").downArray.get[String]("status"), Right("defined"))
     assertEquals(json.hcursor.downField("warnings").values.exists(_.nonEmpty), true)
+  }
+
+  test("schema route normalizes uploaded SQL manifest for Postgres targets") {
+    val uploadedSql =
+      """-- object: public.uploaded_devices
+        |-- folder: tables
+        |-- depends_on: -
+        |create table if not exists public.uploaded_devices (
+        |  id bigint primary key
+        |);
+        |""".stripMargin
+    val result = routeFixture
+      .use { routes =>
+        for
+          uploadResponse <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_uploaded_devices.sql" -> uploadedSql,
+            "sql/oracle/functions/001_oracle_only.sql" -> "create or replace function oracle_only return number as begin return 1; end;",
+            "sql/000_baseline.sql" -> "select 1;"
+          )))
+          uploadJson <- bodyJson(uploadResponse)
+          targetResponse <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/targets",
+              targetPayload("Target", jdbcUrl = "jdbc:postgresql://127.0.0.1:1/app?user=app&connectTimeout=1")
+            )
+          )
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/schema?target_id=$targetId")))
+          json <- bodyJson(response)
+        yield (uploadResponse.status, uploadJson, response.status, json)
+      }
+      .unsafeRunSync()
+
+    val (uploadStatus, uploadJson, schemaStatus, schemaJson) = result
+    val warnings = schemaJson.hcursor.downField("warnings").as[List[String]].getOrElse(Nil)
+
+    assertEquals(uploadStatus, Status.Created)
+    assertEquals(uploadJson.hcursor.downField("folders").as[List[String]], Right(List("baseline", "oracle/functions", "tables")))
+    assertEquals(schemaStatus, Status.Ok)
+    assertEquals(schemaJson.hcursor.downField("objects").downArray.get[String]("name"), Right("uploaded_devices"))
+    assertEquals(schemaJson.hcursor.downField("objects").downArray.get[String]("source_file"), Right("tables/001_uploaded_devices.sql"))
+    assert(!warnings.exists(_.contains("unrecognized sql folder")))
+    assert(!warnings.exists(_.contains("has no files in store")))
+  }
+
+  test("sql zip upload over compressed size limit returns payload too large") {
+    val limits = SqlFileRoutes.UploadLimits(
+      maxUploadBytes = 1024,
+      maxZipBytes = 8,
+      maxZipEntryBytes = 1024,
+      maxZipUncompressedBytes = 1024
+    )
+    val result = sqlFileRoutesWithLimits(limits)
+      .use { routes =>
+        for
+          response <- routes.run(sqlZipUploadRequestBytes(Vector.fill(9)(0.toByte)))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.PayloadTooLarge)
+    assertEquals(json.hcursor.get[String]("error"), Right("uploaded zip exceeds 8 bytes limit"))
+  }
+
+  test("sql zip upload enforces uncompressed entry limit") {
+    val limits = SqlFileRoutes.UploadLimits(
+      maxUploadBytes = 1024,
+      maxZipBytes = 1024,
+      maxZipEntryBytes = 10,
+      maxZipUncompressedBytes = 1024
+    )
+    val result = sqlFileRoutesWithLimits(limits)
+      .use { routes =>
+        for
+          response <- routes.run(sqlZipUploadRequest(List("sql/tables/001_large.sql" -> "select 1;\n--x")))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.PayloadTooLarge)
+    assertEquals(
+      json.hcursor.get[String]("error"),
+      Right("zip entry 'sql/tables/001_large.sql' exceeds 10 bytes uncompressed limit")
+    )
+  }
+
+  test("sql zip upload enforces total uncompressed SQL limit") {
+    val limits = SqlFileRoutes.UploadLimits(
+      maxUploadBytes = 1024,
+      maxZipBytes = 1024,
+      maxZipEntryBytes = 1024,
+      maxZipUncompressedBytes = 12
+    )
+    val result = sqlFileRoutesWithLimits(limits)
+      .use { routes =>
+        for
+          response <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_a.sql" -> "select;",
+            "sql/tables/002_b.sql" -> "select;"
+          )))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.PayloadTooLarge)
+    assertEquals(json.hcursor.get[String]("error"), Right("zip archive exceeds 12 bytes uncompressed SQL limit"))
+  }
+
+  test("sql file upload rejects empty multipart without replacing existing files") {
+    val result =
+      (for
+        store <- SqlFileStore.inMemory
+        existing = StoredSqlFile.fromBytes(
+          path = "tables/001_existing.sql",
+          folder = "tables",
+          filename = "001_existing.sql",
+          bytes = "select 1;".getBytes(StandardCharsets.UTF_8),
+          uploadedAt = "2026-07-02T12:00:00Z"
+        )
+        _ <- store.replaceAll(List(existing))
+        routes = SqlFileRoutes.routes(store).orNotFound
+        multipart = Multipart[IO](Vector(Part.formData[IO]("note", "empty")))
+        response <- routes.run(
+          Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload"))
+            .withEntity(multipart)
+            .putHeaders(multipart.headers)
+        )
+        json <- bodyJson(response)
+        stored <- store.list
+      yield (response.status, json, stored))
+        .unsafeRunSync()
+
+    val (status, json, stored) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(json.hcursor.get[String]("error"), Right("No .sql files found in upload"))
+    assertEquals(stored.map(_.path), List("tables/001_existing.sql"))
+  }
+
+  test("sql file upload rejects non-sql multipart filenames") {
+    val result =
+      sqlFileRoutesWithLimits(SqlFileRoutes.UploadLimits.default)
+        .use { routes =>
+          val multipart = Multipart[IO](
+            Vector(
+              Part.fileData[IO](
+                "tables/files",
+                "001_readme.txt",
+                Stream.emits("not sql".getBytes(StandardCharsets.UTF_8).toVector).covary[IO]
+              )
+            )
+          )
+          for
+            response <- routes.run(
+              Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload"))
+                .withEntity(multipart)
+                .putHeaders(multipart.headers)
+            )
+            json <- bodyJson(response)
+          yield response.status -> json
+        }
+        .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(json.hcursor.get[String]("error"), Right("Only .sql file uploads are accepted"))
   }
 
   test("drift route returns warnings instead of failing when Postgres live catalog is unavailable") {
@@ -380,10 +679,16 @@ class RoutesSuite extends FunSuite:
           patchStore <- PatchStore.inMemory(patchStageDir)
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
+          sqlFileStore <- SqlFileStore.inMemory
         yield Routes
-          .all(migratorConfig(patchStageDir, sqlDir, allowedHosts), targetStore, patchStore, runStore, validationStore)
+          .all(migratorConfig(patchStageDir, sqlDir, allowedHosts), targetStore, patchStore, runStore, validationStore, sqlFileStore)
           .orNotFound
       }
+
+  private def sqlFileRoutesWithLimits(limits: SqlFileRoutes.UploadLimits): cats.effect.Resource[IO, HttpApp[IO]] =
+    cats.effect.Resource.eval(
+      SqlFileStore.inMemory.map(store => SqlFileRoutes.routes(store, limits).orNotFound)
+    )
 
   private def migratorConfig(stageDir: Path, sqlDir: Path, allowedHosts: Set[String]): MigratorConfig =
     MigratorConfig(
@@ -467,6 +772,29 @@ class RoutesSuite extends FunSuite:
       )
     )
     Request[IO](Method.POST, Uri.unsafeFromString("/patches")).withEntity(multipart).putHeaders(multipart.headers)
+
+  private def sqlZipUploadRequest(entries: List[(String, String)]): Request[IO] =
+    sqlZipUploadRequestBytes(zipBytes(entries).toVector)
+
+  private def sqlZipUploadRequestBytes(bytes: Vector[Byte]): Request[IO] =
+    val multipart = Multipart[IO](
+      Vector(
+        Part.fileData[IO]("file", "sql.zip", Stream.emits(bytes).covary[IO])
+      )
+    )
+    Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload-zip")).withEntity(multipart).putHeaders(multipart.headers)
+
+  private def zipBytes(entries: List[(String, String)]): Array[Byte] =
+    val bytes = new ByteArrayOutputStream()
+    val zip = new ZipOutputStream(bytes)
+    try
+      entries.foreach { case (path, content) =>
+        zip.putNextEntry(new ZipEntry(path))
+        zip.write(content.getBytes(StandardCharsets.UTF_8))
+        zip.closeEntry()
+      }
+    finally zip.close()
+    bytes.toByteArray
 
   private def bodyJson(response: Response[IO]): IO[Json] =
     response.body.compile.toVector

@@ -15,6 +15,7 @@ const ValidationReportPage = lazy(() =>
   import("./pages/Validation/ValidationReportPage").then((module) => ({ default: module.ValidationReportPage }))
 );
 const SettingsPage = lazy(() => import("./pages/Settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
+const SqlFilesPage = lazy(() => import("./pages/SqlFiles/SqlFilesPage").then((module) => ({ default: module.default })));
 
 const PatchDetailRedirect = () => {
   const { id } = useParams();
@@ -31,23 +32,96 @@ export const router = createBrowserRouter([
   {
     path: "/",
     element: <AppShell />,
+    handle: { breadcrumb: "Bedrock", breadcrumbTo: "/overview" },
     children: [
       { index: true, element: <Navigate to="/overview" replace /> },
-      { path: "overview", element: routeElement(OverviewPage) },
-      { path: "schema", element: routeElement(SchemaPage) },
-      { path: "targets", element: routeElement(TargetListPage) },
-      { path: "targets/:id", element: routeElement(TargetFormPage) },
-      { path: "migrations", element: routeElement(PatchListPage) },
-      { path: "migrations/:id", element: routeElement(PatchDetailPage) },
+      { path: "overview", element: routeElement(OverviewPage), handle: { breadcrumb: "Overview", title: "Overview" } },
+      {
+        path: "schema",
+        element: routeElement(SchemaPage),
+        handle: { breadcrumb: "Schema", targetAware: true, title: "Schema" }
+      },
+      { path: "targets", element: routeElement(TargetListPage), handle: { breadcrumb: "Targets", title: "Targets" } },
+      {
+        path: "targets/:id",
+        element: routeElement(TargetFormPage),
+        handle: {
+          breadcrumb: "Target detail",
+          parents: [{ breadcrumb: "Targets", breadcrumbTo: "/targets" }],
+          title: "Target"
+        }
+      },
+      {
+        path: "migrations",
+        element: routeElement(PatchListPage),
+        handle: { breadcrumb: "Migrations", targetAware: true, title: "Migrations" }
+      },
+      {
+        path: "migrations/:id",
+        element: routeElement(PatchDetailPage),
+        handle: {
+          breadcrumb: "Migration detail",
+          parents: [{ breadcrumb: "Migrations", breadcrumbTo: "/migrations", targetAware: true }],
+          title: "Migration"
+        }
+      },
       { path: "patches", element: <Navigate to="/migrations" replace /> },
       { path: "patches/:id", element: <PatchDetailRedirect /> },
-      { path: "runs", element: routeElement(RunListPage) },
-      { path: "runs/:id", element: routeElement(RunDetailPage) },
-      { path: "drift", element: routeElement(DriftPage) },
-      { path: "validation/:runId", element: routeElement(ValidationReportPage) },
-      { path: "settings", element: routeElement(SettingsPage) },
-      { path: "settings/targets", element: routeElement(TargetListPage) },
-      { path: "settings/targets/:id", element: routeElement(TargetFormPage) }
+      {
+        path: "runs",
+        element: routeElement(RunListPage),
+        handle: { breadcrumb: "Runs", targetAware: true, title: "Runs" }
+      },
+      {
+        path: "runs/:id",
+        element: routeElement(RunDetailPage),
+        handle: {
+          breadcrumb: "Run detail",
+          parents: [{ breadcrumb: "Runs", breadcrumbTo: "/runs", targetAware: true }],
+          title: "Run"
+        }
+      },
+      {
+        path: "drift",
+        element: routeElement(DriftPage),
+        handle: { breadcrumb: "Drift", targetAware: true, title: "Drift" }
+      },
+      {
+        path: "validation/:runId",
+        element: routeElement(ValidationReportPage),
+        handle: {
+          breadcrumb: "Validation",
+          parents: [{ breadcrumb: "Runs", breadcrumbTo: "/runs", targetAware: true }],
+          title: "Validation"
+        }
+      },
+      {
+        path: "sql-files",
+        element: routeElement(SqlFilesPage),
+        handle: { breadcrumb: "SQL Files", title: "SQL Files" }
+      },
+      { path: "settings", element: routeElement(SettingsPage), handle: { breadcrumb: "Settings", title: "Settings" } },
+      {
+        path: "settings/targets",
+        element: routeElement(TargetListPage),
+        handle: {
+          breadcrumb: "Targets",
+          parents: [{ breadcrumb: "Settings", breadcrumbTo: "/settings" }],
+          title: "Targets"
+        }
+      },
+      {
+        path: "settings/targets/:id",
+        element: routeElement(TargetFormPage),
+        handle: {
+          breadcrumb: "Target detail",
+          parents: [
+            { breadcrumb: "Settings", breadcrumbTo: "/settings" },
+            { breadcrumb: "Targets", breadcrumbTo: "/settings/targets" }
+          ],
+          title: "Target"
+        }
+      }
     ]
   }
 ]);

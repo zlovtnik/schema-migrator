@@ -4,6 +4,7 @@ import { LiveRunCard } from "../../components/LiveRunCard";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
 import { useAbortRun, useRuns } from "../../hooks/useRuns";
+import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { runStatusOptions, type RunStatus } from "../../types";
 
 const formatDuration = (startedAt: string, endedAt?: string) => {
@@ -16,7 +17,7 @@ const formatDuration = (startedAt: string, endedAt?: string) => {
 
 export const RunListPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const targetId = searchParams.get("target");
+  const targetId = useSelectedTargetId();
   const rawStatusFilter = searchParams.get("status");
   const statusFilter = runStatusOptions.includes(rawStatusFilter as RunStatus) ? (rawStatusFilter as RunStatus) : null;
   const { data: runs = [], isLoading, error } = useRuns(targetId);
