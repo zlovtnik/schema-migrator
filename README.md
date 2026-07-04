@@ -89,7 +89,16 @@ sbt "run --sql-dir ./sql --dry-run apply"
 sbt "run --sql-dir ./sql check-connection"
 
 # Apply migrations
+<<<<<<< HEAD
 sbt "run --sql-dir ./sql apply"
+||||||| parent of 7f801e2 (feat: add Postgres drift-check; update UI copy and design tokens)
+sbt "run --db-kind postgres --sql-dir ./sql/postgres apply"
+=======
+sbt "run --db-kind postgres --sql-dir ./sql/postgres apply"
+
+# Fail when the live Postgres catalog drifts from the manifest and refresh the registry
+sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture drift-check"
+>>>>>>> 7f801e2 (feat: add Postgres drift-check; update UI copy and design tokens)
 ```
 
 For Oracle, set the database type and provide the necessary credentials or environment variables:
@@ -112,6 +121,7 @@ ORACLE_PASS_FILE=/run/secrets/oracle_password \
 | `validate`| Parse SQL files and validate dependencies and rollback completeness without executing them. |
 | `list`    | Print discovered SQL files and objects in the precise order they will be applied. |
 | `status`  | Display the current schema configuration status.                           |
+| `drift-check` | Compare the live Postgres catalog with the manifest, refresh `schema_control.object_customization_registry`, and exit non-zero when drift is detected. |
 
 If no command is given, `apply` is used as the default.
 
@@ -161,6 +171,13 @@ If no command is given, `apply` is used as the default.
 | `BEDROCK_VALIDATIONS_COLLECTION` | MongoDB collection for validation results. Defaults to `validations`. |
 
 Oracle schema catalog and drift endpoints currently return `supported = false`; Oracle targets are limited to connection-level checks and JDBC migration execution until Oracle catalog introspection is added.
+
+Postgres drift checks persist the latest object-level result per customer overlay in
+`schema_control.object_customization_registry`. To install or query the report view:
+
+```bash
+psql "$DATABASE_URL" -f sql/registry/drift_report.sql
+```
 
 ---
 

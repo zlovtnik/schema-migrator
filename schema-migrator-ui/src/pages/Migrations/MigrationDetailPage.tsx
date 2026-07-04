@@ -7,65 +7,65 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Icon } from "../../components/ui/Icon";
 import { useAuditEvents } from "../../hooks/useAudit";
+import { useDeleteMigration, useMigration } from "../../hooks/useMigrations";
 import { useMutationGuard } from "../../hooks/useMutationGuard";
-import { useDeletePatch, usePatch } from "../../hooks/usePatches";
 import { useRollbackAction } from "../../hooks/useRollbackAction";
 import { useSession } from "../../hooks/useSession";
 import type { RollbackToSnapshotPayload } from "../../types";
 
-export const PatchDetailPage = () => {
+export const MigrationDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { data: patch, isLoading, error } = usePatch(id);
+  const { data: migration, isLoading, error } = useMigration(id);
   const { canMutate, canViewAudit } = useSession();
   const { data: activity = [], isLoading: activityLoading } = useAuditEvents(
     { entity_type: "patch", entity_id: id ?? null },
     canViewAudit && Boolean(id)
   );
-  const deletePatch = useDeletePatch();
+  const deleteMigration = useDeleteMigration();
   const mutationGuard = useMutationGuard(canMutate);
   const rollback = useRollbackAction();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   if (isLoading) {
-    return <div className="page empty-state">Loading patch...</div>;
+    return <div className="page empty-state">Loading migration...</div>;
   }
 
-  if (error || !patch) {
-    return <div className="page status-banner status-banner--error">Patch could not be loaded.</div>;
+  if (error || !migration) {
+    return <div className="page status-banner status-banner--error">Migration could not be loaded.</div>;
   }
 
   const confirmDelete = () => {
     if (!canMutate) {
       return;
     }
-    deletePatch.mutate(patch.id, {
-      onSuccess: () => navigate(`/migrations?target=${patch.target_id}`)
+    deleteMigration.mutate(migration.id, {
+      onSuccess: () => navigate(`/migrations?target=${migration.target_id}`)
     });
   };
 
-  const rollbackPayload: RollbackToSnapshotPayload | undefined = patch.source_snapshot_id
+  const rollbackPayload: RollbackToSnapshotPayload | undefined = migration.source_snapshot_id
     ? {
-        snapshot_id: patch.source_snapshot_id,
-        target_id: patch.target_id,
+        snapshot_id: migration.source_snapshot_id,
+        target_id: migration.target_id,
         source_type: "patch",
-        source_id: patch.id
+        source_id: migration.id
       }
     : undefined;
   const rollbackGuard = mutationGuard("Viewer role cannot start rollback runs", rollback.isPending);
-  const deleteGuard = mutationGuard("Viewer role cannot delete migrations", deletePatch.isPending);
+  const deleteGuard = mutationGuard("Viewer role cannot delete migrations", deleteMigration.isPending);
 
   return (
     <section className="page">
       <header className="page-header">
         <div>
           <span className="eyebrow">Migration detail</span>
-          <h1>{patch.version}</h1>
-          <p>{patch.label}</p>
+          <h1>{migration.version}</h1>
+          <p>{migration.label}</p>
         </div>
         <div className="row-actions">
-          <StatusBadge status={patch.status} />
-          {patch.source_snapshot_id ? (
+          <StatusBadge status={migration.status} />
+          {migration.source_snapshot_id ? (
             <button
               className="button button--secondary"
               type="button"
@@ -77,7 +77,7 @@ export const PatchDetailPage = () => {
               Rollback to snapshot
             </button>
           ) : null}
-          {patch.status === "pending" ? (
+          {migration.status === "pending" ? (
             <button
               className="button button--danger"
               type="button"
@@ -95,17 +95,17 @@ export const PatchDetailPage = () => {
       <div className="detail-grid">
         <div>
           <span className="field-label">Target</span>
-          <strong>{patch.target_id}</strong>
+          <strong>{migration.target_id}</strong>
         </div>
         <div>
           <span className="field-label">Related runs</span>
-          <Link to={`/runs?target=${patch.target_id}`}>View run history</Link>
+          <Link to={`/runs?target=${migration.target_id}`}>View run history</Link>
         </div>
         <div>
           <span className="field-label">Source snapshot</span>
-          {patch.source_snapshot_id ? (
-            <Link className="object-type-chip" to={`/snapshots/${patch.source_snapshot_id}`}>
-              Generated from snapshot #{patch.source_snapshot_id}
+          {migration.source_snapshot_id ? (
+            <Link className="object-type-chip" to={`/snapshots/${migration.source_snapshot_id}`}>
+              Generated from snapshot #{migration.source_snapshot_id}
             </Link>
           ) : (
             <span className="cell-subtle">No snapshot reference</span>
@@ -124,7 +124,7 @@ export const PatchDetailPage = () => {
             </tr>
           </thead>
           <tbody>
-            {[...patch.scripts].sort((a, b) => a.order - b.order).map((script) => (
+            {[...migration.scripts].sort((a, b) => a.order - b.order).map((script) => (
               <tr key={script.id}>
                 <td>{script.order}</td>
                 <td>{script.filename}</td>
@@ -145,17 +145,17 @@ export const PatchDetailPage = () => {
       <ConfirmDialog
         open={confirmOpen}
         title="Delete migration"
-        message={`Delete ${patch.version}? This cannot be undone.`}
+        message={`Delete ${migration.version}? This cannot be undone.`}
         confirmLabel="Delete"
         destructive
-        busy={deletePatch.isPending}
+        busy={deleteMigration.isPending}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={confirmDelete}
       />
       <ConfirmDialog
         open={rollback.confirmOpen}
         title="Rollback to snapshot"
-        message={`Start a rollback run for ${patch.version} back to snapshot ${patch.source_snapshot_id}?`}
+        message={`Start a rollback run for ${migration.version} back to snapshot ${migration.source_snapshot_id}?`}
         confirmLabel="Start rollback"
         busy={rollback.isPending}
         onCancel={rollback.closeConfirm}

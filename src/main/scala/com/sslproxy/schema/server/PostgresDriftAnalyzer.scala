@@ -5,10 +5,12 @@ import com.sslproxy.schema.engine.SchemaObject
 import com.sslproxy.schema.parser.Canonicalizer
 import com.sslproxy.schema.store.{DriftItem, SchemaCatalogObject, SchemaControlSummary}
 
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.Locale
 import scala.collection.mutable.ListBuffer
 
-private[server] object PostgresDriftAnalyzer:
+private[schema] object PostgresDriftAnalyzer:
   final case class ObjectKey(schema: String, name: String, objectType: String) extends Ordered[ObjectKey]:
     override def compare(that: ObjectKey): Int =
       Ordering.Tuple3[String, String, String].compare((schema, objectType, name), (that.schema, that.objectType, that.name))
@@ -244,6 +246,9 @@ private[server] object PostgresDriftAnalyzer:
   def catalogDefinitions(sql: String): List[DdlDefinition] =
     val tokens = tokenize(sql)
     tokens.indices.toList.flatMap(index => parseCreateDefinition(sql, tokens, index))
+
+  def definitionHash(key: ObjectKey, value: String): String =
+    sha256Hex(comparableDefinition(key, value))
 
   private def liveObjectsByKey(actual: List[LiveObject]): Map[ObjectKey, LiveObject] =
     actual
@@ -916,6 +921,13 @@ private[server] object PostgresDriftAnalyzer:
       None
 
   private final case class Token(value: String, start: Int, end: Int)
+
+  private def sha256Hex(value: String): String =
+    MessageDigest
+      .getInstance("SHA-256")
+      .digest(value.getBytes(StandardCharsets.UTF_8))
+      .map(byte => f"${byte & 0xff}%02x")
+      .mkString
 
   private val comparableDefinitionTypes: Set[String] =
     Set("function", "procedure", "trigger")

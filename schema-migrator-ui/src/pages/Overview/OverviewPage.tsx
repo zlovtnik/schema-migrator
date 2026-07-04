@@ -76,7 +76,7 @@ export const OverviewPage = () => {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Patch</th>
+                  <th scope="col">Migration</th>
                   <th scope="col">Target</th>
                   <th scope="col">Started</th>
                   <th scope="col">Status</th>

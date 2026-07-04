@@ -1,0 +1,92 @@
+name: schema-migrator
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+  test-and-postgres-fixture:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: schema_migrator
+          POSTGRES_USER: migrator
+          POSTGRES_PASSWORD: migrator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U migrator -d schema_migrator"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://migrator:migrator@localhost:5432/schema_migrator?sslmode=disable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: sbt
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Install Postgres client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Unit tests
+        run: sbt test
+
+      - name: Validate Postgres fixture manifest
+        run: sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture validate"
+
+      - name: Apply full Postgres fixture manifest
+        run: sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture apply"
+
+      - name: Re-apply fixture manifest for idempotency
+        run: sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture apply"
+
+      - name: Check clean fixture drift
+        run: sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture --json drift-check"
+
+      - name: Install registry report view
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f sql/registry/drift_report.sql
+
+      - name: Inject intentional fixture drift
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          create or replace function public.sync_stable_uuid(value text)
+          returns uuid
+          language sql
+          immutable
+          as $$
+            select gen_random_uuid()
+          $$;
+          SQL
+
+      - name: Assert injected drift is reported
+        run: |
+          set +e
+          output=$(sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture --json drift-check" 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -eq 0 ]; then
+            echo "expected drift-check to fail after injected drift"
+            exit 1
+          fi
+          echo "$output" | grep '"drift_type":"definition_changed"'
+          echo "$output" | grep '"name":"sync_stable_uuid(text)"'
