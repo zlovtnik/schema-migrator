@@ -4,10 +4,12 @@ import { NavLink, Outlet, useMatches } from "react-router-dom";
 import { ClipboardTextIcon } from "@phosphor-icons/react/dist/csr/ClipboardText";
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/dist/csr/ClockCounterClockwise";
 import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
+import { FileSqlIcon } from "@phosphor-icons/react/dist/csr/FileSql";
 import { GearIcon } from "@phosphor-icons/react/dist/csr/Gear";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { ListIcon } from "@phosphor-icons/react/dist/csr/List";
 import { ListBulletsIcon } from "@phosphor-icons/react/dist/csr/ListBullets";
+import { PlugsConnectedIcon } from "@phosphor-icons/react/dist/csr/PlugsConnected";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { UploadSimpleIcon } from "@phosphor-icons/react/dist/csr/UploadSimple";
@@ -30,9 +32,10 @@ const baseNavSections = [
     label: "Operate",
     items: [
       { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
+      { to: "/targets", label: "Targets", icon: PlugsConnectedIcon },
       { to: "/schema", label: "Schema", icon: DatabaseIcon },
-      { to: "/migrations", label: "Migrations", icon: UploadSimpleIcon },
-      { to: "/snapshots", label: "Snapshots", icon: GitBranchIcon }
+      { to: "/sql-files", label: "SQL Files", icon: FileSqlIcon },
+      { to: "/migrations", label: "Migrations", icon: UploadSimpleIcon }
     ]
   },
   {
@@ -40,15 +43,13 @@ const baseNavSections = [
     items: [
       { to: "/runs", label: "Runs", icon: ClockCounterClockwiseIcon },
       { to: "/drift", label: "Drift", icon: ListBulletsIcon },
-      { to: "/validation/latest", label: "Validation", icon: ShieldCheckIcon }
+      { to: "/validation/latest", label: "Validation", icon: ShieldCheckIcon },
+      { to: "/snapshots", label: "Snapshots", icon: GitBranchIcon }
     ]
   },
   {
     label: "Settings",
-    items: [
-      { to: "/settings", label: "Application", icon: GearIcon, end: true },
-      { to: "/settings/targets", label: "Targets", icon: DatabaseIcon }
-    ]
+    items: [{ to: "/settings", label: "Application", icon: GearIcon, end: true }]
   }
 ];
 
@@ -175,7 +176,7 @@ export const AppShell = () => {
                   <NavLink
                     aria-label={item.label}
                     className="nav-link"
-                    end={item.end === true}
+                    end={"end" in item && item.end === true}
                     key={item.to}
                     title={collapsed ? item.label : undefined}
                     to={item.to}
@@ -232,7 +233,7 @@ const BrandIdentity = () => (
     </div>
     <div className="brand-copy">
       <strong>Bedrock Schema Migrator</strong>
-      <span>Patch operations</span>
+      <span>Migration operations</span>
     </div>
   </>
 );

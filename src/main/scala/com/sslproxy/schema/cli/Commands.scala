@@ -12,7 +12,7 @@ import com.sslproxy.schema.effect.{Lock, Retry, RetryPolicy}
 import com.sslproxy.schema.engine.MigrationEngine
 import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.output.{JsonReporter, ReportPrinter}
-import com.sslproxy.schema.server.HttpServer
+import com.sslproxy.schema.server.{HttpServer, PostgresDriftCheck}
 import com.sslproxy.schema.validation.Validator
 import io.circe.Json
 import io.circe.syntax.*
@@ -107,6 +107,12 @@ object Commands:
                 else IO.println("schema not ready")
               print.as(if ready.ready || !strict then success else partialFailure)
             }
+          }
+
+        case CliCommand.DriftCheck =>
+          PostgresDriftCheck.run(config).flatMap { response =>
+            val print = if config.json then JsonReporter.drift(response) else ReportPrinter.drift(response)
+            print.as(if response.supported && response.items.isEmpty then success else partialFailure)
           }
 
         case CliCommand.CheckConnection =>

@@ -51,7 +51,7 @@ export const useRollbackToSnapshot = () => {
     mutationFn: (payload: RollbackToSnapshotPayload) => rollbackToSnapshot(payload),
     onSuccess: (run) => {
       void queryClient.invalidateQueries({ queryKey: ["runs"] });
-      void queryClient.invalidateQueries({ queryKey: ["patches"] });
+      void queryClient.invalidateQueries({ queryKey: ["migrations"] });
       void queryClient.invalidateQueries({ queryKey: ["audit"] });
       navigate(`/runs/${run.id}`);
     }

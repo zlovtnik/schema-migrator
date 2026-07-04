@@ -94,6 +94,9 @@ sbt "run --db-kind postgres --sql-dir ./sql/postgres check-connection"
 
 # Apply migrations
 sbt "run --db-kind postgres --sql-dir ./sql/postgres apply"
+
+# Fail when the live Postgres catalog drifts from the manifest and refresh the registry
+sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture drift-check"
 ```
 
 For Oracle, set the database type and provide the necessary credentials or environment variables:
@@ -123,6 +126,7 @@ sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture list"
 | `list`    | Print discovered SQL files and objects in the precise order they will be applied. |
 | `generate-baseline` | Write `_generated_baseline.sql` from manifest order; the file is generated and ignored. |
 | `status`  | Display the current schema configuration status.                           |
+| `drift-check` | Compare the live Postgres catalog with the manifest, refresh `schema_control.object_customization_registry`, and exit non-zero when drift is detected. |
 
 If no command is given, `apply` is used as the default.
 
@@ -177,6 +181,13 @@ If no command is given, `apply` is used as the default.
 | `BEDROCK_AUDIT_COLLECTION` | MongoDB collection for audit events. Defaults to `audit_events`. |
 
 Oracle schema catalog and drift endpoints currently return `supported = false`; Oracle targets are limited to connection-level checks and JDBC migration execution until Oracle catalog introspection is added.
+
+Postgres drift checks persist the latest object-level result per customer overlay in
+`schema_control.object_customization_registry`. To install or query the report view:
+
+```bash
+psql "$DATABASE_URL" -f sql/registry/drift_report.sql
+```
 
 ---
 

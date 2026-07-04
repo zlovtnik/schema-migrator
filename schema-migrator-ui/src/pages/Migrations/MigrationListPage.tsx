@@ -8,21 +8,21 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
 import { Icon } from "../../components/ui/Icon";
 import { useErrorGate } from "../../hooks/useErrorGate";
+import { useMigrations, useTriggerRun, useUploadMigration } from "../../hooks/useMigrations";
 import { useMutationGuard } from "../../hooks/useMutationGuard";
-import { usePatches, useTriggerRun, useUploadPatch } from "../../hooks/usePatches";
 import { useRuns } from "../../hooks/useRuns";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 
-export const PatchListPage = () => {
+export const MigrationListPage = () => {
   const selectedTarget = useSelectedTargetId();
-  const { data: patches = [], isLoading, error } = usePatches(selectedTarget);
+  const { data: migrations = [], isLoading, error } = useMigrations(selectedTarget);
   const { data: runs = [] } = useRuns(selectedTarget);
   const { isGateBlocked, failedRun } = useErrorGate();
   const { canMutate } = useSession();
   const mutationGuard = useMutationGuard(canMutate);
   const triggerRun = useTriggerRun();
-  const uploadPatch = useUploadPatch();
+  const uploadMigration = useUploadMigration();
   const [files, setFiles] = useState<File[]>([]);
 
   const isRunning = runs.some((run) => run.status === "running" || run.status === "pending");
@@ -61,7 +61,7 @@ export const PatchListPage = () => {
     if (!canMutate || !selectedTarget || files.length === 0) {
       return;
     }
-    uploadPatch.mutate(
+    uploadMigration.mutate(
       { target_id: selectedTarget, files },
       {
         onSuccess: () => setFiles([])
@@ -69,11 +69,11 @@ export const PatchListPage = () => {
     );
   };
 
-  const sortedPatches = useMemo(
-    () => [...patches].sort((a, b) => b.version.localeCompare(a.version)),
-    [patches]
+  const sortedMigrations = useMemo(
+    () => [...migrations].sort((a, b) => b.version.localeCompare(a.version)),
+    [migrations]
   );
-  const uploadGuard = mutationGuard("Viewer role cannot upload migrations", uploadPatch.isPending);
+  const uploadGuard = mutationGuard("Viewer role cannot upload migrations", uploadMigration.isPending);
 
   return (
     <section className="page">
@@ -92,9 +92,9 @@ export const PatchListPage = () => {
       ) : null}
       {isRunning ? <div className="status-banner">Apply is disabled while this target has an active run.</div> : null}
       {!canMutate ? <div className="status-banner">Viewer role cannot upload or apply migrations.</div> : null}
-      {!selectedTarget ? <div className="empty-state">Select a target to view patches.</div> : null}
-      {error ? <div className="status-banner status-banner--error">Unable to load patches.</div> : null}
-      {isLoading ? <div className="empty-state">Loading patches...</div> : null}
+      {!selectedTarget ? <div className="empty-state">Select a target to view migrations.</div> : null}
+      {error ? <div className="status-banner status-banner--error">Unable to load migrations.</div> : null}
+      {isLoading ? <div className="empty-state">Loading migrations...</div> : null}
 
       {selectedTarget ? (
         <section
@@ -132,7 +132,7 @@ export const PatchListPage = () => {
               disabled={uploadGuard.disabled}
               title={uploadGuard.title}
             >
-              {uploadPatch.isPending ? "Uploading" : "Confirm upload"}
+              {uploadMigration.isPending ? "Uploading" : "Confirm upload"}
             </button>
           </div>
           <ol className="ordered-files">
@@ -153,11 +153,11 @@ export const PatchListPage = () => {
         </div>
       ) : null}
 
-      {selectedTarget && !isLoading && sortedPatches.length === 0 ? (
+      {selectedTarget && !isLoading && sortedMigrations.length === 0 ? (
         <div className="empty-state">No migrations registered for this target.</div>
       ) : null}
 
-      {sortedPatches.length > 0 ? (
+      {sortedMigrations.length > 0 ? (
         <div className="table-panel">
           <table className="data-table">
             <thead>
@@ -171,26 +171,26 @@ export const PatchListPage = () => {
               </tr>
             </thead>
             <tbody>
-              {sortedPatches.map((patch) => {
-                const applyGuard = mutationGuard("Viewer role cannot apply migrations", !canApply || patch.status !== "pending");
+              {sortedMigrations.map((migration) => {
+                const applyGuard = mutationGuard("Viewer role cannot apply migrations", !canApply || migration.status !== "pending");
                 return (
-                  <tr key={patch.id}>
+                  <tr key={migration.id}>
                     <td>
-                      <Link to={`/migrations/${patch.id}`}>{patch.version}</Link>
+                      <Link to={`/migrations/${migration.id}`}>{migration.version}</Link>
                     </td>
-                    <td>{patch.label}</td>
-                    <td>{patch.scripts.length}</td>
+                    <td>{migration.label}</td>
+                    <td>{migration.scripts.length}</td>
                     <td>
-                      <StatusBadge status={patch.status} />
+                      <StatusBadge status={migration.status} />
                     </td>
-                    <td>{patch.applied_at ? new Date(patch.applied_at).toLocaleString() : "-"}</td>
+                    <td>{migration.applied_at ? new Date(migration.applied_at).toLocaleString() : "-"}</td>
                     <td>
                       <button
                         className="button button--primary button--small"
                         type="button"
                         disabled={applyGuard.disabled}
                         title={applyGuard.title}
-                        onClick={() => triggerRun.mutate({ patch_id: patch.id, target_id: patch.target_id })}
+                        onClick={() => triggerRun.mutate({ patch_id: migration.id, target_id: migration.target_id })}
                       >
                         <Icon source={PlayIcon} size={16} weight="fill" />
                         Apply

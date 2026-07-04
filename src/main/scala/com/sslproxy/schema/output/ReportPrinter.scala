@@ -4,6 +4,7 @@ import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.discovery.DiscoveryResult
 import com.sslproxy.schema.engine.{ApplyReport, ObjectStatus, SchemaReadyStatus}
+import com.sslproxy.schema.store.DriftResponse
 import com.sslproxy.schema.validation.ValidationReport
 
 object ReportPrinter:
@@ -44,6 +45,28 @@ object ReportPrinter:
     IO.println(
       s"schema_ready: ready=${ready.ready} total=${ready.totalCount} applied=${ready.appliedCount} pending=${ready.pendingCount} failed=${ready.failedCount} last_applied_at=${ready.lastAppliedAt.getOrElse("-")} last_updated_at=${ready.lastUpdatedAt.getOrElse("-")}"
     )
+
+  def drift(response: DriftResponse): IO[Unit] =
+    val summary =
+      IO.println(
+        s"drift_check: supported=${response.supported} db_kind=${response.db_kind} target=${response.target_id} items=${response.items.size} checked_at=${response.checked_at}"
+      )
+    val control =
+      response.control_summary.fold(IO.unit)(summary =>
+        IO.println(
+          s"schema_control: ready=${summary.ready} total=${summary.total_count} applied=${summary.applied_count} pending=${summary.pending_count} failed=${summary.failed_count}"
+        )
+      )
+    val header =
+      if response.items.isEmpty then IO.println("no drift detected")
+      else IO.println(f"${"TYPE"}%-18s ${"OBJECT"}%-56s ${"DRIFT"}%-24s SOURCE")
+    val rows = response.items.traverse_ { item =>
+      val objectName = s"${item.schema}.${item.name}"
+      IO.println(
+        f"${truncate(item.object_type, 18)}%-18s ${truncate(objectName, 56)}%-56s ${truncate(item.drift_type, 24)}%-24s ${item.source_file.getOrElse("-")}"
+      )
+    }
+    warnings(response.warnings) *> summary *> control *> header *> rows
 
   private def truncate(value: String, max: Int): String =
     if value.length <= max then value else value.take(math.max(0, max - 3)) + "..."

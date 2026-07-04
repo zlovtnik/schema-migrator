@@ -80,7 +80,7 @@ export const ValidationReportPage = () => {
 
       <div className={blockingErrors > 0 ? "status-banner status-banner--error" : "status-banner status-banner--ok"}>
         {blockingErrors > 0
-          ? `${blockingErrors} invalid object errors block marking this patch as fully applied.`
+          ? `${blockingErrors} invalid object errors block marking this migration as fully applied.`
           : "No blocking validation errors."}
       </div>
 

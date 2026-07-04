@@ -21,7 +21,6 @@ import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import type { ObjectType, SchemaCatalogObject } from "../../types";
 
 type ObjectFilter = ObjectType | "all";
-type TableDensity = "comfortable" | "compact";
 
 export const SchemaPage = () => {
   const selectedTarget = useSelectedTargetId();
@@ -31,7 +30,6 @@ export const SchemaPage = () => {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
-  const [density, setDensity] = useState<TableDensity>("comfortable");
 
   const objects = data?.objects ?? [];
   const filteredObjects = useMemo(
@@ -235,7 +233,7 @@ export const SchemaPage = () => {
             ))}
           </nav>
 
-          <div className="schema-workspace__main" data-density={density}>
+          <div className="schema-workspace__main">
             <div className="schema-table-toolbar">
               <label className="list-filter schema-table-toolbar__filter">
                 Filter schema objects
@@ -250,19 +248,6 @@ export const SchemaPage = () => {
               <div className="schema-table-toolbar__meta" aria-live="polite">
                 <strong>{filteredObjects.length}</strong> {formatObjectCount(filter, filteredObjects.length)}
                 <span>{driftedCount} drifted</span>
-              </div>
-              <div className="density-toggle" role="group" aria-label="Table density">
-                {(["comfortable", "compact"] as const).map((option) => (
-                  <button
-                    aria-pressed={density === option}
-                    className={density === option ? "density-toggle__item density-toggle__item--active" : "density-toggle__item"}
-                    key={option}
-                    type="button"
-                    onClick={() => setDensity(option)}
-                  >
-                    {formatDensity(option)}
-                  </button>
-                ))}
               </div>
             </div>
             <DataTable
@@ -460,6 +445,3 @@ const formatObjectCount = (type: ObjectFilter, count: number): string => {
   }
   return `${formatObjectType(type).toLowerCase()}s`;
 };
-
-const formatDensity = (density: TableDensity): string =>
-  density === "compact" ? "Compact" : "Comfortable";

@@ -1,14 +1,16 @@
 import { apiRequest } from "./client";
 import { parsePatch, parsePatchList, type Patch, type UploadPatchPayload } from "../types";
 
-export const listPatches = async (targetId: string): Promise<Patch[]> => {
+// The UI calls these records migrations, while the backend API and payload schema
+// still expose the historical `/patches` contract.
+export const listMigrations = async (targetId: string): Promise<Patch[]> => {
   const response = await apiRequest<unknown>(`/patches?target_id=${encodeURIComponent(targetId)}`);
   return parsePatchList(response);
 };
 
-export const getPatch = async (id: string): Promise<Patch> => parsePatch(await apiRequest<unknown>(`/patches/${id}`));
+export const getMigration = async (id: string): Promise<Patch> => parsePatch(await apiRequest<unknown>(`/patches/${id}`));
 
-export const uploadPatch = ({ target_id, files }: UploadPatchPayload): Promise<Patch> => {
+export const uploadMigration = ({ target_id, files }: UploadPatchPayload): Promise<Patch> => {
   const formData = new FormData();
   formData.set("target_id", target_id);
   files.forEach((file, index) => {
@@ -22,7 +24,7 @@ export const uploadPatch = ({ target_id, files }: UploadPatchPayload): Promise<P
   }).then(parsePatch);
 };
 
-export const deletePatch = (id: string): Promise<void> =>
+export const deleteMigration = (id: string): Promise<void> =>
   apiRequest<void>(`/patches/${id}`, {
     method: "DELETE"
   });

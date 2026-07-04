@@ -3,11 +3,14 @@ package com.sslproxy.schema.output
 import cats.effect.IO
 import com.sslproxy.schema.discovery.DiscoveryResult
 import com.sslproxy.schema.engine.{ApplyReport, ObjectStatus, SchemaReadyStatus}
+import com.sslproxy.schema.store.{DriftResponse, Models}
 import com.sslproxy.schema.validation.ValidationReport
 import io.circe.Json
 import io.circe.syntax.*
 
 object JsonReporter:
+  import Models.given
+
   def discovery(discovery: DiscoveryResult): IO[Unit] =
     IO.println(
       Json
@@ -46,6 +49,9 @@ object JsonReporter:
 
   def ready(ready: SchemaReadyStatus): IO[Unit] =
     IO.println(readyJson(ready).noSpaces)
+
+  def drift(response: DriftResponse): IO[Unit] =
+    IO.println(response.asJson.noSpaces)
 
   private def statusJson(status: ObjectStatus): Json =
     Json.obj(

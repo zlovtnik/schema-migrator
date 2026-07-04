@@ -145,10 +145,10 @@ export const SettingsPage = () => {
                 <h2>Database targets</h2>
               </div>
               <div className="row-actions">
-                <Link className="button button--secondary" to="/settings/targets">
+                <Link className="button button--secondary" to="/targets">
                   Manage
                 </Link>
-                <Link className="button button--primary" to="/settings/targets?create=1">
+                <Link className="button button--primary" to="/targets?create=1">
                   Create
                 </Link>
               </div>
@@ -174,7 +174,7 @@ export const SettingsPage = () => {
             {!targetsError && targets.length > 0 ? (
               <div className="settings-target-list">
                 {targets.slice(0, 4).map((target) => (
-                  <Link className="settings-target-row" key={target.id} to={`/settings/targets/${target.id}`}>
+                  <Link className="settings-target-row" key={target.id} to={`/targets/${target.id}`}>
                     <span>
                       <strong>{target.label}</strong>
                       <span>{target.app_name}</span>
