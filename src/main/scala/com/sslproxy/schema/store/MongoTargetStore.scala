@@ -3,7 +3,7 @@ package com.sslproxy.schema.store
 import cats.effect.{Clock, IO, Resource}
 import cats.syntax.all.*
 import com.mongodb.client.model.Indexes
-import com.mongodb.client.{MongoClients, MongoCollection}
+import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.MongoConfig
 import com.sslproxy.schema.server.crypto.AesGcm
 import org.bson.Document
@@ -18,15 +18,19 @@ object MongoTargetStore:
   def resource(config: MongoConfig, passwordKey: SecretKeySpec): Resource[IO, TargetStore] =
     Resource
       .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
-      .evalMap { client =>
-        val store = MongoTargetStore(
-          client.getDatabase(config.database).getCollection(config.targetsCollection),
-          new PasswordCrypto(passwordKey)
-        )
-        store.initialize.as(store: TargetStore)
-      }
+      .flatMap(client => resource(config, passwordKey, client))
 
-private final class MongoTargetStore(collection: MongoCollection[Document], passwordCrypto: PasswordCrypto) extends TargetStore:
+  def resource(config: MongoConfig, passwordKey: SecretKeySpec, client: MongoClient): Resource[IO, TargetStore] =
+    Resource.eval {
+      val store = MongoTargetStore(
+        client.getDatabase(config.database).getCollection(config.targetsCollection),
+        new PasswordCrypto(passwordKey)
+      )
+      store.initialize.as(store: TargetStore)
+    }
+
+private final class MongoTargetStore(collection: MongoCollection[Document], passwordCrypto: PasswordCrypto)
+    extends TargetStore:
   override def list: IO[List[Target]] =
     IO.blocking {
       collection
@@ -57,16 +61,18 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
   override def update(id: String, payload: TargetPayload): IO[Option[Target]] =
     for
       document <- IO.blocking(Option(collection.find(idFilter(id)).first()))
-      updated <- document.traverse { document =>
-        for
-          existing <- storedFromDocument(document)
-          now <- nowString
-          target = toTarget(id, existing.target.created_at, payload)
-          password = payload.password.filter(_.nonEmpty).orElse(existing.password)
-          replacement <- documentFor(StoredTarget(target, password), now)
-          result <- IO.blocking(collection.replaceOne(idFilter(id), replacement))
-        yield Option.when(result.getMatchedCount > 0)(target)
-      }.map(_.flatten)
+      updated <- document
+        .traverse { document =>
+          for
+            existing <- storedFromDocument(document)
+            now <- nowString
+            target = toTarget(id, existing.target.created_at, payload)
+            password = payload.password.filter(_.nonEmpty).orElse(existing.password)
+            replacement <- documentFor(StoredTarget(target, password), now)
+            result <- IO.blocking(collection.replaceOne(idFilter(id), replacement))
+          yield Option.when(result.getMatchedCount > 0)(target)
+        }
+        .map(_.flatten)
     yield updated
 
   override def delete(id: String): IO[Boolean] =

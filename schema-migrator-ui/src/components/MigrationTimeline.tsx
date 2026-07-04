@@ -23,9 +23,13 @@ export const MigrationTimeline = ({ items }: MigrationTimelineProps) => {
         <li key={item.id}>
           <Icon source={ClockIcon} size={16} />
           <div>
-            <strong>{item.label}</strong>
-            {item.detail ? <span>{item.detail}</span> : null}
-            {item.timestamp ? <time dateTime={item.timestamp}>{new Date(item.timestamp).toLocaleString()}</time> : null}
+            <strong title={item.label}>{item.label}</strong>
+            {item.detail ? <span title={item.detail}>{item.detail}</span> : null}
+            {item.timestamp ? (
+              <time dateTime={item.timestamp} title={new Date(item.timestamp).toLocaleString()}>
+                {new Date(item.timestamp).toLocaleString()}
+              </time>
+            ) : null}
           </div>
         </li>
       ))}

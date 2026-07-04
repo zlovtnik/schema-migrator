@@ -2,6 +2,7 @@ package com.sslproxy.schema.store
 
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
+import com.sslproxy.schema.server.RunExecutor
 import munit.FunSuite
 
 import java.nio.charset.StandardCharsets
@@ -10,6 +11,27 @@ import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
 class RunStoreSuite extends FunSuite:
+  test("creating a second active run for the same target is rejected") {
+    val result = cats.effect.Resource
+      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path => IO.blocking(deleteRecursively(path)))
+      .use { stageDir =>
+        for
+          patchStore <- PatchStore.inMemory(stageDir)
+          runStore <- RunStore.inMemory
+          patch <- patchStore.create(
+            "target-1",
+            List(PatchUpload("001_test.sql", "select 1;".getBytes(StandardCharsets.UTF_8), 1))
+          )
+          first <- runStore.create(TriggerRunPayload(patch.id, "target-1"), patch, "test")
+          second <- runStore.create(TriggerRunPayload(patch.id, "target-1"), patch, "test").attempt
+        yield first -> second
+      }
+      .unsafeRunSync()
+
+    val (_, second) = result
+    assert(second.swap.exists(_.isInstanceOf[RunStore.ConcurrentRun]))
+  }
+
   test("aborting a running run finalizes scripts and leaves patch retryable") {
     val result = cats.effect.Resource
       .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path => IO.blocking(deleteRecursively(path)))
@@ -18,6 +40,7 @@ class RunStoreSuite extends FunSuite:
           patchStore <- PatchStore.inMemory(stageDir)
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
+          executor = RunExecutor.simulated(patchStore, runStore, validationStore, 75.millis)
           patch <- patchStore.create(
             "target-1",
             (1 to 20).toList.map(index =>
@@ -25,7 +48,8 @@ class RunStoreSuite extends FunSuite:
             )
           )
           run <- runStore.create(TriggerRunPayload(patch.id, "target-1"), patch, "test")
-          fiber <- runStore.runPatch(run, patchStore, validationStore).start
+          target = StoredTarget(Target("target-1", "Target", "app", "dev", "jdbc:postgresql://localhost:5432/app", "now"), None)
+          fiber <- executor.run(target, run, patch).start
           _ <- waitUntil(runStore.get(run.id).map(_.exists(_.status == "running")), 100)
           _ <- runStore.abort(run.id)
           _ <- fiber.joinWithNever.timeout(1.second)

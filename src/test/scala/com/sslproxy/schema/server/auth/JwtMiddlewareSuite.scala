@@ -52,6 +52,30 @@ class JwtMiddlewareSuite extends FunSuite:
     assertEquals(rejected.status, Status.Unauthorized)
   }
 
+  test("middleware exposes signed roles and maps static token to admin") {
+    val config = serverConfig(apiBearerToken = Some("static-token"))
+    val routes = JwtMiddleware(config)(HttpRoutes.of[IO] { case request @ GET -> Root / "role" =>
+      Ok(AuthContext.claims(request).role)
+    }).orNotFound
+    val operatorToken = JwtTokens.create(config.jwtSecret, "tester", UserRole.Operator).map(_._1).unsafeRunSync()
+
+    val operator = routes
+      .run(
+        Request[IO](Method.GET, Uri.unsafeFromString("/role"))
+          .putHeaders(Header.Raw(CIString("Authorization"), s"Bearer $operatorToken"))
+      )
+      .unsafeRunSync()
+    val static = routes
+      .run(
+        Request[IO](Method.GET, Uri.unsafeFromString("/role"))
+          .putHeaders(Header.Raw(CIString("Authorization"), "Bearer static-token"))
+      )
+      .unsafeRunSync()
+
+    assertEquals(operator.as[String].unsafeRunSync(), UserRole.Operator)
+    assertEquals(static.as[String].unsafeRunSync(), UserRole.Admin)
+  }
+
   test("middleware rejects query token fallback on run stream routes") {
     val config = serverConfig()
     val routes = JwtMiddleware(config)(HttpRoutes.of[IO] { case GET -> Root / "api" / "runs" / _ / "stream" =>
@@ -66,7 +90,21 @@ class JwtMiddlewareSuite extends FunSuite:
     assertEquals(stream.status, Status.Unauthorized)
   }
 
-  private def serverConfig(apiBearerToken: Option[String] = None): ServerConfig =
+  test("middleware only bypasses dev auth token route when enabled") {
+    val route = HttpRoutes.of[IO] { case POST -> Root / "api" / "auth" / "token" => Ok("ok") }
+
+    val disabled = JwtMiddleware(serverConfig(devAuthEnabled = false))(route).orNotFound
+      .run(Request[IO](Method.POST, Uri.unsafeFromString("/api/auth/token")))
+      .unsafeRunSync()
+    val enabled = JwtMiddleware(serverConfig(devAuthEnabled = true))(route).orNotFound
+      .run(Request[IO](Method.POST, Uri.unsafeFromString("/api/auth/token")))
+      .unsafeRunSync()
+
+    assertEquals(disabled.status, Status.Unauthorized)
+    assertEquals(enabled.status, Status.Ok)
+  }
+
+  private def serverConfig(apiBearerToken: Option[String] = None, devAuthEnabled: Boolean = false): ServerConfig =
     ServerConfig(
       host = "127.0.0.1",
       port = 8080,
@@ -74,6 +112,7 @@ class JwtMiddlewareSuite extends FunSuite:
       encryptKeyBase64 = None,
       jwtSecret = "jwt-secret",
       devAuthSecret = "dev",
+      devAuthEnabled = devAuthEnabled,
       dbTestAllowedHosts = Set.empty,
       patchStageDir = Paths.get("."),
       apiBearerToken = apiBearerToken

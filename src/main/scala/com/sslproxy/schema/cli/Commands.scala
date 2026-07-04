@@ -34,11 +34,10 @@ object Commands:
     }
 
   private def execute(config: MigratorConfig, command: CliCommand): IO[ExitCode] =
-    val validation =
-      command match
-        case CliCommand.Serve => config.validateServer
-        case _ => config.validate
-    IO.fromEither(validation.leftMap(e => MigratorError.Validation(e))).flatMap { _ =>
+    IO.defer {
+      val validation = validateConfig(config, command)
+      IO.fromEither(validation.leftMap(e => MigratorError.Validation(e)))
+    }.flatMap { _ =>
       command match
         case CliCommand.Serve =>
           HttpServer.serve(config).as(success)
@@ -102,6 +101,13 @@ object Commands:
         case CliCommand.CheckConnection =>
           withSession(config)(_.checkConnection.as(success))
     }
+
+  private def validateConfig(config: MigratorConfig, command: CliCommand): Either[String, Unit] =
+    command match
+      case CliCommand.Serve => config.validateServer
+      case CliCommand.ListFiles | CliCommand.Validate => config.validateSqlOnly
+      case CliCommand.Apply if config.dryRun => config.validateSqlOnly
+      case _ => config.validate
 
   private def withProvider[A](config: MigratorConfig)(use: DbProvider => IO[A]): IO[A] =
     providerFor(config).flatMap(use)

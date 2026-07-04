@@ -48,6 +48,17 @@ class ServerConfigSuite extends FunSuite:
     finally Files.deleteIfExists(stageDir)
   }
 
+  test("server validation only requires dev auth secret when dev auth is enabled") {
+    val stageDir = Files.createTempDirectory("schema-migrator-config")
+    try
+      val disabled = validConfig(stageDir).copy(devAuthEnabled = false, devAuthSecret = "")
+      val enabled = validConfig(stageDir).copy(devAuthEnabled = true, devAuthSecret = "")
+
+      assertEquals(disabled.validate, Right(()))
+      assertEquals(enabled.validate, Left("BEDROCK_DEV_AUTH_SECRET must not be empty when dev auth is enabled"))
+    finally Files.deleteIfExists(stageDir)
+  }
+
   private def validConfig(stageDir: java.nio.file.Path): ServerConfig =
     ServerConfig(
       host = "127.0.0.1",

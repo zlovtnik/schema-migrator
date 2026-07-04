@@ -25,6 +25,12 @@ object RouteJson:
   def conflict(message: String): IO[Response[IO]] =
     Conflict(error(message))
 
+  def unprocessableEntity(json: Json): IO[Response[IO]] =
+    UnprocessableEntity(json.deepDropNullValues)
+
+  def unprocessableEntity(message: String): IO[Response[IO]] =
+    UnprocessableEntity(error(message))
+
   def payloadTooLarge(message: String): IO[Response[IO]] =
     PayloadTooLarge(error(message))
 

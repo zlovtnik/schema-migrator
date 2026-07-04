@@ -4,6 +4,12 @@ import com.sslproxy.schema.db.syntax.SqlDialect
 import munit.FunSuite
 
 class ParserSuite extends FunSuite:
+  test("sha256 hex output is unsigned and exactly 64 characters") {
+    val hash = Canonicalizer.sha256Hex("abc")
+    assertEquals(hash, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    assertEquals(hash.length, 64)
+  }
+
   test("canonical hash preserves dollar-quoted body verbatim") {
     val left =
       """

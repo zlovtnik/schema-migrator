@@ -3,7 +3,7 @@ package com.sslproxy.schema.store
 import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
 import com.mongodb.client.model.{Indexes, ReplaceOptions}
-import com.mongodb.client.{MongoClients, MongoCollection}
+import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.MongoConfig
 import com.sslproxy.schema.discovery.SqlFile
 import org.bson.Document
@@ -47,12 +47,15 @@ object SqlFileStore:
   def mongo(config: MongoConfig, collectionName: String): Resource[IO, SqlFileStore] =
     Resource
       .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
-      .evalMap { client =>
-        val store = MongoSqlFileStore(
-          client.getDatabase(config.database).getCollection(collectionName)
-        )
-        store.initialize.as(store: SqlFileStore)
-      }
+      .flatMap(client => mongo(config, collectionName, client))
+
+  def mongo(config: MongoConfig, collectionName: String, client: MongoClient): Resource[IO, SqlFileStore] =
+    Resource.eval {
+      val store = MongoSqlFileStore(
+        client.getDatabase(config.database).getCollection(collectionName)
+      )
+      store.initialize.as(store: SqlFileStore)
+    }
 
   def inMemory: IO[SqlFileStore] =
     Ref.of[IO, Map[String, StoredSqlFile]](Map.empty).map(InMemorySqlFileStore(_))
@@ -164,8 +167,11 @@ object StoredSqlFile:
     bytes: Array[Byte],
     uploadedAt: String
   ): StoredSqlFile =
-    val sha256 = MessageDigest.getInstance("SHA-256").digest(bytes)
-      .map(b => f"${b & 0xff}%02x").mkString
+    val sha256 = MessageDigest
+      .getInstance("SHA-256")
+      .digest(bytes)
+      .map(b => f"${b & 0xff}%02x")
+      .mkString
     val base64 = Base64.getEncoder.encodeToString(bytes)
     StoredSqlFile(
       path = path,

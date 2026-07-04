@@ -10,7 +10,7 @@ object Canonicalizer:
 
   def sha256Hex(value: String): String =
     val digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes("UTF-8"))
-    digest.map(byte => f"$byte%02x").mkString
+    digest.map(byte => f"${byte & 0xff}%02x").mkString
 
   def requiresNonTransactionalApply(sql: String, dialect: SqlDialect): Boolean =
     val canonical = canonicalize(sql, dialect).toLowerCase(java.util.Locale.ROOT)

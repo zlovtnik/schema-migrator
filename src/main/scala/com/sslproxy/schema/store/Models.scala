@@ -79,7 +79,8 @@ final case class Patch(
   label: String,
   scripts: List[Script],
   status: String,
-  applied_at: Option[String]
+  applied_at: Option[String],
+  source_snapshot_id: Option[String] = None
 )
 
 final case class ScriptRun(
@@ -103,6 +104,60 @@ final case class Run(
 )
 
 final case class TriggerRunPayload(patch_id: String, target_id: String)
+
+final case class SnapshotFile(
+  path: String,
+  folder: String,
+  filename: String,
+  sha256: String,
+  content_base64: Option[String],
+  uploaded_at: String,
+  size_bytes: Long
+)
+
+final case class Snapshot(
+  id: String,
+  target_id: String,
+  label: String,
+  created_at: String,
+  created_by: String,
+  file_count: Int,
+  files: List[SnapshotFile]
+)
+
+final case class SnapshotDiffItem(
+  path: String,
+  diff_type: String,
+  before_sha256: Option[String],
+  after_sha256: Option[String]
+)
+
+final case class SnapshotDiff(
+  snapshot_id: String,
+  other_snapshot_id: String,
+  generated_at: String,
+  items: List[SnapshotDiffItem]
+)
+
+final case class AuditEvent(
+  id: String,
+  actor: String,
+  role: String,
+  action: String,
+  entity_type: String,
+  entity_id: String,
+  target_id: Option[String],
+  at: String,
+  metadata: Option[Json]
+)
+
+final case class CreateSnapshotPayload(target_id: String, label: Option[String])
+
+final case class RollbackToSnapshotPayload(
+  target_id: String,
+  source_type: Option[String],
+  source_id: Option[String]
+)
 
 final case class InvalidObject(
   object_type: String,
@@ -179,9 +234,9 @@ final case class DriftResponse(
 
 final case class RunEvent(run_id: String, name: String, payload: Json)
 
-final case class AuthTokenRequest(subject: Option[String], secret: Option[String]):
+final case class AuthTokenRequest(subject: Option[String], secret: Option[String], role: Option[String]):
   override def toString: String =
-    s"AuthTokenRequest(subject=$subject, secret=${redacted(secret)})"
+    s"AuthTokenRequest(subject=$subject, secret=${redacted(secret)}, role=$role)"
 
 final case class AuthTokenResponse(token: String, token_type: String, expires_in: Long):
   override def toString: String =
@@ -190,6 +245,8 @@ final case class AuthTokenResponse(token: String, token_type: String, expires_in
 object Models:
   given Decoder[TargetPayload] = deriveDecoder
   given Decoder[TriggerRunPayload] = deriveDecoder
+  given Decoder[CreateSnapshotPayload] = deriveDecoder
+  given Decoder[RollbackToSnapshotPayload] = deriveDecoder
   given Decoder[AuthTokenRequest] = deriveDecoder
 
   given Encoder[Target] = deriveEncoder
@@ -199,6 +256,11 @@ object Models:
   given Encoder[Patch] = deriveEncoder
   given Encoder[ScriptRun] = deriveEncoder
   given Encoder[Run] = deriveEncoder
+  given Encoder[SnapshotFile] = deriveEncoder
+  given Encoder[Snapshot] = deriveEncoder
+  given Encoder[SnapshotDiffItem] = deriveEncoder
+  given Encoder[SnapshotDiff] = deriveEncoder
+  given Encoder[AuditEvent] = deriveEncoder
   given Encoder[InvalidObject] = deriveEncoder
   given Encoder[ValidationResult] = deriveEncoder
   given Encoder[SchemaCatalogObject] = deriveEncoder

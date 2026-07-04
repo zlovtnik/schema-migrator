@@ -3,6 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.discovery.SqlPathNormalizer
+import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
 import com.sslproxy.schema.store.{SqlFileStore, StoredSqlFile}
 import io.circe.Json
 import io.circe.syntax.*
@@ -66,74 +67,80 @@ object SqlFileRoutes:
 
       // POST /sql-files/upload — upload individual SQL files
       case request @ POST -> Root / "sql-files" / "upload" =>
-        val result =
-          request.as[Multipart[IO]].flatMap { multipart =>
-            fileUploads(multipart, limits).flatMap {
-              case Nil =>
-                RouteJson.badRequest("No .sql files found in upload")
-              case files =>
-                val now = java.time.Clock.systemUTC.instant().toString
-                val stored = files.map { upload =>
-                  StoredSqlFile.fromBytes(
-                    path = upload.path,
-                    folder = upload.folder,
-                    filename = upload.filename,
-                    bytes = upload.bytes,
-                    uploadedAt = now
-                  )
-                }
-                sqlFileStore.replaceAll(stored) *>
-                  IO.println(s"Uploaded ${stored.size} SQL files to store") *>
-                  RouteJson.created(Json.obj(
-                    "uploaded" -> Json.fromInt(stored.size),
-                    "folders" -> Json.fromValues(stored.map(_.folder).distinct.sorted.map(Json.fromString))
-                  ))
+        AuthContext.requireRole(request, UserRole.Operator) { _ =>
+          val result =
+            request.as[Multipart[IO]].flatMap { multipart =>
+              fileUploads(multipart, limits).flatMap {
+                case Nil =>
+                  RouteJson.badRequest("No .sql files found in upload")
+                case files =>
+                  val now = java.time.Clock.systemUTC.instant().toString
+                  val stored = files.map { upload =>
+                    StoredSqlFile.fromBytes(
+                      path = upload.path,
+                      folder = upload.folder,
+                      filename = upload.filename,
+                      bytes = upload.bytes,
+                      uploadedAt = now
+                    )
+                  }
+                  sqlFileStore.replaceAll(stored) *>
+                    IO.println(s"Uploaded ${stored.size} SQL files to store") *>
+                    RouteJson.created(Json.obj(
+                      "uploaded" -> Json.fromInt(stored.size),
+                      "folders" -> Json.fromValues(stored.map(_.folder).distinct.sorted.map(Json.fromString))
+                    ))
+              }
             }
+          result.handleErrorWith {
+            case error: UploadTooLarge => RouteJson.payloadTooLarge(error.getMessage)
+            case error: UploadRejected => RouteJson.badRequest(error.getMessage)
           }
-        result.handleErrorWith {
-          case error: UploadTooLarge => RouteJson.payloadTooLarge(error.getMessage)
-          case error: UploadRejected => RouteJson.badRequest(error.getMessage)
         }
 
       // POST /sql-files/upload-zip — upload a zip containing SQL directory tree
       case request @ POST -> Root / "sql-files" / "upload-zip" =>
-        val result =
-          request
-            .as[Multipart[IO]]
-            .flatMap { multipart =>
-              zipPart(multipart, limits).flatMap {
-                case None => RouteJson.badRequest("A zip file part named 'file' is required")
-                case Some(zipBytes) =>
-                  extractZip(zipBytes, limits).flatMap { extracted =>
-                    if extracted.isEmpty then
-                      RouteJson.badRequest("No .sql files found in zip archive")
-                    else
-                      val now = java.time.Clock.systemUTC.instant().toString
-                      val stored = extracted.map { item =>
-                        StoredSqlFile.fromBytes(
-                          path = item.path,
-                          folder = item.folder,
-                          filename = item.filename,
-                          bytes = item.bytes,
-                          uploadedAt = now
-                        )
-                      }
-                      sqlFileStore.replaceAll(stored) *>
-                        IO.println(s"Extracted ${stored.size} SQL files from zip") *>
-                        RouteJson.created(Json.obj(
-                          "uploaded" -> Json.fromInt(stored.size),
-                          "folders" -> Json.fromValues(stored.map(_.folder).distinct.sorted.map(Json.fromString))
-                        ))
-                  }
+        AuthContext.requireRole(request, UserRole.Operator) { _ =>
+          val result =
+            request
+              .as[Multipart[IO]]
+              .flatMap { multipart =>
+                zipPart(multipart, limits).flatMap {
+                  case None => RouteJson.badRequest("A zip file part named 'file' is required")
+                  case Some(zipBytes) =>
+                    extractZip(zipBytes, limits).flatMap { extracted =>
+                      if extracted.isEmpty then
+                        RouteJson.badRequest("No .sql files found in zip archive")
+                      else
+                        val now = java.time.Clock.systemUTC.instant().toString
+                        val stored = extracted.map { item =>
+                          StoredSqlFile.fromBytes(
+                            path = item.path,
+                            folder = item.folder,
+                            filename = item.filename,
+                            bytes = item.bytes,
+                            uploadedAt = now
+                          )
+                        }
+                        sqlFileStore.replaceAll(stored) *>
+                          IO.println(s"Extracted ${stored.size} SQL files from zip") *>
+                          RouteJson.created(Json.obj(
+                            "uploaded" -> Json.fromInt(stored.size),
+                            "folders" -> Json.fromValues(stored.map(_.folder).distinct.sorted.map(Json.fromString))
+                          ))
+                    }
+                }
               }
-            }
-        result.handleErrorWith { case error: UploadTooLarge =>
-          RouteJson.payloadTooLarge(error.getMessage)
+          result.handleErrorWith { case error: UploadTooLarge =>
+            RouteJson.payloadTooLarge(error.getMessage)
+          }
         }
 
       // DELETE /sql-files — clear all stored SQL files
-      case DELETE -> Root / "sql-files" =>
-        sqlFileStore.clear *> NoContent()
+      case request @ DELETE -> Root / "sql-files" =>
+        AuthContext.requireRole(request, UserRole.Operator) { _ =>
+          sqlFileStore.clear *> NoContent()
+        }
     }
 
   private final case class FileUpload(

@@ -2,8 +2,21 @@ package com.sslproxy.schema.server
 
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
+import com.sslproxy.schema.TestSqlSupport
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
-import com.sslproxy.schema.store.{Models, PatchStore, RunStore, SqlFileStore, StoredSqlFile, TargetPayload, TargetStore, ValidationStore}
+import com.sslproxy.schema.server.auth.{AuthContext, Claims, UserRole}
+import com.sslproxy.schema.store.{
+  AuditStore,
+  Models,
+  PatchStore,
+  RunStore,
+  SnapshotStore,
+  SqlFileStore,
+  StoredSqlFile,
+  TargetPayload,
+  TargetStore,
+  ValidationStore
+}
 import fs2.Stream
 import io.circe.Json
 import io.circe.parser.parse
@@ -17,10 +30,9 @@ import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import java.util.zip.{ZipEntry, ZipOutputStream}
-import scala.jdk.CollectionConverters.*
 import scala.concurrent.duration.*
 
-class RoutesSuite extends FunSuite:
+class RoutesSuite extends FunSuite with TestSqlSupport:
   import Models.given
 
   test("target routes create, list, fetch, update, and delete") {
@@ -644,6 +656,239 @@ class RoutesSuite extends FunSuite:
     assertEquals(firstScriptOrder, 1)
   }
 
+  test("snapshot routes capture stored SQL files without returning content") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          _ <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);"
+          )))
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          createResponse <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/snapshots",
+              Json.obj("target_id" -> Json.fromString(targetId), "label" -> Json.fromString("before"))
+            )
+          )
+          createJson <- bodyJson(createResponse)
+          snapshotId <- IO.fromEither(createJson.hcursor.get[String]("id"))
+          listResponse <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/snapshots?target_id=$targetId")))
+          listJson <- bodyJson(listResponse)
+          getResponse <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/snapshots/$snapshotId")))
+          getJson <- bodyJson(getResponse)
+        yield (createResponse.status, createJson, listResponse.status, listJson, getResponse.status, getJson)
+      }
+      .unsafeRunSync()
+
+    val (createStatus, createJson, listStatus, listJson, getStatus, getJson) = result
+    assertEquals(createStatus, Status.Created)
+    assertEquals(listStatus, Status.Ok)
+    assertEquals(getStatus, Status.Ok)
+    assertEquals(createJson.hcursor.get[Int]("file_count"), Right(1))
+    assertEquals(listJson.hcursor.downField("snapshots").values.map(_.size), Some(1))
+    assertEquals(getJson.hcursor.downField("files").downArray.get[String]("path"), Right("tables/001_devices.sql"))
+    assertEquals(getJson.hcursor.downField("files").downArray.get[String]("content_base64").isLeft, true)
+  }
+
+  test("snapshot diff reports added changed and removed files") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          _ <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
+            "sql/views/001_devices_view.sql" -> "create or replace view public.devices_view as select id from public.devices;"
+          )))
+          baseResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
+          baseJson <- bodyJson(baseResponse)
+          baseId <- IO.fromEither(baseJson.hcursor.get[String]("id"))
+          _ <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key, name text);",
+            "sql/functions/001_touch.sql" -> "create or replace function public.touch() returns void language sql as $$ select 1 $$;"
+          )))
+          compareResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
+          compareJson <- bodyJson(compareResponse)
+          compareId <- IO.fromEither(compareJson.hcursor.get[String]("id"))
+          diffResponse <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/snapshots/$baseId/diff/$compareId")))
+          diffJson <- bodyJson(diffResponse)
+        yield diffResponse.status -> diffJson
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    val diffTypes = json.hcursor.downField("items").values.toList.flatten.flatMap(_.hcursor.get[String]("diff_type").toOption).sorted
+    assertEquals(status, Status.Ok)
+    assertEquals(diffTypes, List("added", "changed", "removed"))
+  }
+
+  test("rollback to snapshot rejects current-only files without rollback SQL") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          _ <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);"
+          )))
+          snapshotResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
+          snapshotJson <- bodyJson(snapshotResponse)
+          snapshotId <- IO.fromEither(snapshotJson.hcursor.get[String]("id"))
+          _ <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
+            "sql/tables/002_extra.sql" -> "create table if not exists public.extra (id bigint primary key);"
+          )))
+          rollbackResponse <- routes.run(
+            jsonRequest(Method.POST, s"/snapshots/$snapshotId/rollback", Json.obj("target_id" -> Json.fromString(targetId)))
+          )
+          rollbackJson <- bodyJson(rollbackResponse)
+        yield rollbackResponse.status -> rollbackJson
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.UnprocessableEntity)
+    assertEquals(json.hcursor.downField("details").downArray.as[String].map(_.contains("missing -- rollback: reference")), Right(true))
+  }
+
+  test("rollback to snapshot creates sourced patch and run in deterministic order") {
+    val result = routeFixture
+      .use { routes =>
+        val rollbackSql = "drop table if exists public.extra;"
+        val extraSql =
+          """-- rollback: rollbacks/drop_extra.sql
+            |create table if not exists public.extra (id bigint primary key);
+            |""".stripMargin
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          _ <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
+            "sql/rollbacks/drop_extra.sql" -> rollbackSql
+          )))
+          snapshotResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
+          snapshotJson <- bodyJson(snapshotResponse)
+          snapshotId <- IO.fromEither(snapshotJson.hcursor.get[String]("id"))
+          _ <- routes.run(sqlZipUploadRequest(List(
+            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
+            "sql/rollbacks/drop_extra.sql" -> rollbackSql,
+            "sql/tables/002_extra.sql" -> extraSql
+          )))
+          rollbackResponse <- routes.run(
+            jsonRequest(Method.POST, s"/snapshots/$snapshotId/rollback", Json.obj("target_id" -> Json.fromString(targetId)))
+          )
+          rollbackJson <- bodyJson(rollbackResponse)
+          patchId <- IO.fromEither(rollbackJson.hcursor.get[String]("patch_id"))
+          patchResponse <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/patches/$patchId")))
+          patchJson <- bodyJson(patchResponse)
+          firstScriptOrder <- IO.fromEither(patchJson.hcursor.downField("scripts").downArray.get[Int]("order"))
+          firstScriptName <- IO.fromEither(patchJson.hcursor.downField("scripts").downArray.get[String]("filename"))
+        yield (rollbackResponse.status, rollbackJson, patchJson, snapshotId, firstScriptOrder, firstScriptName)
+      }
+      .unsafeRunSync()
+
+    val (status, _, patchJson, snapshotId, firstScriptOrder, firstScriptName) = result
+    assertEquals(status, Status.Created)
+    assertEquals(patchJson.hcursor.get[String]("source_snapshot_id"), Right(snapshotId))
+    assertEquals(firstScriptOrder, 1)
+    assert(firstScriptName.contains("rollback_002_extra.sql"), firstScriptName)
+  }
+
+  test("audit route filters recorded mutation events") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Audited")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          auditResponse <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/audit?entity_type=target&target_id=$targetId")))
+          auditJson <- bodyJson(auditResponse)
+        yield auditResponse.status -> auditJson
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    assertEquals(status, Status.Ok)
+    assertEquals(json.hcursor.downField("events").downArray.get[String]("action"), Right("target.create"))
+  }
+
+  test("RBAC denies viewer mutations and operator audit access") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          viewerSnapshot <- routes.run(
+            withClaims(
+              jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString("target-1"))),
+              Claims("viewer", None, UserRole.Viewer)
+            )
+          )
+          operatorTarget <- routes.run(
+            withClaims(
+              jsonRequest(Method.POST, "/targets", targetPayload("Operator denied")),
+              Claims("operator", None, UserRole.Operator)
+            )
+          )
+          operatorAudit <- routes.run(
+            withClaims(
+              Request[IO](Method.GET, Uri.unsafeFromString("/audit")),
+              Claims("operator", None, UserRole.Operator)
+            )
+          )
+          viewerRead <- routes.run(
+            withClaims(
+              Request[IO](Method.GET, Uri.unsafeFromString("/targets")),
+              Claims("viewer", None, UserRole.Viewer)
+            )
+          )
+        yield (viewerSnapshot.status, operatorTarget.status, operatorAudit.status, viewerRead.status)
+      }
+      .unsafeRunSync()
+
+    val (viewerMutationStatus, operatorTargetStatus, operatorAuditStatus, viewerReadStatus) = result
+    assertEquals(viewerMutationStatus, Status.Forbidden)
+    assertEquals(operatorTargetStatus, Status.Forbidden)
+    assertEquals(operatorAuditStatus, Status.Forbidden)
+    assertEquals(viewerReadStatus, Status.Ok)
+  }
+
+  test("validation rerun uses real SQL validators") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          patchResponse <- routes.run(patchUploadRequest(targetId))
+          patchJson <- bodyJson(patchResponse)
+          patchId <- IO.fromEither(patchJson.hcursor.get[String]("id"))
+          runResponse <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/runs",
+              Json.obj("target_id" -> Json.fromString(targetId), "patch_id" -> Json.fromString(patchId))
+            )
+          )
+          runJson <- bodyJson(runResponse)
+          runId <- IO.fromEither(runJson.hcursor.get[String]("id"))
+          _ <- awaitValidation(routes, runId)
+          rerun <- routes.run(Request[IO](Method.POST, Uri.unsafeFromString(s"/validation/$runId/rerun")))
+          rerunJson <- bodyJson(rerun)
+        yield (rerun.status, rerunJson.hcursor.get[String]("status"), rerunJson.hcursor.downField("invalid").values.map(_.size))
+      }
+      .unsafeRunSync()
+
+    val (status, validationStatus, invalidCount) = result
+    assertEquals(status, Status.Ok)
+    assertEquals(validationStatus, Right("errors"))
+    assertEquals(invalidCount.exists(_ > 0), true)
+  }
+
   test("patch upload over the size limit returns payload too large") {
     val result = routeFixture
       .use { routes =>
@@ -680,8 +925,21 @@ class RoutesSuite extends FunSuite:
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
           sqlFileStore <- SqlFileStore.inMemory
+          snapshotStore <- SnapshotStore.inMemory
+          auditStore <- AuditStore.inMemory
+          runExecutor = RunExecutor.simulated(patchStore, runStore, validationStore, auditStore = Some(auditStore))
         yield Routes
-          .all(migratorConfig(patchStageDir, sqlDir, allowedHosts), targetStore, patchStore, runStore, validationStore, sqlFileStore)
+          .all(
+            migratorConfig(patchStageDir, sqlDir, allowedHosts),
+            targetStore,
+            patchStore,
+            runStore,
+            validationStore,
+            sqlFileStore,
+            snapshotStore,
+            auditStore,
+            runExecutor
+          )
           .orNotFound
       }
 
@@ -720,22 +978,6 @@ class RoutesSuite extends FunSuite:
       patchStageDir = stageDir
     )
 
-  private def writeSqlManifest(sqlDir: Path): IO[Unit] =
-    val tableDir = sqlDir.resolve("tables")
-    val sql =
-      """-- object: public.devices
-        |-- folder: tables
-        |-- depends_on: -
-        |create table if not exists public.devices (
-        |  id bigint primary key
-        |);
-        |""".stripMargin
-    IO.blocking {
-      Files.createDirectories(tableDir)
-      Files.writeString(tableDir.resolve("001_devices.sql"), sql, StandardCharsets.UTF_8)
-      ()
-    }
-
   private def targetPayload(
     label: String,
     password: Option[String] = Some("secret"),
@@ -752,6 +994,9 @@ class RoutesSuite extends FunSuite:
 
   private def jsonRequest(method: Method, path: String, body: Json): Request[IO] =
     Request[IO](method, Uri.unsafeFromString(path)).withEntity(body)
+
+  private def withClaims(request: Request[IO], claims: Claims): Request[IO] =
+    request.withAttribute(AuthContext.claimsKey, claims)
 
   private def patchUploadRequest(targetId: String): Request[IO] =
     val sqlBytes = "select 1;".getBytes(StandardCharsets.UTF_8).toVector
@@ -809,11 +1054,3 @@ class RoutesSuite extends FunSuite:
       }
 
     loop(20)
-
-  private def deleteRecursively(path: Path): Unit =
-    if Files.exists(path) then
-      if Files.isDirectory(path) then
-        val children = Files.list(path)
-        try children.iterator().asScala.foreach(deleteRecursively)
-        finally children.close()
-      Files.deleteIfExists(path)

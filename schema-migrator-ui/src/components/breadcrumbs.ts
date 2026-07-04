@@ -1,9 +1,16 @@
+interface RouteLabelContext {
+  params: Record<string, string | undefined>;
+  pathname: string;
+}
+
+type RouteLabel = string | ((match: RouteLabelContext) => string | undefined);
+
 export interface RouteHandle {
-  breadcrumb?: string;
+  breadcrumb?: RouteLabel;
   breadcrumbTo?: string;
   parents?: BreadcrumbDefinition[];
   targetAware?: boolean;
-  title?: string;
+  title?: RouteLabel;
 }
 
 interface BreadcrumbDefinition {
@@ -12,11 +19,18 @@ interface BreadcrumbDefinition {
   targetAware?: boolean;
 }
 
-export const activeRouteTitle = (matches: Array<{ handle: unknown }>): string | undefined =>
+export const resolveRouteLabel = (
+  label: RouteLabel | undefined,
+  match: RouteLabelContext
+): string | undefined => (typeof label === "function" ? label(match) : label);
+
+export const activeRouteTitle = (
+  matches: Array<{ handle: unknown; params: Record<string, string | undefined>; pathname: string }>
+): string | undefined =>
   matches
     .slice()
     .reverse()
-    .map((match) => (match.handle as RouteHandle | undefined)?.title)
+    .map((match) => resolveRouteLabel((match.handle as RouteHandle | undefined)?.title, match))
     .find((title): title is string => Boolean(title));
 
 export const breadcrumbTarget = (pathname: string, targetId?: string | null) => {

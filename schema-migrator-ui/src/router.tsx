@@ -6,8 +6,14 @@ const OverviewPage = lazy(() => import("./pages/Overview/OverviewPage").then((mo
 const SchemaPage = lazy(() => import("./pages/Schema/SchemaPage").then((module) => ({ default: module.SchemaPage })));
 const TargetListPage = lazy(() => import("./pages/Targets/TargetListPage").then((module) => ({ default: module.TargetListPage })));
 const TargetFormPage = lazy(() => import("./pages/Targets/TargetFormPage").then((module) => ({ default: module.TargetFormPage })));
+const TargetDetailPage = lazy(() => import("./pages/Targets/TargetDetailPage").then((module) => ({ default: module.TargetDetailPage })));
 const PatchListPage = lazy(() => import("./pages/Patches/PatchListPage").then((module) => ({ default: module.PatchListPage })));
 const PatchDetailPage = lazy(() => import("./pages/Patches/PatchDetailPage").then((module) => ({ default: module.PatchDetailPage })));
+const SnapshotListPage = lazy(() => import("./pages/Snapshots/SnapshotListPage").then((module) => ({ default: module.SnapshotListPage })));
+const SnapshotDetailPage = lazy(() =>
+  import("./pages/Snapshots/SnapshotDetailPage").then((module) => ({ default: module.SnapshotDetailPage }))
+);
+const SnapshotDiffPage = lazy(() => import("./pages/Snapshots/SnapshotDiffPage").then((module) => ({ default: module.SnapshotDiffPage })));
 const RunListPage = lazy(() => import("./pages/Runs/RunListPage").then((module) => ({ default: module.RunListPage })));
 const RunDetailPage = lazy(() => import("./pages/Runs/RunDetailPage").then((module) => ({ default: module.RunDetailPage })));
 const DriftPage = lazy(() => import("./pages/Drift/DriftPage").then((module) => ({ default: module.DriftPage })));
@@ -16,6 +22,10 @@ const ValidationReportPage = lazy(() =>
 );
 const SettingsPage = lazy(() => import("./pages/Settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 const SqlFilesPage = lazy(() => import("./pages/SqlFiles/SqlFilesPage").then((module) => ({ default: module.default })));
+const AuditLogPage = lazy(() => import("./pages/Audit/AuditLogPage").then((module) => ({ default: module.AuditLogPage })));
+
+const snapshotRouteLabel = ({ params }: { params: Record<string, string | undefined> }) =>
+  params.id ? `Snapshot · ${params.id.slice(0, 8)}` : "Snapshot";
 
 const PatchDetailRedirect = () => {
   const { id } = useParams();
@@ -43,6 +53,15 @@ export const router = createBrowserRouter([
       },
       { path: "targets", element: routeElement(TargetListPage), handle: { breadcrumb: "Targets", title: "Targets" } },
       {
+        path: "targets/:id/overview",
+        element: routeElement(TargetDetailPage),
+        handle: {
+          breadcrumb: "Target overview",
+          parents: [{ breadcrumb: "Targets", breadcrumbTo: "/targets" }],
+          title: "Target overview"
+        }
+      },
+      {
         path: "targets/:id",
         element: routeElement(TargetFormPage),
         handle: {
@@ -63,6 +82,29 @@ export const router = createBrowserRouter([
           breadcrumb: "Migration detail",
           parents: [{ breadcrumb: "Migrations", breadcrumbTo: "/migrations", targetAware: true }],
           title: "Migration"
+        }
+      },
+      {
+        path: "snapshots",
+        element: routeElement(SnapshotListPage),
+        handle: { breadcrumb: "Snapshots", targetAware: true, title: "Snapshots" }
+      },
+      {
+        path: "snapshots/:id",
+        element: routeElement(SnapshotDetailPage),
+        handle: {
+          breadcrumb: snapshotRouteLabel,
+          parents: [{ breadcrumb: "Snapshots", breadcrumbTo: "/snapshots", targetAware: true }],
+          title: snapshotRouteLabel
+        }
+      },
+      {
+        path: "snapshots/:id/diff/:otherId",
+        element: routeElement(SnapshotDiffPage),
+        handle: {
+          breadcrumb: "Snapshot diff",
+          parents: [{ breadcrumb: "Snapshots", breadcrumbTo: "/snapshots", targetAware: true }],
+          title: "Snapshot diff"
         }
       },
       { path: "patches", element: <Navigate to="/migrations" replace /> },
@@ -99,6 +141,11 @@ export const router = createBrowserRouter([
         path: "sql-files",
         element: routeElement(SqlFilesPage),
         handle: { breadcrumb: "SQL Files", title: "SQL Files" }
+      },
+      {
+        path: "audit",
+        element: routeElement(AuditLogPage),
+        handle: { breadcrumb: "Audit", title: "Audit" }
       },
       { path: "settings", element: routeElement(SettingsPage), handle: { breadcrumb: "Settings", title: "Settings" } },
       {

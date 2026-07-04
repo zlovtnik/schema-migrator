@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { NavLink, Outlet, useMatches } from "react-router-dom";
+import { ClipboardTextIcon } from "@phosphor-icons/react/dist/csr/ClipboardText";
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react/dist/csr/ClockCounterClockwise";
 import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
 import { GearIcon } from "@phosphor-icons/react/dist/csr/Gear";
+import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { ListIcon } from "@phosphor-icons/react/dist/csr/List";
 import { ListBulletsIcon } from "@phosphor-icons/react/dist/csr/ListBullets";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
@@ -18,17 +20,19 @@ import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
 import { TargetSelector } from "../components/TargetSelector";
 import { Icon } from "../components/ui/Icon";
 import { useErrorGate } from "../hooks/useErrorGate";
+import { useSession } from "../hooks/useSession";
 
 const SIDEBAR_KEY = "schemaMigrator.sidebarCollapsed";
 const NAV_ID = "primary-navigation";
 
-const navSections = [
+const baseNavSections = [
   {
     label: "Operate",
     items: [
       { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
       { to: "/schema", label: "Schema", icon: DatabaseIcon },
-      { to: "/migrations", label: "Migrations", icon: UploadSimpleIcon }
+      { to: "/migrations", label: "Migrations", icon: UploadSimpleIcon },
+      { to: "/snapshots", label: "Snapshots", icon: GitBranchIcon }
     ]
   },
   {
@@ -53,9 +57,23 @@ export const AppShell = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const { failedRun } = useErrorGate();
+  const { canViewAudit, role, subject } = useSession();
   const queryClient = useQueryClient();
   const matches = useMatches();
   const routeTitle = activeRouteTitle(matches);
+  const navSections = useMemo(
+    () =>
+      canViewAudit
+        ? [
+            ...baseNavSections,
+            {
+              label: "Admin",
+              items: [{ to: "/audit", label: "Audit", icon: ClipboardTextIcon }]
+            }
+          ]
+        : baseNavSections,
+    [canViewAudit]
+  );
 
   useEffect(() => {
     window.localStorage.setItem(SIDEBAR_KEY, String(collapsed));
@@ -185,6 +203,16 @@ export const AppShell = () => {
           </button>
         </aside>
         <div className="app-main">
+          <header className="app-topbar" aria-label="Session context">
+            <div className="app-topbar__spacer" />
+            <div className="session-context">
+              {subject ? <span className="session-context__subject" title={subject}>{subject}</span> : null}
+              <div className={`role-badge role-badge--${role}`} title={`Role: ${role}`}>
+                <span>Role</span>
+                <strong>{role}</strong>
+              </div>
+            </div>
+          </header>
           <ErrorGateBanner failedRun={failedRun} />
           <main className="main-scroll" id="main-content" tabIndex={-1}>
             <AppBreadcrumbs />

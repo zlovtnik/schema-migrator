@@ -40,6 +40,9 @@ final case class MigratorConfig(
       _ <- validateSqlDir()
     yield ()
 
+  def validateSqlOnly: Either[String, Unit] =
+    validateSqlDir()
+
   def validateServer: Either[String, Unit] =
     server.validate
 
@@ -74,11 +77,17 @@ final case class ServerConfig(
   encryptKeyBase64: Option[String],
   jwtSecret: String,
   devAuthSecret: String,
+  devAuthEnabled: Boolean = false,
   dbTestAllowedHosts: Set[String],
   patchStageDir: Path,
   apiBearerToken: Option[String] = None,
   mongo: Option[MongoConfig] = None,
   sqlFilesCollection: String = "sql_files",
+  patchesCollection: String = "patches",
+  runsCollection: String = "runs",
+  validationsCollection: String = "validations",
+  snapshotsCollection: String = "snapshots",
+  auditCollection: String = "audit_events",
   mongoConfigError: Option[String] = None
 ):
   def validate: Either[String, Unit] =
@@ -86,8 +95,15 @@ final case class ServerConfig(
     else if port < 1 || port > 65535 then Left("server port must be between 1 and 65535")
     else if encryptKeyBase64.forall(_.trim.isEmpty) then Left("BEDROCK_ENCRYPT_KEY must not be empty")
     else if jwtSecret.trim.isEmpty then Left("BEDROCK_JWT_SECRET must not be empty")
-    else if devAuthSecret.trim.isEmpty then Left("BEDROCK_DEV_AUTH_SECRET must not be empty")
+    else if devAuthEnabled && devAuthSecret.trim.isEmpty then
+      Left("BEDROCK_DEV_AUTH_SECRET must not be empty when dev auth is enabled")
     else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
+    else if sqlFilesCollection.trim.isEmpty then Left("BEDROCK_SQL_FILES_COLLECTION must not be empty")
+    else if patchesCollection.trim.isEmpty then Left("BEDROCK_PATCHES_COLLECTION must not be empty")
+    else if runsCollection.trim.isEmpty then Left("BEDROCK_RUNS_COLLECTION must not be empty")
+    else if validationsCollection.trim.isEmpty then Left("BEDROCK_VALIDATIONS_COLLECTION must not be empty")
+    else if snapshotsCollection.trim.isEmpty then Left("BEDROCK_SNAPSHOTS_COLLECTION must not be empty")
+    else if auditCollection.trim.isEmpty then Left("BEDROCK_AUDIT_COLLECTION must not be empty")
     else validateEncryptKeyBase64().flatMap(_ => validateMongo()).flatMap(_ => validatePatchStageDir())
 
   def mongoConfig: Either[String, MongoConfig] =

@@ -2,6 +2,7 @@ package com.sslproxy.schema.store
 
 import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
+import com.mongodb.client.MongoClient
 import com.sslproxy.schema.config.MongoConfig
 
 import java.util.UUID
@@ -21,6 +22,9 @@ object TargetStore:
 
   def mongo(config: MongoConfig, passwordKey: SecretKeySpec): Resource[IO, TargetStore] =
     MongoTargetStore.resource(config, passwordKey)
+
+  def mongo(config: MongoConfig, passwordKey: SecretKeySpec, client: MongoClient): Resource[IO, TargetStore] =
+    MongoTargetStore.resource(config, passwordKey, client)
 
 private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]]) extends TargetStore:
   override def list: IO[List[Target]] =
