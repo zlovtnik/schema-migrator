@@ -6,10 +6,12 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { Icon } from "../../components/ui/Icon";
 import { ValidationTable } from "../../components/ValidationTable";
 import { runKeys } from "../../hooks/useRuns";
+import { useSession } from "../../hooks/useSession";
 import { useRerunValidation, useValidation } from "../../hooks/useValidation";
 
 export const ValidationReportPage = () => {
   const { runId } = useParams();
+  const { canMutate } = useSession();
   const validationRunId = runId === "latest" ? undefined : runId;
   const runsQuery = useQuery({
     queryKey: runKeys.list(),
@@ -60,7 +62,13 @@ export const ValidationReportPage = () => {
         </div>
         <div className="row-actions">
           <StatusBadge status={result.status} />
-          <button className="button button--secondary" type="button" onClick={() => rerun.mutate()} disabled={rerun.isPending}>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={() => rerun.mutate()}
+            disabled={!canMutate || rerun.isPending}
+            title={canMutate ? undefined : "Viewer role cannot re-run validation"}
+          >
             <Icon source={ArrowClockwiseIcon} size={16} />
             {rerun.isPending ? "Re-validating" : "Re-validate"}
           </button>

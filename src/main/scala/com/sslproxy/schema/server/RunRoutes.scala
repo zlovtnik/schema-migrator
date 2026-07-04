@@ -3,7 +3,9 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.config.MigratorConfig
+import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
 import com.sslproxy.schema.store.{
+  AuditStore,
   Models,
   PatchStore,
   Run,
@@ -36,40 +38,52 @@ object RunRoutes:
     patchStore: PatchStore,
     runStore: RunStore,
     validationStore: ValidationStore,
+    auditStore: AuditStore,
     runExecutor: RunExecutor
   ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
       case request @ POST -> Root / "runs" =>
-        request.as[TriggerRunPayload].flatMap { payload =>
-          (targetStore.getStored(payload.target_id), patchStore.get(payload.patch_id)).tupled.flatMap {
-            case (None, _) => RouteJson.notFound(s"target '${payload.target_id}' was not found")
-            case (_, None) => RouteJson.notFound(s"patch '${payload.patch_id}' was not found")
-            case (Some(_), Some(patch)) if patch.target_id != payload.target_id =>
-              RouteJson.badRequest("patch does not belong to target")
-            case (Some(target), Some(patch)) =>
-              TargetRoutes.withDbAccessAllowed(
-                config.server,
-                target.target.jdbc_url,
-                "database migration execution is not allowed for this target"
-              ) {
-                (for
-                  run <- runStore.create(payload, patch, "api")
-                  _ <- log.info(
-                    Json
-                      .obj(
-                        "event" -> Json.fromString("run_triggered"),
-                        "run_id" -> Json.fromString(run.id),
-                        "target_id" -> Json.fromString(payload.target_id),
-                        "patch_id" -> Json.fromString(payload.patch_id)
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          request.as[TriggerRunPayload].flatMap { payload =>
+            (targetStore.getStored(payload.target_id), patchStore.get(payload.patch_id)).tupled.flatMap {
+              case (None, _) => RouteJson.notFound(s"target '${payload.target_id}' was not found")
+              case (_, None) => RouteJson.notFound(s"patch '${payload.patch_id}' was not found")
+              case (Some(_), Some(patch)) if patch.target_id != payload.target_id =>
+                RouteJson.badRequest("patch does not belong to target")
+              case (Some(target), Some(patch)) =>
+                TargetRoutes.withDbAccessAllowed(
+                  config.server,
+                  target.target.jdbc_url,
+                  "database migration execution is not allowed for this target"
+                ) {
+                  (for
+                    run <- runStore.create(payload, patch, claims.subject)
+                    _ <- auditStore.record(
+                      claims.subject,
+                      claims.role,
+                      "run.trigger",
+                      "run",
+                      run.id,
+                      Some(payload.target_id),
+                      Some(Json.obj("patch_id" -> Json.fromString(payload.patch_id)))
+                    )
+                    _ <- log.info(
+                      Json
+                        .obj(
+                          "event" -> Json.fromString("run_triggered"),
+                          "run_id" -> Json.fromString(run.id),
+                          "target_id" -> Json.fromString(payload.target_id),
+                          "patch_id" -> Json.fromString(payload.patch_id)
+                        )
+                        .noSpaces
                       )
-                      .noSpaces
-                  )
-                  _ <- runExecutor.run(target, run, patch).start.void
-                  response <- RouteJson.created(run.asJson)
-                yield response).recoverWith { case _: RunStore.ConcurrentRun =>
-                  RouteJson.conflict(s"target '${payload.target_id}' already has an active run")
+                    _ <- runExecutor.run(target, run, patch).start.void
+                    response <- RouteJson.created(run.asJson)
+                  yield response).recoverWith { case _: RunStore.ConcurrentRun =>
+                    RouteJson.conflict(s"target '${payload.target_id}' already has an active run")
+                  }
                 }
-              }
+            }
           }
         }
 
@@ -89,16 +103,27 @@ object RunRoutes:
           case None => RouteJson.notFound(s"run '$id' was not found")
         }
 
-      case POST -> Root / "runs" / id / "abort" =>
-        runStore.abort(id).flatMap {
-          case Some(run) =>
-            log.info(Json.obj("event" -> Json.fromString("run_aborted"), "run_id" -> Json.fromString(id)).noSpaces) *>
-              RouteJson.ok(run.asJson)
-          case None =>
-            log.info(
-              Json.obj("event" -> Json.fromString("run_abort_not_found"), "run_id" -> Json.fromString(id)).noSpaces
-            ) *>
-              RouteJson.notFound(s"run '$id' was not found")
+      case request @ POST -> Root / "runs" / id / "abort" =>
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          runStore.abort(id).flatMap {
+            case Some(run) =>
+              auditStore.record(
+                claims.subject,
+                claims.role,
+                "run.abort",
+                "run",
+                run.id,
+                Some(run.target_id),
+                Some(Json.obj("patch_id" -> Json.fromString(run.patch_id)))
+              ) *>
+                log.info(Json.obj("event" -> Json.fromString("run_aborted"), "run_id" -> Json.fromString(id)).noSpaces) *>
+                RouteJson.ok(run.asJson)
+            case None =>
+              log.info(
+                Json.obj("event" -> Json.fromString("run_abort_not_found"), "run_id" -> Json.fromString(id)).noSpaces
+              ) *>
+                RouteJson.notFound(s"run '$id' was not found")
+          }
         }
     }
 

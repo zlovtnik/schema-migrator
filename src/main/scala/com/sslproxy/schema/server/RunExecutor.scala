@@ -6,6 +6,7 @@ import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.engine.{ApplyCallbacks, MigrationEngine, PreparedObject}
 import com.sslproxy.schema.error.MigratorError
+import com.sslproxy.schema.server.auth.UserRole
 import com.sslproxy.schema.store.{
   Patch,
   PatchSqlFile,
@@ -15,7 +16,8 @@ import com.sslproxy.schema.store.{
   Script,
   ScriptError,
   StoredTarget,
-  ValidationStore
+  ValidationStore,
+  AuditStore
 }
 import com.sslproxy.schema.validation.ValidationReport
 
@@ -30,23 +32,26 @@ object RunExecutor:
     config: MigratorConfig,
     patchStore: PatchStore,
     runStore: RunStore,
-    validationStore: ValidationStore
+    validationStore: ValidationStore,
+    auditStore: Option[AuditStore] = None
   ): RunExecutor =
-    RealRunExecutor(config, patchStore, runStore, validationStore)
+    RealRunExecutor(config, patchStore, runStore, validationStore, auditStore)
 
   def simulated(
     patchStore: PatchStore,
     runStore: RunStore,
     validationStore: ValidationStore,
-    delay: FiniteDuration = 75.millis
+    delay: FiniteDuration = 75.millis,
+    auditStore: Option[AuditStore] = None
   ): RunExecutor =
-    SimulatedRunExecutor(patchStore, runStore, validationStore, delay)
+    SimulatedRunExecutor(patchStore, runStore, validationStore, delay, auditStore)
 
 private final class RealRunExecutor(
   config: MigratorConfig,
   patchStore: PatchStore,
   runStore: RunStore,
-  validationStore: ValidationStore
+  validationStore: ValidationStore,
+  auditStore: Option[AuditStore]
 ) extends RunExecutor:
   override def run(target: StoredTarget, run: Run, patch: Patch): IO[Unit] =
     runStore.startRun(run.id).flatMap {
@@ -125,7 +130,9 @@ private final class RealRunExecutor(
   private def completeRun(run: Run, patch: Patch): IO[Unit] =
     nowString.flatMap { ended =>
       runStore.completeRun(run.id, ended, validationTriggered = true).flatMap {
-        case Some(_) => patchStore.markApplied(patch.id, ended)
+        case Some(completed) =>
+          patchStore.markApplied(patch.id, ended) *>
+            recordRunAudit(completed, "run.complete", None)
         case None => IO.unit
       }
     }
@@ -135,8 +142,33 @@ private final class RealRunExecutor(
       case Some("aborted") | Some("completed") => IO.unit
       case _ =>
         nowString.flatMap { ended =>
-          patchStore.markFailed(patch.id) *> runStore.failRun(run.id, ended, failedScriptId, reason).void
+          patchStore.markFailed(patch.id) *>
+            runStore.failRun(run.id, ended, failedScriptId, reason).flatMap {
+              case Some(failed) => recordRunAudit(failed, "run.fail", Some(reason))
+              case None => IO.unit
+            }
         }
+    }
+
+  private def recordRunAudit(run: Run, action: String, reason: Option[String]): IO[Unit] =
+    auditStore.traverse_ { store =>
+      store
+        .record(
+          actor = "system",
+          role = UserRole.Admin,
+          action = action,
+          entityType = "run",
+          entityId = run.id,
+          targetId = Some(run.target_id),
+          metadata = Some(
+            io.circe.Json.obj(
+              "patch_id" -> io.circe.Json.fromString(run.patch_id),
+              "triggered_by" -> io.circe.Json.fromString(run.triggered_by),
+              "reason" -> reason.fold(io.circe.Json.Null)(io.circe.Json.fromString)
+            )
+          )
+        )
+        .void
     }
 
   private def scriptErrorFor(error: Throwable): ScriptError =
@@ -177,7 +209,8 @@ private final class SimulatedRunExecutor(
   patchStore: PatchStore,
   runStore: RunStore,
   validationStore: ValidationStore,
-  delay: FiniteDuration
+  delay: FiniteDuration,
+  auditStore: Option[AuditStore]
 ) extends RunExecutor:
   override def run(target: StoredTarget, run: Run, patch: Patch): IO[Unit] =
     runStore.startRun(run.id).flatMap {
@@ -203,11 +236,32 @@ private final class SimulatedRunExecutor(
   private def complete(run: Run, patch: Patch): IO[Unit] =
     Clock[IO].realTimeInstant.map(_.toString).flatMap { ended =>
       runStore.completeRun(run.id, ended, validationTriggered = true).flatMap {
-        case Some(_) =>
+        case Some(completed) =>
           patchStore.markApplied(patch.id, ended) *>
-            validationStore.record(run.id, run.target_id, ValidationReport()).void
+            validationStore.record(run.id, run.target_id, ValidationReport()).void *>
+            recordRunAudit(completed)
         case None => IO.unit
       }
+    }
+
+  private def recordRunAudit(run: Run): IO[Unit] =
+    auditStore.traverse_ { store =>
+      store
+        .record(
+          actor = "system",
+          role = UserRole.Admin,
+          action = "run.complete",
+          entityType = "run",
+          entityId = run.id,
+          targetId = Some(run.target_id),
+          metadata = Some(
+            io.circe.Json.obj(
+              "patch_id" -> io.circe.Json.fromString(run.patch_id),
+              "triggered_by" -> io.circe.Json.fromString(run.triggered_by)
+            )
+          )
+        )
+        .void
     }
 
 private object RunStatePublic:

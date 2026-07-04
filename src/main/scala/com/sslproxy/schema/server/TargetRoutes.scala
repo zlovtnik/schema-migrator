@@ -4,7 +4,8 @@ import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.config.ServerConfig
 import com.sslproxy.schema.db.postgres.PostgresProvider
-import com.sslproxy.schema.store.{Models, PatchStore, RunStore, TargetPayload, TargetStore, ValidationStore}
+import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
+import com.sslproxy.schema.store.{AuditStore, Models, PatchStore, RunStore, TargetPayload, TargetStore, ValidationStore}
 import io.circe.Json
 import io.circe.syntax.*
 import org.http4s.{HttpRoutes, Request, Response}
@@ -29,32 +30,49 @@ object TargetRoutes:
     store: TargetStore,
     patchStore: PatchStore,
     runStore: RunStore,
-    validationStore: ValidationStore
+    validationStore: ValidationStore,
+    auditStore: AuditStore
   ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
       case GET -> Root / "targets" =>
         store.list.flatMap(targets => RouteJson.ok(Json.obj("targets" -> targets.asJson)))
 
       case request @ POST -> Root / "targets" =>
-        withTargetPayload(request) { payload =>
-          store.create(payload).flatMap(target => RouteJson.created(target.asJson))
+        AuthContext.requireRole(request, UserRole.Admin) { claims =>
+          withTargetPayload(request) { payload =>
+            for
+              target <- store.create(payload)
+              _ <- auditStore.record(
+                claims.subject,
+                claims.role,
+                "target.create",
+                "target",
+                target.id,
+                Some(target.id),
+                Some(Json.obj("label" -> Json.fromString(target.label), "env" -> Json.fromString(target.env)))
+              )
+              response <- RouteJson.created(target.asJson)
+            yield response
+          }
         }
 
       case request @ POST -> Root / "targets" / "test" =>
-        withTargetPayload(request) { payload =>
-          withDbTestAllowed(config, payload.jdbc_url) {
-            for
-              _ <- log.info(
-                Json
-                  .obj(
-                    "event" -> Json.fromString("connection_test_requested"),
-                    "host" -> Json.fromString(jdbcHost(payload.jdbc_url).getOrElse("unknown"))
+        AuthContext.requireRole(request, UserRole.Admin) { _ =>
+          withTargetPayload(request) { payload =>
+            withDbTestAllowed(config, payload.jdbc_url) {
+              for
+                _ <- log.info(
+                  Json
+                    .obj(
+                      "event" -> Json.fromString("connection_test_requested"),
+                      "host" -> Json.fromString(jdbcHost(payload.jdbc_url).getOrElse("unknown"))
+                    )
+                    .noSpaces
                   )
-                  .noSpaces
-              )
-              result <- DbPing.test(payload)
-              response <- RouteJson.ok(result.asJson)
-            yield response
+                result <- DbPing.test(payload)
+                response <- RouteJson.ok(result.asJson)
+              yield response
+            }
           }
         }
 
@@ -65,52 +83,68 @@ object TargetRoutes:
         }
 
       case request @ PUT -> Root / "targets" / id =>
-        withTargetPayload(request) { payload =>
-          store.update(id, payload).flatMap {
-            case Some(target) => RouteJson.ok(target.asJson)
-            case None => RouteJson.notFound(s"target '$id' was not found")
+        AuthContext.requireRole(request, UserRole.Admin) { claims =>
+          withTargetPayload(request) { payload =>
+            store.update(id, payload).flatMap {
+              case Some(target) =>
+                auditStore.record(
+                  claims.subject,
+                  claims.role,
+                  "target.update",
+                  "target",
+                  target.id,
+                  Some(target.id),
+                  Some(Json.obj("label" -> Json.fromString(target.label), "env" -> Json.fromString(target.env)))
+                ) *> RouteJson.ok(target.asJson)
+              case None => RouteJson.notFound(s"target '$id' was not found")
+            }
           }
         }
 
-      case DELETE -> Root / "targets" / id =>
-        targetDeleteBlocker(id, patchStore, runStore, validationStore).flatMap {
-          case Some(message) => RouteJson.conflict(message)
-          case None =>
-            store.delete(id).flatMap {
-              case true => NoContent()
-              case false => RouteJson.notFound(s"target '$id' was not found")
-            }
+      case request @ DELETE -> Root / "targets" / id =>
+        AuthContext.requireRole(request, UserRole.Admin) { claims =>
+          targetDeleteBlocker(id, patchStore, runStore, validationStore).flatMap {
+            case Some(message) => RouteJson.conflict(message)
+            case None =>
+              store.delete(id).flatMap {
+                case true =>
+                  auditStore.record(claims.subject, claims.role, "target.delete", "target", id, Some(id)).void *> NoContent()
+                case false => RouteJson.notFound(s"target '$id' was not found")
+              }
+          }
         }
 
-      case POST -> Root / "targets" / id / "test" =>
-        store.getStored(id).flatMap {
-          case Some(target) =>
-            withDbTestAllowed(config, target.target.jdbc_url) {
+      case request @ POST -> Root / "targets" / id / "test" =>
+        AuthContext.requireRole(request, UserRole.Admin) { _ =>
+          store.getStored(id).flatMap {
+            case Some(target) =>
+              withDbTestAllowed(config, target.target.jdbc_url) {
+                for
+                  _ <- log.info(
+                    Json
+                      .obj(
+                        "event" -> Json.fromString("stored_connection_test_requested"),
+                        "target_id" -> Json.fromString(id)
+                      )
+                      .noSpaces
+                    )
+                  result <- DbPing.test(target)
+                  response <- RouteJson.ok(result.asJson)
+                yield response
+              }
+            case None =>
               for
                 _ <- log.info(
                   Json
                     .obj(
-                      "event" -> Json.fromString("stored_connection_test_requested"),
+                      "event" -> Json.fromString("stored_connection_test_not_found"),
                       "target_id" -> Json.fromString(id)
                     )
                     .noSpaces
-                )
-                result <- DbPing.test(target)
-                response <- RouteJson.ok(result.asJson)
-              yield response
-            }
-          case None =>
-            for
-              _ <- log.info(
-                Json
-                  .obj(
-                    "event" -> Json.fromString("stored_connection_test_not_found"),
-                    "target_id" -> Json.fromString(id)
                   )
-                  .noSpaces
-              )
-              response <- RouteJson.notFound(s"target '$id' was not found")
-            yield response
+                response <- RouteJson.notFound(s"target '$id' was not found")
+              yield response
+          }
         }
     }
 

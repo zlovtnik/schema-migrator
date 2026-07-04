@@ -85,6 +85,8 @@ final case class ServerConfig(
   patchesCollection: String = "patches",
   runsCollection: String = "runs",
   validationsCollection: String = "validations",
+  snapshotsCollection: String = "snapshots",
+  auditCollection: String = "audit_events",
   mongoConfigError: Option[String] = None
 ):
   def validate: Either[String, Unit] =
@@ -94,6 +96,12 @@ final case class ServerConfig(
     else if jwtSecret.trim.isEmpty then Left("BEDROCK_JWT_SECRET must not be empty")
     else if devAuthSecret.trim.isEmpty then Left("BEDROCK_DEV_AUTH_SECRET must not be empty")
     else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
+    else if sqlFilesCollection.trim.isEmpty then Left("BEDROCK_SQL_FILES_COLLECTION must not be empty")
+    else if patchesCollection.trim.isEmpty then Left("BEDROCK_PATCHES_COLLECTION must not be empty")
+    else if runsCollection.trim.isEmpty then Left("BEDROCK_RUNS_COLLECTION must not be empty")
+    else if validationsCollection.trim.isEmpty then Left("BEDROCK_VALIDATIONS_COLLECTION must not be empty")
+    else if snapshotsCollection.trim.isEmpty then Left("BEDROCK_SNAPSHOTS_COLLECTION must not be empty")
+    else if auditCollection.trim.isEmpty then Left("BEDROCK_AUDIT_COLLECTION must not be empty")
     else validateEncryptKeyBase64().flatMap(_ => validateMongo()).flatMap(_ => validatePatchStageDir())
 
   def mongoConfig: Either[String, MongoConfig] =

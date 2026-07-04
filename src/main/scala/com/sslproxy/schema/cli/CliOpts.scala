@@ -144,6 +144,18 @@ object CliOpts:
       .orNone
       .map(_.orElse(env.get("BEDROCK_VALIDATIONS_COLLECTION")).flatMap(nonBlank).getOrElse("validations"))
 
+  private val snapshotsCollectionOpt: Opts[String] =
+    Opts
+      .option[String]("snapshots-collection", help = "MongoDB collection for SQL manifest snapshots")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_SNAPSHOTS_COLLECTION")).flatMap(nonBlank).getOrElse("snapshots"))
+
+  private val auditCollectionOpt: Opts[String] =
+    Opts
+      .option[String]("audit-collection", help = "MongoDB collection for audit events")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_AUDIT_COLLECTION")).flatMap(nonBlank).getOrElse("audit_events"))
+
   private val serverOpts: Opts[ServerConfig] =
     (
       hostOpt,
@@ -161,7 +173,9 @@ object CliOpts:
       sqlFilesCollectionOpt,
       patchesCollectionOpt,
       runsCollectionOpt,
-      validationsCollectionOpt
+      validationsCollectionOpt,
+      snapshotsCollectionOpt,
+      auditCollectionOpt
     ).mapN {
       (
         host,
@@ -179,7 +193,9 @@ object CliOpts:
         sqlFilesCollection,
         patchesCollection,
         runsCollection,
-        validationsCollection
+        validationsCollection,
+        snapshotsCollection,
+        auditCollection
       ) =>
         val mongoResult = mongoConfigFromOptions(mongoUri, mongoDatabase, mongoTargetsCollection)
         ServerConfig(
@@ -197,6 +213,8 @@ object CliOpts:
           patchesCollection = patchesCollection,
           runsCollection = runsCollection,
           validationsCollection = validationsCollection,
+          snapshotsCollection = snapshotsCollection,
+          auditCollection = auditCollection,
           mongoConfigError = mongoResult.swap.toOption
         )
     }

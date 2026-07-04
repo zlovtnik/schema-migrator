@@ -2,7 +2,8 @@ package com.sslproxy.schema.server
 
 import cats.effect.IO
 import cats.syntax.all.*
-import com.sslproxy.schema.store.{Models, PatchStore, PatchUpload, TargetStore}
+import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
+import com.sslproxy.schema.store.{AuditStore, Models, PatchStore, PatchUpload, TargetStore}
 import fs2.text
 import io.circe.Json
 import io.circe.syntax.*
@@ -17,35 +18,48 @@ object PatchRoutes:
   private val maxUploadBytes = 10L * 1024L * 1024L
   private final class UploadTooLarge(message: String) extends IllegalArgumentException(message)
 
-  def routes(targetStore: TargetStore, patchStore: PatchStore): HttpRoutes[IO] =
+  def routes(targetStore: TargetStore, patchStore: PatchStore, auditStore: AuditStore): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
       case request @ GET -> Root / "patches" =>
         val targetId = request.uri.query.params.get("target_id").filter(_.nonEmpty)
         patchStore.list(targetId).flatMap(patches => RouteJson.ok(Json.obj("patches" -> patches.asJson)))
 
       case request @ POST -> Root / "patches" =>
-        request
-          .as[Multipart[IO]]
-          .flatMap { multipart =>
-            for
-              targetId <- fieldValue(multipart, "target_id")
-              response <-
-                targetId match
-                  case None => RouteJson.badRequest("target_id is required")
-                  case Some(value) =>
-                    targetStore.get(value).flatMap {
-                      case None => RouteJson.notFound(s"target '$value' was not found")
-                      case Some(_) =>
-                        fileUploads(multipart).flatMap { uploads =>
-                          if uploads.isEmpty then RouteJson.badRequest("at least one SQL file is required")
-                          else patchStore.create(value, uploads).flatMap(patch => RouteJson.created(patch.asJson))
-                        }
-                    }
-            yield response
-          }
-          .recoverWith { case error: UploadTooLarge =>
-            RouteJson.payloadTooLarge(error.getMessage)
-          }
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          request
+            .as[Multipart[IO]]
+            .flatMap { multipart =>
+              for
+                targetId <- fieldValue(multipart, "target_id")
+                response <-
+                  targetId match
+                    case None => RouteJson.badRequest("target_id is required")
+                    case Some(value) =>
+                      targetStore.get(value).flatMap {
+                        case None => RouteJson.notFound(s"target '$value' was not found")
+                        case Some(_) =>
+                          fileUploads(multipart).flatMap { uploads =>
+                            if uploads.isEmpty then RouteJson.badRequest("at least one SQL file is required")
+                            else
+                              patchStore.create(value, uploads).flatMap { patch =>
+                                auditStore.record(
+                                  claims.subject,
+                                  claims.role,
+                                  "patch.upload",
+                                  "patch",
+                                  patch.id,
+                                  Some(value),
+                                  Some(Json.obj("script_count" -> Json.fromInt(patch.scripts.length)))
+                                ) *> RouteJson.created(patch.asJson)
+                              }
+                          }
+                      }
+              yield response
+            }
+            .recoverWith { case error: UploadTooLarge =>
+              RouteJson.payloadTooLarge(error.getMessage)
+            }
+        }
 
       case GET -> Root / "patches" / id =>
         patchStore.get(id).flatMap {
@@ -53,10 +67,20 @@ object PatchRoutes:
           case None => RouteJson.notFound(s"patch '$id' was not found")
         }
 
-      case DELETE -> Root / "patches" / id =>
-        patchStore.delete(id).flatMap {
-          case true => NoContent()
-          case false => RouteJson.notFound(s"patch '$id' was not found")
+      case request @ DELETE -> Root / "patches" / id =>
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          patchStore.get(id).flatMap {
+            case None => RouteJson.notFound(s"patch '$id' was not found")
+            case Some(patch) if patch.status != "pending" =>
+              RouteJson.conflict(s"patch '$id' is not pending and cannot be deleted")
+            case Some(patch) =>
+              patchStore.delete(id).flatMap {
+                case true =>
+                  auditStore.record(claims.subject, claims.role, "patch.delete", "patch", id, Some(patch.target_id)).void *>
+                    NoContent()
+                case false => RouteJson.notFound(s"patch '$id' was not found")
+              }
+          }
         }
     }
 

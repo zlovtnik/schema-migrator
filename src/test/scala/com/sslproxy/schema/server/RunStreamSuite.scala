@@ -5,6 +5,7 @@ import cats.effect.unsafe.implicits.global
 import cats.syntax.all.*
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
 import com.sslproxy.schema.store.{
+  AuditStore,
   PatchStore,
   PatchUpload,
   Run,
@@ -37,6 +38,7 @@ class RunStreamSuite extends FunSuite:
           patchStore <- PatchStore.inMemory(stageDir)
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
+          auditStore <- AuditStore.inMemory
           executor = RunExecutor.simulated(patchStore, runStore, validationStore)
           target <- targetStore.create(targetPayload)
           patch <- patchStore.create(
@@ -46,7 +48,7 @@ class RunStreamSuite extends FunSuite:
           run <- runStore.create(TriggerRunPayload(patch.id, target.id), patch, "test")
           subscribed <- Deferred[IO, Unit]
           streamStore = signalingRunStore(runStore, subscribed)
-          routes = RunRoutes.routes(routeConfig(stageDir), targetStore, patchStore, streamStore, validationStore, executor).orNotFound
+          routes = RunRoutes.routes(routeConfig(stageDir), targetStore, patchStore, streamStore, validationStore, auditStore, executor).orNotFound
           response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/runs/${run.id}/stream")))
           collect = response.body
             .through(text.utf8.decode)
@@ -80,6 +82,7 @@ class RunStreamSuite extends FunSuite:
           patchStore <- PatchStore.inMemory(stageDir)
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
+          auditStore <- AuditStore.inMemory
           executor = RunExecutor.simulated(patchStore, runStore, validationStore)
           target <- targetStore.create(targetPayload)
           patch <- patchStore.create(
@@ -89,7 +92,7 @@ class RunStreamSuite extends FunSuite:
           run <- runStore.create(TriggerRunPayload(patch.id, target.id), patch, "test")
           storedTarget <- targetStore.getStored(target.id).map(_.get)
           _ <- executor.run(storedTarget, run, patch)
-          routes = RunRoutes.routes(routeConfig(stageDir), targetStore, patchStore, runStore, validationStore, executor).orNotFound
+          routes = RunRoutes.routes(routeConfig(stageDir), targetStore, patchStore, runStore, validationStore, auditStore, executor).orNotFound
           response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/runs/${run.id}/stream")))
           body <- response.body
             .through(text.utf8.decode)

@@ -52,6 +52,30 @@ class JwtMiddlewareSuite extends FunSuite:
     assertEquals(rejected.status, Status.Unauthorized)
   }
 
+  test("middleware exposes signed roles and maps static token to admin") {
+    val config = serverConfig(apiBearerToken = Some("static-token"))
+    val routes = JwtMiddleware(config)(HttpRoutes.of[IO] { case request @ GET -> Root / "role" =>
+      Ok(AuthContext.claims(request).role)
+    }).orNotFound
+    val operatorToken = JwtTokens.create(config.jwtSecret, "tester", UserRole.Operator).map(_._1).unsafeRunSync()
+
+    val operator = routes
+      .run(
+        Request[IO](Method.GET, Uri.unsafeFromString("/role"))
+          .putHeaders(Header.Raw(CIString("Authorization"), s"Bearer $operatorToken"))
+      )
+      .unsafeRunSync()
+    val static = routes
+      .run(
+        Request[IO](Method.GET, Uri.unsafeFromString("/role"))
+          .putHeaders(Header.Raw(CIString("Authorization"), "Bearer static-token"))
+      )
+      .unsafeRunSync()
+
+    assertEquals(operator.as[String].unsafeRunSync(), UserRole.Operator)
+    assertEquals(static.as[String].unsafeRunSync(), UserRole.Admin)
+  }
+
   test("middleware rejects query token fallback on run stream routes") {
     val config = serverConfig()
     val routes = JwtMiddleware(config)(HttpRoutes.of[IO] { case GET -> Root / "api" / "runs" / _ / "stream" =>

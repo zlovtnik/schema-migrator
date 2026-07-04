@@ -22,7 +22,9 @@ final case class PatchSqlFile(script: Script, sqlFile: SqlFile)
 
 trait PatchStore:
   def list(targetId: Option[String]): IO[List[Patch]]
-  def create(targetId: String, uploads: List[PatchUpload]): IO[Patch]
+  def create(targetId: String, uploads: List[PatchUpload]): IO[Patch] =
+    create(targetId, uploads, None)
+  def create(targetId: String, uploads: List[PatchUpload], sourceSnapshotId: Option[String]): IO[Patch]
   def get(id: String): IO[Option[Patch]]
   def delete(id: String): IO[Boolean]
   def markApplied(id: String, appliedAt: String): IO[Unit]
@@ -87,10 +89,10 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
         .sortBy(_.version)
     }
 
-  override def create(targetId: String, uploads: List[PatchUpload]): IO[Patch] =
+  override def create(targetId: String, uploads: List[PatchUpload], sourceSnapshotId: Option[String]): IO[Patch] =
     for
       id <- IO.delay(UUID.randomUUID().toString)
-      patch <- createWithId(id, targetId, uploads).onError { case _ => cleanupPatch(id) }
+      patch <- createWithId(id, targetId, uploads, sourceSnapshotId).onError { case _ => cleanupPatch(id) }
     yield patch
 
   override def get(id: String): IO[Option[Patch]] =
@@ -134,7 +136,12 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
       IO.blocking(Files.readString(path)).map(content => PatchStore.sqlFile(script, path, content, dbKind))
     }
 
-  private def createWithId(id: String, targetId: String, uploads: List[PatchUpload]): IO[Patch] =
+  private def createWithId(
+    id: String,
+    targetId: String,
+    uploads: List[PatchUpload],
+    sourceSnapshotId: Option[String]
+  ): IO[Patch] =
     for
       now <- Clock[IO].realTimeInstant
       scripts <- uploads.sortBy(_.order).traverse(upload => stageUpload(id, upload))
@@ -145,7 +152,8 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
         label = scripts.map(_.filename).mkString(", "),
         scripts = scripts,
         status = "pending",
-        applied_at = None
+        applied_at = None,
+        source_snapshot_id = sourceSnapshotId
       )
       _ <- ref.update(_ + (id -> patch))
     yield patch
@@ -214,7 +222,7 @@ private final class MongoPatchStore(collection: MongoCollection[Document]) exten
         .map(fromDocument(_).patch)
     }
 
-  override def create(targetId: String, uploads: List[PatchUpload]): IO[Patch] =
+  override def create(targetId: String, uploads: List[PatchUpload], sourceSnapshotId: Option[String]): IO[Patch] =
     for
       id <- IO.delay(UUID.randomUUID().toString)
       now <- Clock[IO].realTimeInstant
@@ -229,7 +237,8 @@ private final class MongoPatchStore(collection: MongoCollection[Document]) exten
         label = scripts.map(_.filename).mkString(", "),
         scripts = scripts,
         status = "pending",
-        applied_at = None
+        applied_at = None,
+        source_snapshot_id = sourceSnapshotId
       )
       _ <- IO.blocking(collection.insertOne(toDocument(StoredPatch(patch, contentByScriptId)))).void
     yield patch
@@ -289,6 +298,7 @@ private final class MongoPatchStore(collection: MongoCollection[Document]) exten
       .append("label", patch.label)
       .append("status", patch.status)
       .append("applied_at", patch.applied_at.orNull)
+      .append("source_snapshot_id", patch.source_snapshot_id.orNull)
       .append(
         "scripts",
         patch.scripts.sortBy(_.order).map(scriptDocument(_, stored.contentByScriptId)).asJava
@@ -325,7 +335,8 @@ private final class MongoPatchStore(collection: MongoCollection[Document]) exten
         label = requiredString(document, "label"),
         scripts = scripts.sortBy(_.order),
         status = requiredString(document, "status"),
-        applied_at = optionalString(document, "applied_at")
+        applied_at = optionalString(document, "applied_at"),
+        source_snapshot_id = optionalString(document, "source_snapshot_id")
       ),
       contentByScriptId = scriptDocuments(document).map(doc =>
         requiredString(doc, "id") -> requiredString(doc, "content_base64")
