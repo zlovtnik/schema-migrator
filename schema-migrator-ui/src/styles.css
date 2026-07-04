@@ -287,8 +287,44 @@ code {
 }
 
 .sidebar__selector {
+  display: grid;
+  gap: var(--space-2);
   padding: 12px 10px;
   border-top: 1px solid var(--border);
+}
+
+.role-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--font-size-12);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.role-badge strong {
+  color: var(--text);
+  font-size: var(--font-size-12);
+  text-transform: none;
+}
+
+.role-badge--admin {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  background: var(--success-soft);
+  color: var(--success-text);
+}
+
+.role-badge--viewer {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+  background: var(--warning-soft);
+  color: var(--warning-text);
 }
 
 .sidebar__collapse {
@@ -317,6 +353,7 @@ code {
 .app-shell--collapsed .brand-copy,
 .app-shell--collapsed .nav-section__label,
 .app-shell--collapsed .nav-link span,
+.app-shell--collapsed .role-badge,
 .app-shell--collapsed .target-selector span,
 .app-shell--collapsed .target-selector select,
 .app-shell--collapsed .sidebar__collapse span {
@@ -893,7 +930,8 @@ label {
 .status-badge--applied,
 .status-badge--clean,
 .status-badge--connected,
-.status-badge--in_sync {
+.status-badge--in_sync,
+.status-badge--added {
   background: var(--success-soft);
   color: var(--success-text);
 }
@@ -905,7 +943,8 @@ label {
 .status-badge--missing_actual,
 .status-badge--untracked_actual,
 .status-badge--definition_changed,
-.status-badge--pending_or_failed_control {
+.status-badge--pending_or_failed_control,
+.status-badge--changed {
   background: var(--warning-soft);
   color: var(--warning-text);
 }
@@ -913,7 +952,8 @@ label {
 .status-badge--failed,
 .status-badge--error,
 .status-badge--errors,
-.status-badge--aborted {
+.status-badge--aborted,
+.status-badge--removed {
   background: var(--danger-soft);
   color: var(--danger-text);
 }
@@ -1031,6 +1071,13 @@ label {
   color: inherit;
   font-weight: inherit;
   text-align: left;
+}
+
+.table-select {
+  width: min(220px, 100%);
+  min-height: 32px;
+  padding-block: 5px;
+  font-size: var(--font-size-12);
 }
 
 .table-sort-button {
@@ -1694,6 +1741,72 @@ dd {
   font-family: var(--font-mono);
 }
 
+.snapshot-id-pair {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: var(--font-size-12);
+}
+
+.snapshot-id-pair code {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  color: var(--text);
+}
+
+.audit-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  gap: var(--space-3);
+  align-items: end;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.target-tabs {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+}
+
+.target-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.target-tab:hover,
+.target-tab--active {
+  border-color: var(--color-border-strong);
+  background: var(--surface-strong);
+  color: var(--schema-accent);
+}
+
+.target-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+a[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .list-filter {
   max-width: 520px;
 }
@@ -1756,6 +1869,18 @@ kbd {
 
 .row--failed {
   background: color-mix(in srgb, var(--danger-soft) 55%, transparent);
+}
+
+.row--added {
+  background: color-mix(in srgb, var(--success-soft) 48%, transparent);
+}
+
+.row--changed {
+  background: color-mix(in srgb, var(--warning-soft) 48%, transparent);
+}
+
+.row--removed {
+  background: color-mix(in srgb, var(--danger-soft) 42%, transparent);
 }
 
 .empty-state {
@@ -2414,9 +2539,14 @@ kbd {
   .sql-files-toolbar,
   .sql-files-upload-area,
   .sql-files-search-row,
+  .audit-filter-bar,
   .sql-files-search-row .button,
   .sql-files-toolbar .button {
     width: 100%;
+  }
+
+  .audit-filter-bar {
+    grid-template-columns: 1fr;
   }
 
   .sql-files-filter-count,
@@ -2692,6 +2822,7 @@ kbd {
   .settings-layout,
   .detail-grid,
   .metric-grid,
+  .target-overview-grid,
   .sql-preview-grid,
   .drift-detail-grid {
     grid-template-columns: 1fr;

@@ -6,14 +6,19 @@ import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
 import { EyeIcon } from "@phosphor-icons/react/dist/csr/Eye";
 import { FileSqlIcon } from "@phosphor-icons/react/dist/csr/FileSql";
 import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
+import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { TableIcon } from "@phosphor-icons/react/dist/csr/Table";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { TreeStructureIcon } from "@phosphor-icons/react/dist/csr/TreeStructure";
 import { PageHeader } from "../../components/PageHeader";
+import { TargetSelector } from "../../components/TargetSelector";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon, type IconSource } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { clearSqlFiles, getSqlFileStatus, listSqlFiles, uploadSqlZip, type SqlFileEntry, type SqlFileStatus } from "../../api/sqlFiles";
+import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
+import { useSession } from "../../hooks/useSession";
+import { useCreateSnapshot } from "../../hooks/useSnapshots";
 
 const ExpandedFoldersStorageKey = "schemaMigrator.sqlFiles.expandedFolders";
 
@@ -79,6 +84,9 @@ const folderDialect = (folder: string): "Oracle" | "Postgres" =>
   folder.toLowerCase().includes("oracle") ? "Oracle" : "Postgres";
 
 const SqlFilesPage = () => {
+  const selectedTarget = useSelectedTargetId();
+  const { canMutate } = useSession();
+  const createSnapshot = useCreateSnapshot();
   const [status, setStatus] = useState<SqlFileStatus | null>(null);
   const [files, setFiles] = useState<SqlFileEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -166,6 +174,7 @@ const SqlFilesPage = () => {
   };
 
   const handleDirectoryPick = async (e: ChangeEvent<HTMLInputElement>) => {
+    if (!canMutate) return;
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
@@ -208,6 +217,7 @@ const SqlFilesPage = () => {
   };
 
   const handleClear = async () => {
+    if (!canMutate) return;
     if (!window.confirm("Clear all uploaded SQL files? This will revert to filesystem-based discovery.")) return;
     setLoading(true);
     setError(null);
@@ -220,6 +230,21 @@ const SqlFilesPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCreateSnapshot = () => {
+    if (!canMutate || !selectedTarget) {
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    createSnapshot.mutate(
+      { target_id: selectedTarget },
+      {
+        onSuccess: (snapshot) => setSuccess(`Created snapshot ${snapshot.label}`),
+        onError: (err) => setError(err instanceof Error ? err.message : "Failed to create snapshot")
+      }
+    );
   };
 
   return (
@@ -242,19 +267,50 @@ const SqlFilesPage = () => {
             style={{ display: "none" }}
             id="sql-dir-picker"
           />
-          <button className="button button--primary" type="button" onClick={() => dirInputRef.current?.click()}>
+          <button
+            className="button button--primary"
+            type="button"
+            onClick={() => dirInputRef.current?.click()}
+            disabled={!canMutate || uploading}
+            title={canMutate ? undefined : "Viewer role cannot upload SQL files"}
+          >
             <Icon source={FolderOpenIcon} size={16} />
             {uploading ? "Uploading..." : "Choose SQL directory"}
           </button>
           {uploading ? <span className="inline-result">Zipping and uploading...</span> : null}
         </div>
 
-        {status?.loaded ? (
-          <button className="button button--danger" type="button" onClick={handleClear} disabled={loading}>
-            <Icon source={TrashIcon} size={16} />
-            Clear all
+        <div className="row-actions">
+          <TargetSelector />
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={handleCreateSnapshot}
+            disabled={!canMutate || !selectedTarget || loading || uploading || createSnapshot.isPending}
+            title={
+              !canMutate
+                ? "Viewer role cannot create snapshots"
+                : !selectedTarget
+                  ? "Select a target before creating a snapshot"
+                  : undefined
+            }
+          >
+            <Icon source={GitBranchIcon} size={16} />
+            {createSnapshot.isPending ? "Creating" : "Create snapshot"}
           </button>
-        ) : null}
+          {status?.loaded ? (
+            <button
+              className="button button--danger"
+              type="button"
+              onClick={handleClear}
+              disabled={loading || !canMutate}
+              title={canMutate ? undefined : "Viewer role cannot clear SQL files"}
+            >
+              <Icon source={TrashIcon} size={16} />
+              Clear all
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {error ? (

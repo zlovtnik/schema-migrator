@@ -2,15 +2,20 @@ import { Link } from "react-router-dom";
 import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { WarningIcon } from "@phosphor-icons/react/dist/csr/Warning";
+import { ActivityTable } from "../../components/ActivityTable";
 import { StatusBadge } from "../../components/StatusBadge";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
+import { useAuditEvents } from "../../hooks/useAudit";
 import { useRuns } from "../../hooks/useRuns";
+import { useSession } from "../../hooks/useSession";
 import { useTargets } from "../../hooks/useTargets";
 
 export const OverviewPage = () => {
+  const { canViewAudit } = useSession();
   const { data: targets = [], isLoading: targetsLoading } = useTargets();
   const { data: runs = [], isLoading: runsLoading } = useRuns();
+  const { data: auditEvents = [], isLoading: auditLoading, error: auditError } = useAuditEvents({ limit: 5 }, canViewAudit);
 
   const activeRuns = runs.filter((run) => run.status === "pending" || run.status === "running");
   const failedRuns = runs.filter((run) => run.status === "failed");
@@ -59,7 +64,7 @@ export const OverviewPage = () => {
       ) : null}
 
       <section className="section-block">
-        <h2>Recent activity</h2>
+        <h2>Recent runs</h2>
         {runsLoading ? (
           <div className="empty-state">Loading run history...</div>
         ) : recentRuns.length === 0 ? (
@@ -95,6 +100,19 @@ export const OverviewPage = () => {
           </div>
         )}
       </section>
+
+      {canViewAudit ? (
+        <section className="section-block">
+          <h2>Recent activity</h2>
+          {auditLoading ? (
+            <div className="empty-state">Loading activity...</div>
+          ) : auditError ? (
+            <div className="status-banner status-banner--error">Audit activity could not be loaded.</div>
+          ) : (
+            <ActivityTable events={auditEvents.slice(0, 5)} empty="No audit events recorded yet." />
+          )}
+        </section>
+      ) : null}
     </section>
   );
 };

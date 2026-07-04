@@ -23,6 +23,8 @@ export type ValidationStatus = "clean" | "warnings" | "errors";
 export type DbKind = "postgres" | "oracle";
 export type SchemaObjectStatus = "defined" | "in_sync" | "drift_detected" | "pending_migration" | "unknown";
 export type DriftType = "missing_actual" | "untracked_actual" | "definition_changed" | "pending_or_failed_control";
+export type SnapshotDiffType = "added" | "changed" | "removed";
+export type UserRole = "admin" | "operator" | "viewer";
 
 export const envOptions = ["production", "staging", "dev"] as const;
 export const runStatusOptions = ["pending", "running", "completed", "failed", "aborted"] as const;
@@ -46,6 +48,7 @@ export const objectTypeOptions = [
 ] as const;
 export const schemaObjectStatusOptions = ["defined", "in_sync", "drift_detected", "pending_migration", "unknown"] as const;
 export const driftTypeOptions = ["missing_actual", "untracked_actual", "definition_changed", "pending_or_failed_control"] as const;
+export const snapshotDiffTypeOptions = ["added", "changed", "removed"] as const;
 
 const rfc3339TimestampSchema = z.string().datetime({ offset: true }).transform((value) => value as Rfc3339Timestamp);
 const envSchema = z.enum(envOptions);
@@ -58,6 +61,7 @@ const objectTypeSchema = z.enum(objectTypeOptions);
 const dbKindSchema = z.enum(["postgres", "oracle"]);
 const schemaObjectStatusSchema = z.enum(schemaObjectStatusOptions);
 const driftTypeSchema = z.enum(driftTypeOptions);
+const snapshotDiffTypeSchema = z.enum(snapshotDiffTypeOptions);
 const nullableOptionalStringSchema = z.string().nullish();
 
 export interface Target {
@@ -96,6 +100,7 @@ export interface Patch {
   scripts: Script[];
   status: PatchStatus;
   applied_at?: Rfc3339Timestamp;
+  source_snapshot_id?: string | null;
 }
 
 export interface Run {
@@ -191,6 +196,51 @@ export interface DriftResponse {
   warnings: string[];
 }
 
+export interface SnapshotFile {
+  path: string;
+  folder?: string;
+  filename?: string;
+  sha256: string;
+  size_bytes?: number;
+  uploaded_at?: Rfc3339Timestamp;
+}
+
+export interface Snapshot {
+  id: string;
+  target_id: string;
+  label: string;
+  created_at: Rfc3339Timestamp;
+  created_by: string;
+  file_count: number;
+  files?: SnapshotFile[];
+}
+
+export interface SnapshotDiffItem {
+  path: string;
+  diff_type: SnapshotDiffType;
+  before_sha256?: string | null;
+  after_sha256?: string | null;
+}
+
+export interface SnapshotDiff {
+  snapshot_id: string;
+  other_snapshot_id: string;
+  generated_at?: Rfc3339Timestamp | null;
+  items: SnapshotDiffItem[];
+}
+
+export interface AuditEvent {
+  id: string;
+  actor: string;
+  role?: UserRole | string | null;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  at: Rfc3339Timestamp;
+  target_id?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface ConnectionTestResult {
   ok: boolean;
   latency_ms?: number;
@@ -244,7 +294,8 @@ export const patchSchema = z.object({
   label: z.string(),
   scripts: z.array(scriptSchema),
   status: patchStatusSchema,
-  applied_at: rfc3339TimestampSchema.optional()
+  applied_at: rfc3339TimestampSchema.optional(),
+  source_snapshot_id: nullableOptionalStringSchema
 });
 
 export const scriptRunSchema = z.object({
@@ -340,6 +391,56 @@ export const driftResponseSchema = z.object({
   warnings: z.array(z.string())
 });
 
+export const snapshotFileSchema = z.object({
+  path: z.string().min(1),
+  folder: z.string().optional(),
+  filename: z.string().optional(),
+  sha256: z.string().min(1),
+  size_bytes: z.number().int().nonnegative().optional(),
+  uploaded_at: rfc3339TimestampSchema.optional()
+});
+
+export const snapshotSchema = z
+  .object({
+    id: z.string().min(1),
+    target_id: z.string().min(1),
+    label: z.string().default("Snapshot"),
+    created_at: rfc3339TimestampSchema,
+    created_by: z.string().default("unknown"),
+    file_count: z.number().int().nonnegative().optional(),
+    files: z.array(snapshotFileSchema).optional()
+  })
+  .transform((snapshot) => ({
+    ...snapshot,
+    file_count: snapshot.file_count ?? snapshot.files?.length ?? 0
+  }));
+
+export const snapshotDiffItemSchema = z.object({
+  path: z.string().min(1),
+  diff_type: snapshotDiffTypeSchema,
+  before_sha256: nullableOptionalStringSchema,
+  after_sha256: nullableOptionalStringSchema
+});
+
+export const snapshotDiffSchema = z.object({
+  snapshot_id: z.string().min(1),
+  other_snapshot_id: z.string().min(1),
+  generated_at: rfc3339TimestampSchema.nullish(),
+  items: z.array(snapshotDiffItemSchema)
+});
+
+export const auditEventSchema = z.object({
+  id: z.string().min(1),
+  actor: z.string().default("unknown"),
+  role: z.string().nullish(),
+  action: z.string().min(1),
+  entity_type: z.string().min(1),
+  entity_id: z.string().min(1),
+  at: rfc3339TimestampSchema,
+  target_id: nullableOptionalStringSchema,
+  metadata: z.record(z.unknown()).nullish()
+});
+
 export const parseTarget = (value: unknown): Target => targetSchema.parse(value) as Target;
 export const parseTargetList = (value: unknown): Target[] => {
   const parsed = z.union([z.array(targetSchema), z.object({ targets: z.array(targetSchema) })]).parse(value);
@@ -362,6 +463,17 @@ export const parseValidationResult = (value: unknown): ValidationResult =>
 export const parseSchemaCatalogResponse = (value: unknown): SchemaCatalogResponse =>
   schemaCatalogResponseSchema.parse(value) as SchemaCatalogResponse;
 export const parseDriftResponse = (value: unknown): DriftResponse => driftResponseSchema.parse(value) as DriftResponse;
+export const parseSnapshot = (value: unknown): Snapshot => snapshotSchema.parse(value) as Snapshot;
+export const parseSnapshotList = (value: unknown): Snapshot[] => {
+  const parsed = z.union([z.array(snapshotSchema), z.object({ snapshots: z.array(snapshotSchema) })]).parse(value);
+  return (Array.isArray(parsed) ? parsed : parsed.snapshots) as Snapshot[];
+};
+export const parseSnapshotDiff = (value: unknown): SnapshotDiff => snapshotDiffSchema.parse(value) as SnapshotDiff;
+export const parseAuditEvent = (value: unknown): AuditEvent => auditEventSchema.parse(value) as AuditEvent;
+export const parseAuditEventList = (value: unknown): AuditEvent[] => {
+  const parsed = z.union([z.array(auditEventSchema), z.object({ events: z.array(auditEventSchema) })]).parse(value);
+  return (Array.isArray(parsed) ? parsed : parsed.events) as AuditEvent[];
+};
 
 const postgresJdbcPrefix = "jdbc:postgresql:";
 const oracleJdbcPrefix = "jdbc:oracle:thin:";
@@ -418,4 +530,16 @@ export interface TriggerRunPayload {
 export interface UploadPatchPayload {
   target_id: string;
   files: File[];
+}
+
+export interface CreateSnapshotPayload {
+  target_id: string;
+  label?: string;
+}
+
+export interface RollbackToSnapshotPayload {
+  snapshot_id: string;
+  target_id: string;
+  source_type?: "patch" | "run";
+  source_id?: string;
 }

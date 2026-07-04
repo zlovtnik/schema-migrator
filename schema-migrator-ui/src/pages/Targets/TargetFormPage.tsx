@@ -1,30 +1,41 @@
 import { useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
+import { ActivityTable } from "../../components/ActivityTable";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ConnectionForm } from "../../components/ConnectionForm";
 import { Icon } from "../../components/ui/Icon";
+import { useAuditEvents } from "../../hooks/useAudit";
 import { useRuns } from "../../hooks/useRuns";
+import { useSession } from "../../hooks/useSession";
 import { useDeleteTarget, useTarget, useTestConnection, useUpdateTarget } from "../../hooks/useTargets";
 import type { ConnectionTestResult, TargetFormValues } from "../../types";
 
 export const TargetFormPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { canManageTargets, canViewAudit } = useSession();
   const { data: target, isLoading, error } = useTarget(id);
   const updateTarget = useUpdateTarget(id ?? "");
   const deleteTarget = useDeleteTarget();
   const testConnection = useTestConnection();
   const { data: runs = [], isLoading: runsLoading, isSuccess: runsLoaded } = useRuns(id);
+  const { data: activity = [], isLoading: activityLoading } = useAuditEvents(
+    { entity_type: "target", entity_id: id ?? null },
+    canViewAudit && Boolean(id)
+  );
   const [testResult, setTestResult] = useState<ConnectionTestResult | undefined>();
   const testRequestRef = useRef(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const hasActiveRuns = runs.some((run) => run.status === "running" || run.status === "pending");
-  const deleteDisabled = !runsLoaded || runsLoading || hasActiveRuns;
+  const deleteDisabled = !canManageTargets || !runsLoaded || runsLoading || hasActiveRuns;
   const returnToList = () => navigate("..", { relative: "path" });
 
   const submit = (values: TargetFormValues) => {
+    if (!canManageTargets) {
+      return;
+    }
     updateTarget.mutate(values, {
       onSuccess: returnToList
     });
@@ -47,7 +58,7 @@ export const TargetFormPage = () => {
   };
 
   const confirmDelete = () => {
-    if (!id || deleteDisabled) {
+    if (!canManageTargets || !id || deleteDisabled) {
       return;
     }
     deleteTarget.mutate(id, {
@@ -75,7 +86,9 @@ export const TargetFormPage = () => {
           type="button"
           disabled={deleteDisabled}
           title={
-            !runsLoaded || runsLoading
+            !canManageTargets
+              ? "Admin role required to delete targets"
+              : !runsLoaded || runsLoading
               ? "Delete disabled until run state loads"
               : hasActiveRuns
                 ? "Delete disabled while active runs exist"
@@ -97,7 +110,20 @@ export const TargetFormPage = () => {
         onCancel={returnToList}
         onTest={test}
         onCredentialsChange={clearTestResult}
+        readOnly={!canManageTargets}
+        readOnlyReason="Admin role required to edit target credentials."
       />
+
+      {canViewAudit ? (
+        <section className="section-block">
+          <h2>Activity</h2>
+          {activityLoading ? (
+            <div className="empty-state">Loading activity...</div>
+          ) : (
+            <ActivityTable events={activity} empty="No audit events recorded for this target." />
+          )}
+        </section>
+      ) : null}
 
       <ConfirmDialog
         open={confirmOpen}

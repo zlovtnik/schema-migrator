@@ -1,4 +1,13 @@
-import type { DriftType, PatchStatus, RunStatus, SchemaObjectStatus, ScriptStatus, Severity, ValidationStatus } from "../types";
+import type {
+  DriftType,
+  PatchStatus,
+  RunStatus,
+  SchemaObjectStatus,
+  ScriptStatus,
+  Severity,
+  SnapshotDiffType,
+  ValidationStatus
+} from "../types";
 import { CheckCircleIcon } from "@phosphor-icons/react/dist/csr/CheckCircle";
 import { ClockIcon } from "@phosphor-icons/react/dist/csr/Clock";
 import { LockSimpleIcon } from "@phosphor-icons/react/dist/csr/LockSimple";
@@ -15,6 +24,7 @@ type BadgeStatus =
   | ValidationStatus
   | SchemaObjectStatus
   | DriftType
+  | SnapshotDiffType
   | "connected"
   | "untested";
 
@@ -46,6 +56,9 @@ const statusLabels: Record<string, string> = {
   untracked_actual: "Untracked actual",
   definition_changed: "Definition changed",
   pending_or_failed_control: "Pending or failed",
+  added: "Added",
+  changed: "Changed",
+  removed: "Removed",
   connected: "Connected",
   untested: "Untested"
 };
@@ -74,6 +87,9 @@ const statusIcons: Record<string, IconSource> = {
   untracked_actual: WarningIcon,
   definition_changed: WarningIcon,
   pending_or_failed_control: WarningIcon,
+  added: CheckCircleIcon,
+  changed: WarningIcon,
+  removed: MinusCircleIcon,
   connected: CheckCircleIcon,
   untested: ClockIcon
 };

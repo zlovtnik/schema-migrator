@@ -18,6 +18,8 @@ interface ConnectionFormProps {
   submitting?: boolean | undefined;
   testResult?: ConnectionTestResult | undefined;
   testing?: boolean | undefined;
+  readOnly?: boolean | undefined;
+  readOnlyReason?: string | undefined;
   onSubmit: (values: TargetFormValues) => void;
   onCancel?: () => void;
   onTest?: (values: TargetFormValues) => Promise<ConnectionTestResult> | void;
@@ -45,6 +47,8 @@ export const ConnectionForm = ({
   submitting = false,
   testResult,
   testing = false,
+  readOnly = false,
+  readOnlyReason,
   onSubmit,
   onCancel,
   onTest,
@@ -94,20 +98,26 @@ export const ConnectionForm = ({
   return (
     <form className="connection-form" onSubmit={handleSubmit(submit)}>
       <p className="form-hint">Fields marked with * are required.</p>
+      {readOnly ? (
+        <div className="status-banner" role="status">
+          {readOnlyReason ?? "This target is read-only for the current session."}
+        </div>
+      ) : null}
+
       <div className="form-grid">
         <label htmlFor={fieldIds.label}>
           Label{renderRequired()}
-          <input id={fieldIds.label} {...register("label")} autoComplete="off" {...fieldState("label")} />
+          <input id={fieldIds.label} {...register("label")} autoComplete="off" disabled={readOnly} {...fieldState("label")} />
           {renderError("label")}
         </label>
         <label htmlFor={fieldIds.app_name}>
           App{renderRequired()}
-          <input id={fieldIds.app_name} {...register("app_name")} autoComplete="off" {...fieldState("app_name")} />
+          <input id={fieldIds.app_name} {...register("app_name")} autoComplete="off" disabled={readOnly} {...fieldState("app_name")} />
           {renderError("app_name")}
         </label>
         <label htmlFor={fieldIds.env}>
           Environment{renderRequired()}
-          <select id={fieldIds.env} {...register("env")} {...fieldState("env")}>
+          <select id={fieldIds.env} {...register("env")} disabled={readOnly} {...fieldState("env")}>
             {envOptions.map((env) => (
               <option value={env} key={env}>
                 {env}
@@ -122,6 +132,7 @@ export const ConnectionForm = ({
             id={fieldIds.jdbc_url}
             {...jdbcUrlField}
             autoComplete="off"
+            disabled={readOnly}
             placeholder="postgres://user:password@localhost:5432/app"
             spellCheck={false}
             {...fieldState("jdbc_url")}
@@ -138,9 +149,10 @@ export const ConnectionForm = ({
             {...passwordField}
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
+            disabled={readOnly}
             {...fieldState("password", false)}
           />
-          <button className="icon-button" type="button" onClick={() => setShowPassword((value) => !value)}>
+          <button className="icon-button" type="button" onClick={() => setShowPassword((value) => !value)} disabled={readOnly}>
             <Icon source={showPassword ? EyeSlashIcon : EyeIcon} size={16} />
             <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
           </button>
@@ -155,7 +167,13 @@ export const ConnectionForm = ({
       ) : null}
 
       <div className="form-actions">
-        <button className="button button--secondary" type="button" onClick={handleSubmit(test)} disabled={!onTest || testing}>
+        <button
+          className="button button--secondary"
+          type="button"
+          onClick={handleSubmit(test)}
+          disabled={!onTest || testing || readOnly}
+          title={readOnly ? readOnlyReason : undefined}
+        >
           <Icon source={PlugsConnectedIcon} size={16} />
           {testing ? "Testing" : "Test connection"}
         </button>
@@ -164,7 +182,7 @@ export const ConnectionForm = ({
             Cancel
           </button>
         ) : null}
-        <button className="button button--primary" type="submit" disabled={submitting}>
+        <button className="button button--primary" type="submit" disabled={submitting || readOnly} title={readOnly ? readOnlyReason : undefined}>
           {submitting ? "Saving" : initialTarget ? "Save target" : "Create target"}
         </button>
       </div>

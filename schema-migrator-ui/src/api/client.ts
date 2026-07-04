@@ -14,10 +14,12 @@ const API_BASE_KEY = "schemaMigrator.apiBaseUrl";
 const ENCRYPT_KEY = "schemaMigrator.encryptKey";
 const DEV_AUTH_SECRET = import.meta.env.DEV ? import.meta.env.VITE_DEV_AUTH_SECRET?.trim() || "" : "";
 const DEV_AUTH_SUBJECT = import.meta.env.DEV ? import.meta.env.VITE_DEV_AUTH_SUBJECT?.trim() || "docker-dev" : "docker-dev";
+const DEV_AUTH_ROLE = import.meta.env.DEV ? import.meta.env.VITE_DEV_AUTH_ROLE?.trim() || "" : "";
 const DEV_AUTH_ATTEMPTS = 45;
 const DEV_AUTH_RETRY_MS = 1000;
 let authToken = "";
 let devAuthTokenRequest: Promise<string> | undefined;
+export const AUTH_TOKEN_CHANGED_EVENT = "schema-migrator-auth-token-changed";
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "") || "/";
 const hasUrlScheme = (value: string) => /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
@@ -57,7 +59,12 @@ export const setEncryptKey = (value: string): void => {
 export const getAuthToken = (): string => authToken;
 
 export const setAuthToken = (value: string): void => {
-  authToken = value.trim();
+  const next = value.trim();
+  if (authToken === next) {
+    return;
+  }
+  authToken = next;
+  window.dispatchEvent(new Event(AUTH_TOKEN_CHANGED_EVENT));
 };
 
 export const buildApiUrl = (path: string): string => {
@@ -150,7 +157,8 @@ const fetchDevAuthToken = async (): Promise<string> => {
     },
     body: JSON.stringify({
       secret: DEV_AUTH_SECRET,
-      subject: DEV_AUTH_SUBJECT
+      subject: DEV_AUTH_SUBJECT,
+      ...(DEV_AUTH_ROLE ? { role: DEV_AUTH_ROLE } : {})
     })
   });
 
