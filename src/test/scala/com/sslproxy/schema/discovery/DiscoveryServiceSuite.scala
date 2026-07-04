@@ -42,6 +42,101 @@ class DiscoveryServiceSuite extends FunSuite:
     }
   }
 
+  test("uses manifest layout from repository sql root with selected customer overlay") {
+    withTempDir { dir =>
+      val root = dir.resolve("sql")
+      val core = root.resolve("postgres").resolve("core")
+      val contracts = root.resolve("postgres").resolve("contracts")
+      val customer = root.resolve("postgres").resolve("customers").resolve("acme")
+      Files.createDirectories(core.resolve("03_tables"))
+      Files.createDirectories(contracts.resolve("views"))
+      Files.createDirectories(customer.resolve("extensions"))
+      Files.writeString(core.resolve("03_tables").resolve("001_core.sql"), sql("core_table", "tables"))
+      Files.writeString(contracts.resolve("views").resolve("001_contract.sql"), sql("contract_view", "views"))
+      Files.writeString(customer.resolve("extensions").resolve("001_overlay.sql"), sql("acme_overlay", "extensions"))
+      Files.writeString(
+        core.resolve("manifest.yaml"),
+        """engine: postgres
+          |layer: core
+          |apply_order:
+          |  - 03_tables/001_core.sql
+          |""".stripMargin
+      )
+      Files.writeString(
+        contracts.resolve("manifest.yaml"),
+        """engine: postgres
+          |layer: contracts
+          |apply_order:
+          |  - views/001_contract.sql
+          |""".stripMargin
+      )
+      Files.writeString(
+        customer.resolve("manifest.yaml"),
+        """engine: postgres
+          |layer: customer
+          |customer: acme
+          |apply_order:
+          |  - extensions/001_overlay.sql
+          |""".stripMargin
+      )
+
+      val discovered = DiscoveryService[IO]().discover(root, DbKind.Postgres, Some("acme")).unsafeRunSync()
+
+      assertEquals(
+        normalizePaths(discovered.files.map(_.relativePath)),
+        List(
+          "postgres/core/03_tables/001_core.sql",
+          "postgres/contracts/views/001_contract.sql",
+          "postgres/customers/acme/extensions/001_overlay.sql"
+        )
+      )
+      assertEquals(discovered.files.map(_.folder), List("tables", "views", "extensions"))
+      assertEquals(discovered.warnings, Nil)
+    }
+  }
+
+  test("manifest layout leaves customer overlays out unless selected") {
+    withTempDir { dir =>
+      val engineRoot = dir.resolve("sql").resolve("postgres")
+      val core = engineRoot.resolve("core")
+      val customer = engineRoot.resolve("customers").resolve("acme")
+      Files.createDirectories(core.resolve("03_tables"))
+      Files.createDirectories(engineRoot.resolve("contracts"))
+      Files.createDirectories(customer.resolve("extensions"))
+      Files.writeString(core.resolve("03_tables").resolve("001_core.sql"), sql("core_table", "tables"))
+      Files.writeString(customer.resolve("extensions").resolve("001_overlay.sql"), sql("acme_overlay", "extensions"))
+      Files.writeString(
+        core.resolve("manifest.yaml"),
+        """engine: postgres
+          |layer: core
+          |apply_order:
+          |  - 03_tables/001_core.sql
+          |""".stripMargin
+      )
+      Files.writeString(
+        engineRoot.resolve("contracts").resolve("manifest.yaml"),
+        """engine: postgres
+          |layer: contracts
+          |apply_order: []
+          |""".stripMargin
+      )
+      Files.writeString(
+        customer.resolve("manifest.yaml"),
+        """engine: postgres
+          |layer: customer
+          |customer: acme
+          |apply_order:
+          |  - extensions/001_overlay.sql
+          |""".stripMargin
+      )
+
+      val discovered = DiscoveryService[IO]().discover(engineRoot, DbKind.Postgres).unsafeRunSync()
+
+      assertEquals(normalizePaths(discovered.files.map(_.relativePath)), List("core/03_tables/001_core.sql"))
+      assertEquals(discovered.warnings, Nil)
+    }
+  }
+
   test("normalizes stored sql root paths and ignores Oracle folders for Postgres") {
     val files = List(
       SqlFile("sql/tables", Path.of("sql/tables/001_table.sql"), "001_table.sql", "sql/tables/001_table.sql"),
@@ -58,6 +153,29 @@ class DiscoveryServiceSuite extends FunSuite:
 
     assertEquals(discovered.files.map(_.folder), List("tables"))
     assertEquals(discovered.files.map(_.relativePath), List("tables/001_table.sql"))
+    assertEquals(discovered.warnings, Nil)
+  }
+
+  test("normalizes stored engine layout paths to canonical folders") {
+    val files = List(
+      SqlFile(
+        "sql/postgres/core/03_tables",
+        Path.of("sql/postgres/core/03_tables/001_table.sql"),
+        "001_table.sql",
+        "sql/postgres/core/03_tables/001_table.sql"
+      ),
+      SqlFile(
+        "sql/oracle/core/03_tables",
+        Path.of("sql/oracle/core/03_tables/001_oracle.sql"),
+        "001_oracle.sql",
+        "sql/oracle/core/03_tables/001_oracle.sql"
+      )
+    )
+
+    val discovered = DiscoveryService[IO]().discoverFromFiles(files, DbKind.Postgres)
+
+    assertEquals(discovered.files.map(_.folder), List("tables"))
+    assertEquals(discovered.files.map(_.relativePath), List("postgres/core/03_tables/001_table.sql"))
     assertEquals(discovered.warnings, Nil)
   }
 
@@ -92,6 +210,13 @@ class DiscoveryServiceSuite extends FunSuite:
 
   private def normalizePaths(paths: List[String]): List[String] =
     paths.map(_.replace(java.io.File.separatorChar, '/'))
+
+  private def sql(objectName: String, folder: String): String =
+    s"""-- object: $objectName
+       |-- folder: $folder
+       |-- depends_on: -
+       |select 1;
+       |""".stripMargin
 
   private def deleteRecursively(path: Path): Unit =
     if Files.exists(path) then

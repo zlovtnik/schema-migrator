@@ -9,8 +9,8 @@ import scala.jdk.CollectionConverters.*
 
 final class DiscoveryService[F[_]: Sync]:
   /** Discover SQL files from the filesystem. */
-  def discover(sqlDir: Path, dbKind: DbKind): F[DiscoveryResult] =
-    Sync[F].blocking(discoverUnsafe(sqlDir, dbKind))
+  def discover(sqlDir: Path, dbKind: DbKind, customer: Option[String] = None): F[DiscoveryResult] =
+    Sync[F].blocking(discoverUnsafe(sqlDir, dbKind, customer))
 
   /** Discover SQL files from a pre-loaded list of SqlFile objects
     * (e.g. from MongoDB store). The caller is responsible for
@@ -43,7 +43,87 @@ final class DiscoveryService[F[_]: Sync]:
         val discovered = baseline ::: ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil).sortBy(_.name))
         DiscoveryResult(discovered, extraFolderWarnings)
 
-  private def discoverUnsafe(sqlDir: Path, dbKind: DbKind): DiscoveryResult =
+  private def discoverUnsafe(sqlDir: Path, dbKind: DbKind, customer: Option[String]): DiscoveryResult =
+    val engineRoot = SqlLayout.resolveEngineRoot(sqlDir, dbKind)
+    if Files.isRegularFile(engineRoot.resolve("core").resolve(SqlLayout.ManifestName)) then
+      discoverManifestLayout(sqlDir, engineRoot, dbKind, customer)
+    else discoverFolderOrder(sqlDir, dbKind)
+
+  private def discoverManifestLayout(
+    requestedRoot: Path,
+    engineRoot: Path,
+    dbKind: DbKind,
+    customer: Option[String]
+  ): DiscoveryResult =
+    val layerManifests =
+      List(
+        "core" -> engineRoot.resolve("core").resolve(SqlLayout.ManifestName),
+        "contracts" -> engineRoot.resolve("contracts").resolve(SqlLayout.ManifestName)
+      ) ++ customer.toList.map(name => "customer" -> engineRoot.resolve("customers").resolve(name).resolve(SqlLayout.ManifestName))
+
+    val manifestResults = layerManifests.map { case (layer, manifestPath) =>
+      if Files.isRegularFile(manifestPath) then
+        ApplyOrderManifest.read(manifestPath) match
+          case Right(manifest) => Some(layer -> manifest) -> ApplyOrderManifest.validate(manifest, dbKind, layer)
+          case Left(error) => None -> List(error)
+      else None -> List(s"manifest '$manifestPath' is missing; skipping $layer layer")
+    }
+
+    val manifests = manifestResults.flatMap(_._1)
+    val manifestWarnings = manifestResults.flatMap(_._2)
+    val manifestFiles = manifests.flatMap { case (layer, manifest) =>
+      filesFromManifest(requestedRoot, layer, manifest, dbKind)
+    }
+    val files = manifestFiles.collect { case Right(file) => file }
+    val fileWarnings = manifestFiles.collect { case Left(warning) => warning }
+    val unlistedWarnings = manifests.flatMap { case (_, manifest) =>
+      unlistedSqlWarnings(requestedRoot, manifest, files)
+    }
+
+    DiscoveryResult(files, manifestWarnings ++ fileWarnings ++ unlistedWarnings)
+
+  private def filesFromManifest(
+    requestedRoot: Path,
+    layer: String,
+    manifest: ApplyOrderManifest,
+    dbKind: DbKind
+  ): List[Either[String, SqlFile]] =
+    val manifestDir = manifest.path.getParent
+    manifest.applyOrder.map { entry =>
+      val relative = Path.of(entry)
+      if relative.isAbsolute then Left(s"${manifest.path}: absolute apply_order entry '$entry' is not allowed")
+      else
+        val path = manifestDir.resolve(relative).normalize()
+        if !path.startsWith(manifestDir.normalize()) then
+          Left(s"${manifest.path}: apply_order entry '$entry' escapes the $layer layer")
+        else if !Files.isRegularFile(path) then Left(s"${manifest.path}: apply_order entry '$entry' does not exist")
+        else if !path.getFileName.toString.endsWith(".sql") then
+          Left(s"${manifest.path}: apply_order entry '$entry' is not a .sql file")
+        else
+          val relativePath = requestedRoot.normalize().relativize(path).toString
+          val folder = SqlLayout.folderFromPath(relativePath, dbKind)
+          Right(SqlFile(folder, path, path.getFileName.toString, relativePath))
+    }
+
+  private def unlistedSqlWarnings(
+    requestedRoot: Path,
+    manifest: ApplyOrderManifest,
+    discovered: List[SqlFile]
+  ): List[String] =
+    val manifestDir = manifest.path.getParent
+    val listed = discovered.map(_.path.normalize()).toSet
+    scala.util.Using.resource(Files.walk(manifestDir)) { stream =>
+      stream
+        .iterator()
+        .asScala
+        .filter(path => Files.isRegularFile(path) && path.getFileName.toString.endsWith(".sql"))
+        .filterNot(path => listed.contains(path.normalize()))
+        .map(path => s"${requestedRoot.normalize().relativize(path).toString}: SQL file is not listed in ${manifest.path}")
+        .toList
+        .sorted
+    }
+
+  private def discoverFolderOrder(sqlDir: Path, dbKind: DbKind): DiscoveryResult =
     val ordered = FolderOrder.forDb(dbKind)
     val allowed = ordered.toSet
     val collected = ordered.map(folder => folder -> collectFolder(sqlDir, folder))

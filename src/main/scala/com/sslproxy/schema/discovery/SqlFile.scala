@@ -20,20 +20,28 @@ object SqlPathNormalizer:
     val normalized = normalizeUploadPath(discoveryPath(file))
     dbKind match
       case DbKind.Postgres =>
-        if normalized.folder == "baseline" || normalized.folder.startsWith("oracle/") then Right(None)
-        else if FolderOrder.postgres.contains(normalized.folder) then
-          Right(Some(withNormalizedPath(file, normalized.folder, normalized)))
-        else Left(normalized.folder)
+        normalizeForEngine(file, normalized, DbKind.Postgres)
 
       case DbKind.Oracle =>
-        if normalized.folder == "baseline" then Right(Some(withNormalizedPath(file, "baseline", normalized)))
-        else
-          val oracleFolder = normalized.folder.stripPrefix("oracle/")
-          if normalized.folder.startsWith("oracle/") && FolderOrder.oracle.contains(oracleFolder) then
-            Right(Some(withNormalizedPath(file, oracleFolder, normalized)))
-          else if FolderOrder.oracle.contains(normalized.folder) then
-            Right(Some(withNormalizedPath(file, normalized.folder, normalized)))
-          else Left(normalized.folder)
+        normalizeForEngine(file, normalized, DbKind.Oracle)
+
+  private def normalizeForEngine(
+    file: SqlFile,
+    normalized: NormalizedPath,
+    dbKind: DbKind
+  ): Either[String, Option[SqlFile]] =
+    val engine = SqlLayout.engineName(dbKind)
+    val otherEngines = List("postgres", "oracle").filterNot(_ == engine)
+    if otherEngines.exists(other => normalized.folder == other || normalized.folder.startsWith(s"$other/")) then
+      Right(None)
+    else if normalized.folder == "baseline" then
+      dbKind match
+        case DbKind.Oracle => Right(Some(withNormalizedPath(file, "baseline", normalized)))
+        case DbKind.Postgres => Right(None)
+    else
+      val category = SqlLayout.folderFromPath(normalized.path, dbKind)
+      if FolderOrder.forDb(dbKind).contains(category) then Right(Some(withNormalizedPath(file, category, normalized)))
+      else Left(normalized.folder)
 
   private def discoveryPath(file: SqlFile): String =
     val relativePath = file.relativePath.replace('\\', '/').trim

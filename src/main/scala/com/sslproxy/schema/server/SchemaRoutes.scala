@@ -172,7 +172,7 @@ object SchemaRoutes:
           IO.pure(ExpectedSnapshot(Nil, List(s"sql directory '${config.sqlDir}' is unavailable; no files in store either")))
         else
           (for
-            discovery <- DiscoveryService[IO]().discover(config.sqlDir, DbKind.Postgres)
+            discovery <- DiscoveryService[IO]().discover(config.sqlDir, DbKind.Postgres, config.customer)
             objects <- ManifestBuilder[IO](SqlDialect.Postgres).build(discovery.files)
             expected = objects.flatMap(expectedFromManifest)
           yield ExpectedSnapshot(expected, discovery.warnings)).handleError { case NonFatal(error) =>
