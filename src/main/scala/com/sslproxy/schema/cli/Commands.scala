@@ -7,7 +7,7 @@ import com.sslproxy.schema.db.{DbProvider, JdbcSupport}
 import com.sslproxy.schema.db.oracle.OracleProvider
 import com.sslproxy.schema.db.postgres.PostgresProvider
 import com.sslproxy.schema.db.syntax.SqlDialect
-import com.sslproxy.schema.discovery.DiscoveryService
+import com.sslproxy.schema.discovery.{BaselineGenerator, DiscoveryService}
 import com.sslproxy.schema.effect.{Lock, Retry, RetryPolicy}
 import com.sslproxy.schema.engine.MigrationEngine
 import com.sslproxy.schema.error.MigratorError
@@ -15,6 +15,7 @@ import com.sslproxy.schema.output.{JsonReporter, ReportPrinter}
 import com.sslproxy.schema.server.HttpServer
 import com.sslproxy.schema.validation.Validator
 import io.circe.Json
+import io.circe.syntax.*
 
 object Commands:
   private val success = ExitCode.Success
@@ -43,16 +44,26 @@ object Commands:
           HttpServer.serve(config).as(success)
 
         case CliCommand.ListFiles =>
-          val discovery = DiscoveryService[IO]().discover(config.sqlDir, config.dbKind)
+          val discovery = DiscoveryService[IO]().discover(config.sqlDir, config.dbKind, config.customer)
           discovery
             .flatMap { result =>
               if config.json then JsonReporter.discovery(result) else ReportPrinter.discovery(result)
             }
             .as(success)
 
+        case CliCommand.GenerateBaseline =>
+          for
+            discovery <- DiscoveryService[IO]().discover(config.sqlDir, config.dbKind, config.customer)
+            _ <- if config.json then IO.unit else ReportPrinter.warnings(discovery.warnings)
+            path <- BaselineGenerator.write(config.sqlDir, config.dbKind, discovery.files)
+            _ <-
+              if config.json then IO.println(Json.obj("baseline_path" -> path.toString.asJson).noSpaces)
+              else IO.println(s"generated baseline: $path")
+          yield success
+
         case CliCommand.Validate =>
           for
-            discovery <- DiscoveryService[IO]().discover(config.sqlDir, config.dbKind)
+            discovery <- DiscoveryService[IO]().discover(config.sqlDir, config.dbKind, config.customer)
             _ <- if config.json then IO.unit else ReportPrinter.warnings(discovery.warnings)
             report <- Validator[IO](config.dbKind).validate(discovery.files)
             _ <- if config.json then JsonReporter.validation(report) else ReportPrinter.validation(report)
@@ -105,7 +116,7 @@ object Commands:
   private def validateConfig(config: MigratorConfig, command: CliCommand): Either[String, Unit] =
     command match
       case CliCommand.Serve => config.validateServer
-      case CliCommand.ListFiles | CliCommand.Validate => config.validateSqlOnly
+      case CliCommand.ListFiles | CliCommand.GenerateBaseline | CliCommand.Validate => config.validateSqlOnly
       case CliCommand.Apply if config.dryRun => config.validateSqlOnly
       case _ => config.validate
 
@@ -133,7 +144,7 @@ object Commands:
 
   private def dryRun(config: MigratorConfig): IO[Unit] =
     for
-      discovery <- DiscoveryService[IO]().discover(config.sqlDir, config.dbKind)
+      discovery <- DiscoveryService[IO]().discover(config.sqlDir, config.dbKind, config.customer)
       _ <- if config.json then IO.unit else ReportPrinter.warnings(discovery.warnings)
       previews <- discovery.files.traverse { file =>
         IO.blocking {

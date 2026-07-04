@@ -28,7 +28,8 @@ final case class MigratorConfig(
   oracleUser: Option[String],
   oraclePasswordFile: Option[Path],
   json: Boolean,
-  server: ServerConfig
+  server: ServerConfig,
+  customer: Option[String] = None
 ):
   /** Validate configuration at parse time, returning an error message
     * for invalid or missing combinations that would otherwise fail
@@ -37,11 +38,12 @@ final case class MigratorConfig(
   def validate: Either[String, Unit] =
     for
       _ <- validateDbSpecific()
+      _ <- validateCustomer()
       _ <- validateSqlDir()
     yield ()
 
   def validateSqlOnly: Either[String, Unit] =
-    validateSqlDir()
+    validateCustomer().flatMap(_ => validateSqlDir())
 
   def validateServer: Either[String, Unit] =
     server.validate
@@ -62,6 +64,14 @@ final case class MigratorConfig(
     if Files.notExists(sqlDir) then Left(s"sql directory '$sqlDir' does not exist or is not accessible")
     else if !Files.isDirectory(sqlDir) then Left(s"path '$sqlDir' is not a directory")
     else Right(())
+
+  private def validateCustomer(): Either[String, Unit] =
+    customer match
+      case None => Right(())
+      case Some(value) if value.trim.isEmpty => Left("customer must not be empty")
+      case Some(value) if value.contains("/") || value.contains("\\") || value == "." || value == ".." =>
+        Left("customer must be a single directory name")
+      case Some(_) => Right(())
 
 final case class MongoConfig(uri: String, database: String, targetsCollection: String):
   def validate: Either[String, Unit] =
