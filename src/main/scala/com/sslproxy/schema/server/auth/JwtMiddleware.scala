@@ -97,14 +97,15 @@ object JwtTokens:
 object JwtMiddleware:
   def apply(config: ServerConfig)(routes: HttpRoutes[IO]): HttpRoutes[IO] =
     HttpRoutes { request =>
-      if bypassesAuth(request) then routes(request)
+      if bypassesAuth(config, request) then routes(request)
       else
         extractToken(request) match
           case None => OptionT.liftF(IO.pure(unauthorized("missing bearer token")))
           case Some(token) =>
             OptionT.liftF {
               verify(config, token).flatMap {
-                case Right(claims) => routes.run(request.withAttribute(AuthContext.claimsKey, claims)).getOrElseF(NotFound())
+                case Right(claims) =>
+                  routes.run(request.withAttribute(AuthContext.claimsKey, claims)).getOrElseF(NotFound())
                 case Left(error) => IO.pure(unauthorized(error))
               }
             }
@@ -115,10 +116,11 @@ object JwtMiddleware:
       case Some(_) => IO.pure(Right(Claims("static-api-token", None, UserRole.Admin)))
       case None => JwtTokens.verify(config.jwtSecret, token)
 
-  private def bypassesAuth(request: Request[IO]): Boolean =
+  private def bypassesAuth(config: ServerConfig, request: Request[IO]): Boolean =
     request.method == Method.OPTIONS || {
       val path = request.uri.path.renderString
-      path == "/health" || path == "/api/health" || path == "/auth/token" || path == "/api/auth/token"
+      val devAuthPath = config.devAuthEnabled && (path == "/auth/token" || path == "/api/auth/token")
+      path == "/health" || path == "/api/health" || devAuthPath
     }
 
   private def extractToken(request: Request[IO]): Option[String] =

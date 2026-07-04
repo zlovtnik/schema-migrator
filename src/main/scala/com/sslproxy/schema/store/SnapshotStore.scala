@@ -3,7 +3,7 @@ package com.sslproxy.schema.store
 import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
 import com.mongodb.client.model.{Indexes, ReplaceOptions, Sorts}
-import com.mongodb.client.{MongoClients, MongoCollection}
+import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.MongoConfig
 import org.bson.Document
 
@@ -20,10 +20,13 @@ object SnapshotStore:
   def mongo(config: MongoConfig, collectionName: String): Resource[IO, SnapshotStore] =
     Resource
       .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
-      .evalMap { client =>
-        val store = MongoSnapshotStore(client.getDatabase(config.database).getCollection(collectionName))
-        store.initialize.as(store: SnapshotStore)
-      }
+      .flatMap(client => mongo(config, collectionName, client))
+
+  def mongo(config: MongoConfig, collectionName: String, client: MongoClient): Resource[IO, SnapshotStore] =
+    Resource.eval {
+      val store = MongoSnapshotStore(client.getDatabase(config.database).getCollection(collectionName))
+      store.initialize.as(store: SnapshotStore)
+    }
 
   def inMemory: IO[SnapshotStore] =
     Ref.of[IO, Map[String, Snapshot]](Map.empty).map(InMemorySnapshotStore.apply)
@@ -179,7 +182,7 @@ private final class MongoSnapshotStore(collection: MongoCollection[Document]) ex
       folder = requiredString(document, "folder"),
       filename = requiredString(document, "filename"),
       sha256 = requiredString(document, "sha256"),
-      content_base64 = Some(requiredString(document, "content_base64")),
+      content_base64 = Some(optionalRawString(document, "content_base64").getOrElse("")),
       uploaded_at = requiredString(document, "uploaded_at"),
       size_bytes = longValue(document, "size_bytes").getOrElse(0L)
     )
@@ -197,6 +200,9 @@ private final class MongoSnapshotStore(collection: MongoCollection[Document]) ex
     Option(document.getString(field))
       .filter(_.nonEmpty)
       .getOrElse(throw IllegalStateException(s"snapshot document is missing required field '$field'"))
+
+  private def optionalRawString(document: Document, field: String): Option[String] =
+    Option(document.getString(field))
 
   private def intValue(document: Document, field: String): Option[Int] =
     Option(document.get(field)).collect { case number: java.lang.Number => number.intValue() }

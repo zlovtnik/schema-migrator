@@ -2,6 +2,7 @@ package com.sslproxy.schema.server
 
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
+import com.sslproxy.schema.TestSqlSupport
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
 import com.sslproxy.schema.server.auth.{AuthContext, Claims, UserRole}
 import com.sslproxy.schema.store.{
@@ -29,10 +30,9 @@ import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import java.util.zip.{ZipEntry, ZipOutputStream}
-import scala.jdk.CollectionConverters.*
 import scala.concurrent.duration.*
 
-class RoutesSuite extends FunSuite:
+class RoutesSuite extends FunSuite with TestSqlSupport:
   import Models.given
 
   test("target routes create, list, fetch, update, and delete") {
@@ -924,10 +924,10 @@ class RoutesSuite extends FunSuite:
           patchStore <- PatchStore.inMemory(patchStageDir)
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
-          runExecutor = RunExecutor.simulated(patchStore, runStore, validationStore)
           sqlFileStore <- SqlFileStore.inMemory
           snapshotStore <- SnapshotStore.inMemory
           auditStore <- AuditStore.inMemory
+          runExecutor = RunExecutor.simulated(patchStore, runStore, validationStore, auditStore = Some(auditStore))
         yield Routes
           .all(
             migratorConfig(patchStageDir, sqlDir, allowedHosts),
@@ -977,22 +977,6 @@ class RoutesSuite extends FunSuite:
       dbTestAllowedHosts = allowedHosts,
       patchStageDir = stageDir
     )
-
-  private def writeSqlManifest(sqlDir: Path): IO[Unit] =
-    val tableDir = sqlDir.resolve("tables")
-    val sql =
-      """-- object: public.devices
-        |-- folder: tables
-        |-- depends_on: -
-        |create table if not exists public.devices (
-        |  id bigint primary key
-        |);
-        |""".stripMargin
-    IO.blocking {
-      Files.createDirectories(tableDir)
-      Files.writeString(tableDir.resolve("001_devices.sql"), sql, StandardCharsets.UTF_8)
-      ()
-    }
 
   private def targetPayload(
     label: String,
@@ -1070,11 +1054,3 @@ class RoutesSuite extends FunSuite:
       }
 
     loop(20)
-
-  private def deleteRecursively(path: Path): Unit =
-    if Files.exists(path) then
-      if Files.isDirectory(path) then
-        val children = Files.list(path)
-        try children.iterator().asScala.foreach(deleteRecursively)
-        finally children.close()
-      Files.deleteIfExists(path)

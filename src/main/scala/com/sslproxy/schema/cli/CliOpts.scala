@@ -84,6 +84,12 @@ object CliOpts:
       .orNone
       .map(_.orElse(env.get("BEDROCK_DEV_AUTH_SECRET")).flatMap(nonBlank).getOrElse(""))
 
+  private val devAuthEnabledOpt: Opts[Boolean] =
+    Opts
+      .flag("dev-auth-enabled", help = "Enable the development /api/auth/token endpoint")
+      .orNone
+      .map(_.isDefined || envBoolean("BEDROCK_DEV_AUTH_ENABLED", false))
+
   private val apiBearerTokenOpt: Opts[Option[String]] =
     Opts
       .option[String]("api-bearer-token", help = "Static bearer token accepted by protected HTTP API routes")
@@ -100,7 +106,11 @@ object CliOpts:
     Opts
       .option[String]("db-test-allowed-hosts", help = "Comma-separated JDBC hosts allowed for /targets/test")
       .orNone
-      .map(_.orElse(env.get("BEDROCK_DB_TEST_ALLOWED_HOSTS")).fold(Set.empty[String])(commaSet).map(_.toLowerCase(Locale.ROOT)))
+      .map(
+        _.orElse(env.get("BEDROCK_DB_TEST_ALLOWED_HOSTS"))
+          .fold(Set.empty[String])(commaSet)
+          .map(_.toLowerCase(Locale.ROOT))
+      )
 
   private val mongoUriOpt: Opts[Option[String]] =
     Opts
@@ -120,41 +130,68 @@ object CliOpts:
       .orNone
       .map(_.orElse(env.get("BEDROCK_MONGO_TARGETS_COLLECTION")).flatMap(nonBlank))
 
-  private val sqlFilesCollectionOpt: Opts[String] =
+  private final case class CollectionOptions(
+    sqlFiles: String,
+    patches: String,
+    runs: String,
+    validations: String,
+    snapshots: String,
+    audit: String
+  )
+
+  private def collectionOpt(name: String, help: String, envKey: String, defaultValue: String): Opts[String] =
     Opts
-      .option[String]("sql-files-collection", help = "MongoDB collection for uploaded SQL files")
+      .option[String](name, help = help)
       .orNone
-      .map(_.orElse(env.get("BEDROCK_SQL_FILES_COLLECTION")).flatMap(nonBlank).getOrElse("sql_files"))
+      .map(_.orElse(env.get(envKey)).flatMap(nonBlank).getOrElse(defaultValue))
 
   private val patchesCollectionOpt: Opts[String] =
-    Opts
-      .option[String]("patches-collection", help = "MongoDB collection for migration patches")
-      .orNone
-      .map(_.orElse(env.get("BEDROCK_PATCHES_COLLECTION")).flatMap(nonBlank).getOrElse("patches"))
+    collectionOpt(
+      "patches-collection",
+      "MongoDB collection for migration patches",
+      "BEDROCK_PATCHES_COLLECTION",
+      "patches"
+    )
+
+  private val sqlFilesCollectionOpt: Opts[String] =
+    collectionOpt(
+      "sql-files-collection",
+      "MongoDB collection for uploaded SQL files",
+      "BEDROCK_SQL_FILES_COLLECTION",
+      "sql_files"
+    )
 
   private val runsCollectionOpt: Opts[String] =
-    Opts
-      .option[String]("runs-collection", help = "MongoDB collection for migration runs")
-      .orNone
-      .map(_.orElse(env.get("BEDROCK_RUNS_COLLECTION")).flatMap(nonBlank).getOrElse("runs"))
+    collectionOpt("runs-collection", "MongoDB collection for migration runs", "BEDROCK_RUNS_COLLECTION", "runs")
 
   private val validationsCollectionOpt: Opts[String] =
-    Opts
-      .option[String]("validations-collection", help = "MongoDB collection for validation results")
-      .orNone
-      .map(_.orElse(env.get("BEDROCK_VALIDATIONS_COLLECTION")).flatMap(nonBlank).getOrElse("validations"))
+    collectionOpt(
+      "validations-collection",
+      "MongoDB collection for validation results",
+      "BEDROCK_VALIDATIONS_COLLECTION",
+      "validations"
+    )
 
   private val snapshotsCollectionOpt: Opts[String] =
-    Opts
-      .option[String]("snapshots-collection", help = "MongoDB collection for SQL manifest snapshots")
-      .orNone
-      .map(_.orElse(env.get("BEDROCK_SNAPSHOTS_COLLECTION")).flatMap(nonBlank).getOrElse("snapshots"))
+    collectionOpt(
+      "snapshots-collection",
+      "MongoDB collection for SQL manifest snapshots",
+      "BEDROCK_SNAPSHOTS_COLLECTION",
+      "snapshots"
+    )
 
   private val auditCollectionOpt: Opts[String] =
-    Opts
-      .option[String]("audit-collection", help = "MongoDB collection for audit events")
-      .orNone
-      .map(_.orElse(env.get("BEDROCK_AUDIT_COLLECTION")).flatMap(nonBlank).getOrElse("audit_events"))
+    collectionOpt("audit-collection", "MongoDB collection for audit events", "BEDROCK_AUDIT_COLLECTION", "audit_events")
+
+  private val collectionOpts: Opts[CollectionOptions] =
+    (
+      sqlFilesCollectionOpt,
+      patchesCollectionOpt,
+      runsCollectionOpt,
+      validationsCollectionOpt,
+      snapshotsCollectionOpt,
+      auditCollectionOpt
+    ).mapN(CollectionOptions.apply)
 
   private val serverOpts: Opts[ServerConfig] =
     (
@@ -164,18 +201,14 @@ object CliOpts:
       encryptKeyOpt,
       jwtSecretOpt,
       devAuthSecretOpt,
+      devAuthEnabledOpt,
       apiBearerTokenOpt,
       dbTestAllowedHostsOpt,
       patchStageDirOpt,
       mongoUriOpt,
       mongoDatabaseOpt,
       mongoTargetsCollectionOpt,
-      sqlFilesCollectionOpt,
-      patchesCollectionOpt,
-      runsCollectionOpt,
-      validationsCollectionOpt,
-      snapshotsCollectionOpt,
-      auditCollectionOpt
+      collectionOpts
     ).mapN {
       (
         host,
@@ -184,18 +217,14 @@ object CliOpts:
         encryptKey,
         jwtSecret,
         devAuthSecret,
+        devAuthEnabled,
         apiBearerToken,
         dbTestAllowedHosts,
         patchStageDir,
         mongoUri,
         mongoDatabase,
         mongoTargetsCollection,
-        sqlFilesCollection,
-        patchesCollection,
-        runsCollection,
-        validationsCollection,
-        snapshotsCollection,
-        auditCollection
+        collections
       ) =>
         val mongoResult = mongoConfigFromOptions(mongoUri, mongoDatabase, mongoTargetsCollection)
         ServerConfig(
@@ -205,16 +234,17 @@ object CliOpts:
           encryptKeyBase64 = encryptKey.flatMap(nonBlank).orElse(env.get("BEDROCK_ENCRYPT_KEY").flatMap(nonBlank)),
           jwtSecret = jwtSecret,
           devAuthSecret = devAuthSecret,
+          devAuthEnabled = devAuthEnabled,
           apiBearerToken = apiBearerToken,
           dbTestAllowedHosts = dbTestAllowedHosts,
           patchStageDir = patchStageDir,
           mongo = mongoResult.toOption.flatten,
-          sqlFilesCollection = sqlFilesCollection,
-          patchesCollection = patchesCollection,
-          runsCollection = runsCollection,
-          validationsCollection = validationsCollection,
-          snapshotsCollection = snapshotsCollection,
-          auditCollection = auditCollection,
+          sqlFilesCollection = collections.sqlFiles,
+          patchesCollection = collections.patches,
+          runsCollection = collections.runs,
+          validationsCollection = collections.validations,
+          snapshotsCollection = collections.snapshots,
+          auditCollection = collections.audit,
           mongoConfigError = mongoResult.swap.toOption
         )
     }
@@ -333,6 +363,12 @@ object CliOpts:
     env
       .get(name)
       .flatMap(value => Either.catchNonFatal(value.toInt).toOption)
+      .getOrElse(defaultValue)
+
+  private def envBoolean(name: String, defaultValue: Boolean): Boolean =
+    env
+      .get(name)
+      .flatMap(value => Either.catchNonFatal(value.trim.toBoolean).toOption)
       .getOrElse(defaultValue)
 
   private def defaultPatchStageDir: Path =

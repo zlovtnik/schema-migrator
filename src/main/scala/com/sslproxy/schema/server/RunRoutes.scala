@@ -58,15 +58,17 @@ object RunRoutes:
                 ) {
                   (for
                     run <- runStore.create(payload, patch, claims.subject)
-                    _ <- auditStore.record(
-                      claims.subject,
-                      claims.role,
-                      "run.trigger",
-                      "run",
-                      run.id,
-                      Some(payload.target_id),
-                      Some(Json.obj("patch_id" -> Json.fromString(payload.patch_id)))
-                    )
+                    _ <- auditStore
+                      .record(
+                        claims.subject,
+                        claims.role,
+                        "run.trigger",
+                        "run",
+                        run.id,
+                        Some(payload.target_id),
+                        Some(Json.obj("patch_id" -> Json.fromString(payload.patch_id)))
+                      )
+                      .handleErrorWith(error => log.warn(error)(s"failed to record audit event for run ${run.id}"))
                     _ <- log.info(
                       Json
                         .obj(
@@ -76,7 +78,7 @@ object RunRoutes:
                           "patch_id" -> Json.fromString(payload.patch_id)
                         )
                         .noSpaces
-                      )
+                    )
                     _ <- runExecutor.run(target, run, patch).start.void
                     response <- RouteJson.created(run.asJson)
                   yield response).recoverWith { case _: RunStore.ConcurrentRun =>
@@ -116,7 +118,9 @@ object RunRoutes:
                 Some(run.target_id),
                 Some(Json.obj("patch_id" -> Json.fromString(run.patch_id)))
               ) *>
-                log.info(Json.obj("event" -> Json.fromString("run_aborted"), "run_id" -> Json.fromString(id)).noSpaces) *>
+                log.info(
+                  Json.obj("event" -> Json.fromString("run_aborted"), "run_id" -> Json.fromString(id)).noSpaces
+                ) *>
                 RouteJson.ok(run.asJson)
             case None =>
               log.info(

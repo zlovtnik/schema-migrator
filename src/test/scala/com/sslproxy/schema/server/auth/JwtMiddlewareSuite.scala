@@ -90,7 +90,21 @@ class JwtMiddlewareSuite extends FunSuite:
     assertEquals(stream.status, Status.Unauthorized)
   }
 
-  private def serverConfig(apiBearerToken: Option[String] = None): ServerConfig =
+  test("middleware only bypasses dev auth token route when enabled") {
+    val route = HttpRoutes.of[IO] { case POST -> Root / "api" / "auth" / "token" => Ok("ok") }
+
+    val disabled = JwtMiddleware(serverConfig(devAuthEnabled = false))(route).orNotFound
+      .run(Request[IO](Method.POST, Uri.unsafeFromString("/api/auth/token")))
+      .unsafeRunSync()
+    val enabled = JwtMiddleware(serverConfig(devAuthEnabled = true))(route).orNotFound
+      .run(Request[IO](Method.POST, Uri.unsafeFromString("/api/auth/token")))
+      .unsafeRunSync()
+
+    assertEquals(disabled.status, Status.Unauthorized)
+    assertEquals(enabled.status, Status.Ok)
+  }
+
+  private def serverConfig(apiBearerToken: Option[String] = None, devAuthEnabled: Boolean = false): ServerConfig =
     ServerConfig(
       host = "127.0.0.1",
       port = 8080,
@@ -98,6 +112,7 @@ class JwtMiddlewareSuite extends FunSuite:
       encryptKeyBase64 = None,
       jwtSecret = "jwt-secret",
       devAuthSecret = "dev",
+      devAuthEnabled = devAuthEnabled,
       dbTestAllowedHosts = Set.empty,
       patchStageDir = Paths.get("."),
       apiBearerToken = apiBearerToken

@@ -3,7 +3,7 @@ package com.sslproxy.schema.store
 import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
 import com.mongodb.client.model.{Indexes, ReplaceOptions}
-import com.mongodb.client.{MongoClients, MongoCollection}
+import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.{DbKind, MongoConfig}
 import com.sslproxy.schema.discovery.{SqlFile, SqlPathNormalizer}
 import com.sslproxy.schema.parser.HeaderParser
@@ -38,10 +38,13 @@ object PatchStore:
   def mongo(config: MongoConfig, collectionName: String): Resource[IO, PatchStore] =
     Resource
       .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
-      .evalMap { client =>
-        val store = MongoPatchStore(client.getDatabase(config.database).getCollection(collectionName))
-        store.initialize.as(store: PatchStore)
-      }
+      .flatMap(client => mongo(config, collectionName, client))
+
+  def mongo(config: MongoConfig, collectionName: String, client: MongoClient): Resource[IO, PatchStore] =
+    Resource.eval {
+      val store = MongoPatchStore(client.getDatabase(config.database).getCollection(collectionName))
+      store.initialize.as(store: PatchStore)
+    }
 
   def inMemory(stageDir: Path): IO[PatchStore] =
     Ref.of[IO, Map[String, Patch]](Map.empty).map(InMemoryPatchStore(stageDir, _))
@@ -103,13 +106,15 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
       case false => IO.pure(false)
       case true =>
         moveStageDirAside(id).flatMap { moved =>
-          deleteStageDir(moved).flatMap { _ =>
-            ref.modify { values =>
-              if values.contains(id) then (values - id) -> true else values -> false
+          deleteStageDir(moved)
+            .flatMap { _ =>
+              ref.modify { values =>
+                if values.contains(id) then (values - id) -> true else values -> false
+              }
             }
-          }.handleErrorWith { error =>
-            restoreStageDir(id, moved) *> IO.raiseError(error)
-          }
+            .handleErrorWith { error =>
+              restoreStageDir(id, moved) *> IO.raiseError(error)
+            }
         }
     }
 
@@ -227,9 +232,10 @@ private final class MongoPatchStore(collection: MongoCollection[Document]) exten
       id <- IO.delay(UUID.randomUUID().toString)
       now <- Clock[IO].realTimeInstant
       scripts = uploads.sortBy(_.order).map(upload => PatchStore.scriptFromUpload(id, upload))
-      contentByScriptId = uploads.sortBy(_.order).map(upload =>
-        PatchStore.scriptId(id, upload.order) -> Base64.getEncoder.encodeToString(upload.bytes)
-      ).toMap
+      contentByScriptId = uploads
+        .sortBy(_.order)
+        .map(upload => PatchStore.scriptId(id, upload.order) -> Base64.getEncoder.encodeToString(upload.bytes))
+        .toMap
       patch = Patch(
         id = id,
         target_id = targetId,
@@ -266,7 +272,8 @@ private final class MongoPatchStore(collection: MongoCollection[Document]) exten
       case Some(stored) =>
         stored.patch.scripts.sortBy(_.order).traverse { script =>
           stored.contentByScriptId.get(script.id) match
-            case None => IO.raiseError(IllegalStateException(s"patch '${patch.id}' is missing content for script '${script.id}'"))
+            case None =>
+              IO.raiseError(IllegalStateException(s"patch '${patch.id}' is missing content for script '${script.id}'"))
             case Some(base64) =>
               IO.delay {
                 val content = String(Base64.getDecoder.decode(base64), java.nio.charset.StandardCharsets.UTF_8)
@@ -338,9 +345,9 @@ private final class MongoPatchStore(collection: MongoCollection[Document]) exten
         applied_at = optionalString(document, "applied_at"),
         source_snapshot_id = optionalString(document, "source_snapshot_id")
       ),
-      contentByScriptId = scriptDocuments(document).map(doc =>
-        requiredString(doc, "id") -> requiredString(doc, "content_base64")
-      ).toMap
+      contentByScriptId = scriptDocuments(document)
+        .map(doc => requiredString(doc, "id") -> optionalRawString(doc, "content_base64").getOrElse(""))
+        .toMap
     )
 
   private def scriptFromDocument(document: Document): Script =
@@ -380,6 +387,9 @@ private final class MongoPatchStore(collection: MongoCollection[Document]) exten
 
   private def optionalString(document: Document, field: String): Option[String] =
     Option(document.getString(field)).filter(_.nonEmpty)
+
+  private def optionalRawString(document: Document, field: String): Option[String] =
+    Option(document.getString(field))
 
   private def optionalDocument(document: Document, field: String): Option[Document] =
     Option(document.get(field)).collect { case doc: Document => doc }

@@ -77,6 +77,7 @@ final case class ServerConfig(
   encryptKeyBase64: Option[String],
   jwtSecret: String,
   devAuthSecret: String,
+  devAuthEnabled: Boolean = false,
   dbTestAllowedHosts: Set[String],
   patchStageDir: Path,
   apiBearerToken: Option[String] = None,
@@ -94,7 +95,8 @@ final case class ServerConfig(
     else if port < 1 || port > 65535 then Left("server port must be between 1 and 65535")
     else if encryptKeyBase64.forall(_.trim.isEmpty) then Left("BEDROCK_ENCRYPT_KEY must not be empty")
     else if jwtSecret.trim.isEmpty then Left("BEDROCK_JWT_SECRET must not be empty")
-    else if devAuthSecret.trim.isEmpty then Left("BEDROCK_DEV_AUTH_SECRET must not be empty")
+    else if devAuthEnabled && devAuthSecret.trim.isEmpty then
+      Left("BEDROCK_DEV_AUTH_SECRET must not be empty when dev auth is enabled")
     else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
     else if sqlFilesCollection.trim.isEmpty then Left("BEDROCK_SQL_FILES_COLLECTION must not be empty")
     else if patchesCollection.trim.isEmpty then Left("BEDROCK_PATCHES_COLLECTION must not be empty")

@@ -3,7 +3,7 @@ package com.sslproxy.schema.store
 import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
 import com.mongodb.client.model.{Indexes, ReplaceOptions}
-import com.mongodb.client.{MongoClients, MongoCollection}
+import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.{DbKind, MongoConfig}
 import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.validation.{ValidationReport, Validator}
@@ -26,10 +26,13 @@ object ValidationStore:
   def mongo(config: MongoConfig, collectionName: String): Resource[IO, ValidationStore] =
     Resource
       .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
-      .evalMap { client =>
-        val store = MongoValidationStore(client.getDatabase(config.database).getCollection(collectionName))
-        store.initialize.as(store: ValidationStore)
-      }
+      .flatMap(client => mongo(config, collectionName, client))
+
+  def mongo(config: MongoConfig, collectionName: String, client: MongoClient): Resource[IO, ValidationStore] =
+    Resource.eval {
+      val store = MongoValidationStore(client.getDatabase(config.database).getCollection(collectionName))
+      store.initialize.as(store: ValidationStore)
+    }
 
   def inMemory: IO[ValidationStore] =
     Ref.of[IO, Map[String, ValidationResult]](Map.empty).map(InMemoryValidationStore.apply)

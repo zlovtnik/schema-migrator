@@ -3,7 +3,7 @@ package com.sslproxy.schema.store
 import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
 import com.mongodb.client.model.{Indexes, Sorts}
-import com.mongodb.client.{MongoClients, MongoCollection}
+import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.MongoConfig
 import io.circe.Json
 import io.circe.parser.parse
@@ -36,10 +36,13 @@ object AuditStore:
   def mongo(config: MongoConfig, collectionName: String): Resource[IO, AuditStore] =
     Resource
       .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
-      .evalMap { client =>
-        val store = MongoAuditStore(client.getDatabase(config.database).getCollection(collectionName))
-        store.initialize.as(store: AuditStore)
-      }
+      .flatMap(client => mongo(config, collectionName, client))
+
+  def mongo(config: MongoConfig, collectionName: String, client: MongoClient): Resource[IO, AuditStore] =
+    Resource.eval {
+      val store = MongoAuditStore(client.getDatabase(config.database).getCollection(collectionName))
+      store.initialize.as(store: AuditStore)
+    }
 
   def inMemory: IO[AuditStore] =
     Ref.of[IO, Map[String, AuditEvent]](Map.empty).map(InMemoryAuditStore.apply)

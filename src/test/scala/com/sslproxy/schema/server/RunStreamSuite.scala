@@ -3,6 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.{Deferred, IO, Resource}
 import cats.effect.unsafe.implicits.global
 import cats.syntax.all.*
+import com.sslproxy.schema.TestSqlSupport
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
 import com.sslproxy.schema.store.{
   AuditStore,
@@ -23,10 +24,9 @@ import munit.FunSuite
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
-import scala.jdk.CollectionConverters.*
 import scala.concurrent.duration.*
 
-class RunStreamSuite extends FunSuite:
+class RunStreamSuite extends FunSuite with TestSqlSupport:
   test("run stream emits named script completion and run events") {
     val result = cats.effect.Resource
       .make(IO.blocking(Files.createTempDirectory("schema-migrator-stream")))(path =>
@@ -200,11 +200,3 @@ class RunStreamSuite extends FunSuite:
         patchStageDir = stageDir
       )
     )
-
-  private def deleteRecursively(path: java.nio.file.Path): Unit =
-    if Files.exists(path) then
-      if Files.isDirectory(path) then
-        val children = Files.list(path)
-        try children.iterator().asScala.foreach(deleteRecursively)
-        finally children.close()
-      Files.deleteIfExists(path)

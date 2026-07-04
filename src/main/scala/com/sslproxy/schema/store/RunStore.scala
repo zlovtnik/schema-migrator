@@ -4,7 +4,7 @@ import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
 import com.mongodb.{ErrorCategory, MongoWriteException}
 import com.mongodb.client.model.{IndexOptions, Indexes}
-import com.mongodb.client.{MongoClients, MongoCollection}
+import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import fs2.Stream
 import fs2.concurrent.Topic
 import io.circe.Json
@@ -36,13 +36,20 @@ object RunStore:
   def mongo(config: com.sslproxy.schema.config.MongoConfig, collectionName: String): Resource[IO, RunStore] =
     Resource
       .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
-      .evalMap { client =>
-        for
-          topic <- Topic[IO, RunEvent]
-          store = MongoRunStore(client.getDatabase(config.database).getCollection(collectionName), topic)
-          _ <- store.initialize
-        yield store: RunStore
-      }
+      .flatMap(client => mongo(config, collectionName, client))
+
+  def mongo(
+    config: com.sslproxy.schema.config.MongoConfig,
+    collectionName: String,
+    client: MongoClient
+  ): Resource[IO, RunStore] =
+    Resource.eval {
+      for
+        topic <- Topic[IO, RunEvent]
+        store = MongoRunStore(client.getDatabase(config.database).getCollection(collectionName), topic)
+        _ <- store.initialize
+      yield store: RunStore
+    }
 
   def inMemory: IO[RunStore] =
     for
@@ -262,15 +269,18 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
   override def scriptStarted(id: String, scriptId: String, filename: String, order: Int, total: Int): IO[Boolean] =
     for
       changed <- updateScript(id, scriptId)(_.copy(status = "running"))
-      _ <- if changed then publishScriptStart(id, scriptId, filename, order, total) *> log(id, "info", s"running $filename")
-           else IO.unit
+      _ <-
+        if changed then
+          publishScriptStart(id, scriptId, filename, order, total) *> log(id, "info", s"running $filename")
+        else IO.unit
     yield changed
 
   override def scriptCompleted(id: String, scriptId: String, filename: String, durationMs: Long): IO[Boolean] =
     for
       changed <- updateScript(id, scriptId)(_.copy(status = "completed", duration_ms = Some(durationMs)))
-      _ <- if changed then publishScriptComplete(id, scriptId, durationMs) *> log(id, "info", s"completed $filename")
-           else IO.unit
+      _ <-
+        if changed then publishScriptComplete(id, scriptId, durationMs) *> log(id, "info", s"completed $filename")
+        else IO.unit
     yield changed
 
   override def scriptFailed(
@@ -281,9 +291,13 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
     durationMs: Long
   ): IO[Boolean] =
     for
-      changed <- updateScript(id, scriptId)(_.copy(status = "failed", error = Some(error), duration_ms = Some(durationMs)))
-      _ <- if changed then publishScriptError(id, scriptId, error) *> log(id, "error", s"failed $filename: ${error.message}")
-           else IO.unit
+      changed <- updateScript(id, scriptId)(
+        _.copy(status = "failed", error = Some(error), duration_ms = Some(durationMs))
+      )
+      _ <-
+        if changed then
+          publishScriptError(id, scriptId, error) *> log(id, "error", s"failed $filename: ${error.message}")
+        else IO.unit
     yield changed
 
   private def updateScript(id: String, scriptId: String)(f: ScriptRun => ScriptRun): IO[Boolean] =
@@ -372,15 +386,18 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
   override def scriptStarted(id: String, scriptId: String, filename: String, order: Int, total: Int): IO[Boolean] =
     for
       changed <- updateScript(id, scriptId)(_.copy(status = "running"))
-      _ <- if changed then publishScriptStart(id, scriptId, filename, order, total) *> log(id, "info", s"running $filename")
-           else IO.unit
+      _ <-
+        if changed then
+          publishScriptStart(id, scriptId, filename, order, total) *> log(id, "info", s"running $filename")
+        else IO.unit
     yield changed
 
   override def scriptCompleted(id: String, scriptId: String, filename: String, durationMs: Long): IO[Boolean] =
     for
       changed <- updateScript(id, scriptId)(_.copy(status = "completed", duration_ms = Some(durationMs)))
-      _ <- if changed then publishScriptComplete(id, scriptId, durationMs) *> log(id, "info", s"completed $filename")
-           else IO.unit
+      _ <-
+        if changed then publishScriptComplete(id, scriptId, durationMs) *> log(id, "info", s"completed $filename")
+        else IO.unit
     yield changed
 
   override def scriptFailed(
@@ -391,9 +408,13 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
     durationMs: Long
   ): IO[Boolean] =
     for
-      changed <- updateScript(id, scriptId)(_.copy(status = "failed", error = Some(error), duration_ms = Some(durationMs)))
-      _ <- if changed then publishScriptError(id, scriptId, error) *> log(id, "error", s"failed $filename: ${error.message}")
-           else IO.unit
+      changed <- updateScript(id, scriptId)(
+        _.copy(status = "failed", error = Some(error), duration_ms = Some(durationMs))
+      )
+      _ <-
+        if changed then
+          publishScriptError(id, scriptId, error) *> log(id, "error", s"failed $filename: ${error.message}")
+        else IO.unit
     yield changed
 
   private[store] def initialize: IO[Unit] =
@@ -418,7 +439,8 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
         f(run) match
           case None => IO.pure(None)
           case Some(next) =>
-            IO.blocking(collection.replaceOne(idFilter(id), toDocument(next))).as(Some(next))
+            IO.blocking(collection.replaceOne(snapshotFilter(run), toDocument(next)))
+              .map(result => Option.when(result.getMatchedCount > 0)(next))
     }
 
   private def toDocument(run: Run): Document =
@@ -489,6 +511,9 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
 
   private def idFilter(id: String): Document =
     new Document("_id", id)
+
+  private def snapshotFilter(run: Run): Document =
+    new Document("_id", run.id).append("status", run.status)
 
   private def requiredString(document: Document, field: String): String =
     optionalString(document, field)
