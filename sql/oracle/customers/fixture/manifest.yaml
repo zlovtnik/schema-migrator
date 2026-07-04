@@ -1,0 +1,5 @@
+engine: oracle
+layer: customer
+customer: fixture
+apply_order:
+  - overrides/functions/001_fixture_overlay.sql

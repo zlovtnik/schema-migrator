@@ -25,6 +25,9 @@ object CliOpts:
   private val sqlDirOpt: Opts[Option[Path]] =
     Opts.option[Path]("sql-dir", help = "Root SQL directory").orNone
 
+  private val customerOpt: Opts[Option[String]] =
+    Opts.option[String]("customer", help = "Customer overlay name under customers/<name>").orNone
+
   private val databaseUrlOpt: Opts[Option[String]] =
     Opts.option[String]("database-url", help = "JDBC or postgres:// database URL").orNone
 
@@ -254,6 +257,7 @@ object CliOpts:
       dbKindOpt,
       databaseUrlOpt,
       sqlDirOpt,
+      customerOpt,
       Opts.flag("dry-run", help = "Print SQL without executing").orFalse,
       Opts.flag("verbose", help = "Echo each statement before running").orFalse,
       Opts.flag("continue-on-error", help = "Continue processing after SQL errors").orFalse,
@@ -270,6 +274,7 @@ object CliOpts:
         dbKind,
         databaseUrl,
         sqlDir,
+        customer,
         dryRun,
         verbose,
         continueOnError,
@@ -296,7 +301,8 @@ object CliOpts:
           oracleUser = oracleUser.orElse(env.get("ORACLE_USER")),
           oraclePasswordFile = oraclePasswordFile.orElse(env.get("ORACLE_PASS_FILE").map(Paths.get(_))),
           json = json,
-          server = serverConfig
+          server = serverConfig,
+          customer = customer.flatMap(nonBlank)
         )
     }
 
@@ -305,6 +311,11 @@ object CliOpts:
       .subcommand("apply", "Apply pending objects")(Opts(CliCommand.Apply))
       .orElse(Opts.subcommand("validate", "Parse and validate SQL files")(Opts(CliCommand.Validate)))
       .orElse(Opts.subcommand("list", "Print discovered SQL files in apply order")(Opts(CliCommand.ListFiles)))
+      .orElse(
+        Opts.subcommand("generate-baseline", "Generate _generated_baseline.sql from manifest order")(
+          Opts(CliCommand.GenerateBaseline)
+        )
+      )
       .orElse(Opts.subcommand("status", "Print schema_control object status")(Opts(CliCommand.Status)))
       .orElse(
         Opts.subcommand("rollback", "Execute rollback SQL for a tracked object") {
@@ -315,6 +326,12 @@ object CliOpts:
         Opts.subcommand("ready", "Check schema readiness") {
           Opts.flag("strict", help = "Exit non-zero when schema is not ready").orFalse.map(CliCommand.Ready.apply)
         }
+      )
+      .orElse(
+        Opts.subcommand(
+          "drift-check",
+          "Compare live Postgres catalog with the manifest and record drift registry rows"
+        )(Opts(CliCommand.DriftCheck))
       )
       .orElse(
         Opts.subcommand("check-connection", "Open and validate a database connection")(Opts(CliCommand.CheckConnection))
@@ -380,8 +397,10 @@ object CliCommand:
   case object Apply extends CliCommand
   case object Validate extends CliCommand
   case object ListFiles extends CliCommand
+  case object GenerateBaseline extends CliCommand
   case object Status extends CliCommand
   final case class Rollback(objectName: String) extends CliCommand
   final case class Ready(strict: Boolean) extends CliCommand
+  case object DriftCheck extends CliCommand
   case object CheckConnection extends CliCommand
   case object Serve extends CliCommand

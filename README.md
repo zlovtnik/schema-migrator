@@ -15,10 +15,11 @@ Experience a powerful, deterministic, retry-safe schema migration engine built w
 5. [Quick Start](#quick-start)
 6. [Commands](#commands)
 7. [Configuration](#configuration)
-8. [Deterministic Ordering](#deterministic-ordering)
-9. [Validation Without a Database](#validation-without-a-database)
-10. [Oracle Setup](#oracle-setup)
-11. [Building and Testing](#building-and-testing)
+8. [SQL Layout and Manifests](#sql-layout-and-manifests)
+9. [Deterministic Ordering](#deterministic-ordering)
+10. [Validation Without a Database](#validation-without-a-database)
+11. [Oracle Setup](#oracle-setup)
+12. [Building and Testing](#building-and-testing)
 
 ---
 
@@ -76,20 +77,26 @@ Managing database schemas across diverse environments (Postgres and Oracle) with
 ## Quick Start
 
 ```bash
-# List SQL files in apply order (no database required)
-sbt "run --sql-dir ./sql list"
+# List Postgres SQL files in manifest apply order (no database required)
+sbt "run --db-kind postgres --sql-dir ./sql/postgres list"
 
 # Validate without connecting to a database
-sbt "run --sql-dir ./sql validate"
+sbt "run --db-kind postgres --sql-dir ./sql/postgres validate"
 
 # Dry-run: output SQL that would be executed
-sbt "run --sql-dir ./sql --dry-run apply"
+sbt "run --db-kind postgres --sql-dir ./sql/postgres --dry-run apply"
+
+# Generate the aggregate baseline artifact from split files
+sbt "run --db-kind postgres --sql-dir ./sql/postgres generate-baseline"
 
 # Check database connection
-sbt "run --sql-dir ./sql check-connection"
+sbt "run --db-kind postgres --sql-dir ./sql/postgres check-connection"
 
 # Apply migrations
-sbt "run --sql-dir ./sql apply"
+sbt "run --db-kind postgres --sql-dir ./sql/postgres apply"
+
+# Fail when the live Postgres catalog drifts from the manifest and refresh the registry
+sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture drift-check"
 ```
 
 For Oracle, set the database type and provide the necessary credentials or environment variables:
@@ -102,6 +109,12 @@ ORACLE_PASS_FILE=/run/secrets/oracle_password \
   sbt "run --sql-dir ./sql/oracle apply"
 ```
 
+Customer overlays are opt-in:
+
+```bash
+sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture list"
+```
+
 ---
 
 ## Commands
@@ -111,7 +124,9 @@ ORACLE_PASS_FILE=/run/secrets/oracle_password \
 | `apply`   | Discover, validate, lock, and apply pending SQL objects in a guaranteed order. |
 | `validate`| Parse SQL files and validate dependencies and rollback completeness without executing them. |
 | `list`    | Print discovered SQL files and objects in the precise order they will be applied. |
+| `generate-baseline` | Write `_generated_baseline.sql` from manifest order; the file is generated and ignored. |
 | `status`  | Display the current schema configuration status.                           |
+| `drift-check` | Compare the live Postgres catalog with the manifest, refresh `schema_control.object_customization_registry`, and exit non-zero when drift is detected. |
 
 If no command is given, `apply` is used as the default.
 
@@ -124,7 +139,8 @@ If no command is given, `apply` is used as the default.
 | Flag | Default | Description |
 |---|---|---|
 | `--db-kind` | `postgres` | `postgres` or `oracle`. |
-| `--sql-dir` | `./sql` (or `./sql/oracle`) | Root directory containing SQL files. |
+| `--sql-dir` | `./sql` (or an engine root such as `./sql/postgres`) | Root directory containing SQL files. |
+| `--customer` | — | Optional customer overlay under `customers/<name>`. |
 | `--database-url` | — | JDBC URL (Oracle) or `postgres://` URL (Postgres). |
 | `--dry-run` | `false` | Print SQL without executing. |
 | `--verbose` | `false` | Echo each statement before running. |
@@ -151,6 +167,8 @@ If no command is given, `apply` is used as the default.
 | `TNS_ADMIN` | Oracle wallet / TNS admin directory. |
 | `BEDROCK_DB_TEST_ALLOWED_HOSTS` | Comma-separated database hosts allowed for HTTP target connection tests and catalog reads. |
 | `BEDROCK_API_BEARER_TOKEN` | Static bearer token accepted by the HTTP API and injected by nginx for the bundled UI. |
+| `BEDROCK_DEV_AUTH_ENABLED` | Set to `true` to enable the development-only `/api/auth/token` endpoint. Defaults to `false`. |
+| `BEDROCK_DEV_AUTH_SECRET` | Development secret accepted by `/api/auth/token` when dev auth is enabled. |
 | `BEDROCK_ENCRYPT_KEY` | Base64 AES-256-GCM key used to encrypt persisted target passwords and API responses. |
 | `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist targets, uploaded SQL files, patches, runs, and validations. |
 | `BEDROCK_MONGO_DATABASE` | MongoDB database for persisted HTTP API state. |
@@ -159,14 +177,79 @@ If no command is given, `apply` is used as the default.
 | `BEDROCK_PATCHES_COLLECTION` | MongoDB collection for uploaded migration patches. Defaults to `patches`. |
 | `BEDROCK_RUNS_COLLECTION` | MongoDB collection for migration run history and active-run guards. Defaults to `runs`. |
 | `BEDROCK_VALIDATIONS_COLLECTION` | MongoDB collection for validation results. Defaults to `validations`. |
+| `BEDROCK_SNAPSHOTS_COLLECTION` | MongoDB collection for SQL manifest snapshots. Defaults to `snapshots`. |
+| `BEDROCK_AUDIT_COLLECTION` | MongoDB collection for audit events. Defaults to `audit_events`. |
 
 Oracle schema catalog and drift endpoints currently return `supported = false`; Oracle targets are limited to connection-level checks and JDBC migration execution until Oracle catalog introspection is added.
+
+Postgres drift checks persist the latest object-level result per customer overlay in
+`schema_control.object_customization_registry`. To install or query the report view:
+
+```bash
+psql "$DATABASE_URL" -f sql/registry/drift_report.sql
+```
+
+---
+
+## SQL layout and manifests
+
+The checked-in SQL source of truth is split by engine, layer, and object type:
+
+```text
+sql/
+  postgres/
+    core/
+      00_extensions/
+      01_schemas/
+      02_types/
+      03_tables/
+      04_indexes/
+      05_functions/
+      06_views/
+      07_materialized_views/
+      08_triggers/
+      09_cron/
+      10_seed_data/
+      manifest.yaml
+    contracts/
+      functions/
+      views/
+      CONTRACT.md
+      manifest.yaml
+    customers/<name>/
+      extensions/
+      overrides/
+      manifest.yaml
+  oracle/
+    core/
+    contracts/
+    customers/<name>/
+  teardown/
+  registry/
+```
+
+Each layer has an engine-agnostic `manifest.yaml`:
+
+```yaml
+engine: postgres
+layer: core
+apply_order:
+  - 00_extensions/001_extensions.sql
+  - 01_schemas/001_coordinator.sql
+  - 03_tables/001_sync_cursors.sql
+```
+
+Discovery uses manifests when present. If `--sql-dir ./sql` is used, the selected engine root is resolved automatically. Customer overlays are included only when `--customer <name>` is provided, in this order: `core/manifest.yaml`, `contracts/manifest.yaml`, then `customers/<name>/manifest.yaml`.
+
+Aggregate baselines are generated artifacts. Run `generate-baseline` to write `_generated_baseline.sql`; do not edit that file by hand.
 
 ---
 
 ## Deterministic ordering
 
-Schema Migrator discovers SQL files from the repository tree and applies them in a fixed, version-agnostic order. This eliminates non-determinism caused by filesystem traversal, developer machine differences, or OS-dependent path sorting. The standard order is:
+Schema Migrator discovers SQL files from the repository tree and applies manifest entries in their declared order, with dependency topological sorting used to keep declared object dependencies valid. This eliminates non-determinism caused by filesystem traversal, developer machine differences, or OS-dependent path sorting.
+
+For Postgres core manifests, preserve this phase order:
 
 1. Extensions
 2. Schemas
@@ -178,8 +261,6 @@ Schema Migrator discovers SQL files from the repository tree and applies them in
 8. Cron pre-apply hooks
 9. Materialized views
 10. Cron jobs
-
-Custom phases can be added by extending the `Phase` set in the engine.
 
 ---
 

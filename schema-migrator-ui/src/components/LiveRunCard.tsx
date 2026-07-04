@@ -56,7 +56,7 @@ export const LiveRunCard = ({ run, onAbort, aborting = false }: LiveRunCardProps
       <div className="live-run__header">
         <div>
           <span className="eyebrow">Active run</span>
-          <h2>Patch {run.patch_id}</h2>
+          <h2>Migration {run.patch_id}</h2>
         </div>
         <StatusBadge status={stream.runStatus} />
       </div>

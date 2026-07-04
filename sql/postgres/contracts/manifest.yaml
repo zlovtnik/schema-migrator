@@ -1,0 +1,3 @@
+engine: postgres
+layer: contracts
+apply_order: []

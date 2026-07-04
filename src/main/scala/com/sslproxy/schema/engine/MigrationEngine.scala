@@ -53,7 +53,7 @@ object ApplyCallbacks:
 
 final class MigrationEngine(provider: DbProvider, discoveryService: DiscoveryService[IO]):
   def discover(config: MigratorConfig): IO[DiscoveryResult] =
-    discoveryService.discover(config.sqlDir, config.dbKind)
+    discoveryService.discover(config.sqlDir, config.dbKind, config.customer)
 
   def dryRun(config: MigratorConfig): IO[List[(String, String)]] =
     discover(config).flatMap { discovery =>

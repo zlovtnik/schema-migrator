@@ -52,30 +52,30 @@ const contrast = (a: string, b: string): number => {
 };
 
 describe("design color tokens", () => {
-  it("uses the requested Obsidian, Amethyst, and Mint theme values", () => {
-    expect(semanticLightTokens["--color-bg-base"]).toBe("#FAFAFA");
+  it("uses the requested restrained operations-console theme values", () => {
+    expect(semanticLightTokens["--color-bg-base"]).toBe("#F8FAFC");
     expect(semanticLightTokens["--color-bg-surface"]).toBe("#FFFFFF");
-    expect(semanticLightTokens["--color-bg-elevated"]).toBe("#F4F4F5");
-    expect(semanticLightTokens["--color-text-primary"]).toBe("#09090B");
-    expect(semanticLightTokens["--color-text-secondary"]).toBe("#52525B");
-    expect(semanticLightTokens["--color-accent-primary"]).toBe("#6D28D9");
-    expect(semanticLightTokens["--color-border"]).toBe("#E4E4E7");
+    expect(semanticLightTokens["--color-bg-elevated"]).toBe("#F1F5F9");
+    expect(semanticLightTokens["--color-text-primary"]).toBe("#0F172A");
+    expect(semanticLightTokens["--color-text-secondary"]).toBe("#475569");
+    expect(resolveToken(semanticLightTokens, "--color-accent-primary")).toBe("#1D4ED8");
+    expect(semanticLightTokens["--color-border"]).toBe("#CBD5E1");
     expect(semanticLightTokens["--color-success"]).toBe("#059669");
     expect(semanticLightTokens["--color-warning"]).toBe("#D97706");
     expect(semanticLightTokens["--color-danger"]).toBe("#E11D48");
     expect(semanticLightTokens["--color-info"]).toBe("#2563EB");
 
-    expect(resolveToken(semanticDarkTokens, "--color-bg-base")).toBe("#09090B");
-    expect(resolveToken(semanticDarkTokens, "--color-bg-surface")).toBe("#141417");
-    expect(resolveToken(semanticDarkTokens, "--color-bg-elevated")).toBe("#27272A");
-    expect(resolveToken(semanticDarkTokens, "--color-text-primary")).toBe("#FAFAFA");
-    expect(resolveToken(semanticDarkTokens, "--color-text-secondary")).toBe("#A1A1AA");
-    expect(resolveToken(semanticDarkTokens, "--color-accent-primary")).toBe("#A78BFA");
-    expect(resolveToken(semanticDarkTokens, "--color-border")).toBe("#27272A");
+    expect(resolveToken(semanticDarkTokens, "--color-bg-base")).toBe("#0B1120");
+    expect(resolveToken(semanticDarkTokens, "--color-bg-surface")).toBe("#111827");
+    expect(resolveToken(semanticDarkTokens, "--color-bg-elevated")).toBe("#1F2937");
+    expect(resolveToken(semanticDarkTokens, "--color-text-primary")).toBe("#F8FAFC");
+    expect(resolveToken(semanticDarkTokens, "--color-text-secondary")).toBe("#CBD5E1");
+    expect(resolveToken(semanticDarkTokens, "--color-accent-primary")).toBe("#38BDF8");
+    expect(resolveToken(semanticDarkTokens, "--color-border")).toBe("#334155");
     expect(resolveToken(semanticDarkTokens, "--color-success")).toBe("#34D399");
-    expect(resolveToken(semanticDarkTokens, "--color-warning")).toBe("#FBBF24");
+    expect(resolveToken(semanticDarkTokens, "--color-warning")).toBe("#F59E0B");
     expect(resolveToken(semanticDarkTokens, "--color-danger")).toBe("#FB7185");
-    expect(resolveToken(semanticDarkTokens, "--color-info")).toBe("#60A5FA");
+    expect(resolveToken(semanticDarkTokens, "--color-info")).toBe("#38BDF8");
   });
 
   it("keeps status and button foreground tokens above WCAG AA contrast", () => {

@@ -7,8 +7,12 @@ const SchemaPage = lazy(() => import("./pages/Schema/SchemaPage").then((module) 
 const TargetListPage = lazy(() => import("./pages/Targets/TargetListPage").then((module) => ({ default: module.TargetListPage })));
 const TargetFormPage = lazy(() => import("./pages/Targets/TargetFormPage").then((module) => ({ default: module.TargetFormPage })));
 const TargetDetailPage = lazy(() => import("./pages/Targets/TargetDetailPage").then((module) => ({ default: module.TargetDetailPage })));
-const PatchListPage = lazy(() => import("./pages/Patches/PatchListPage").then((module) => ({ default: module.PatchListPage })));
-const PatchDetailPage = lazy(() => import("./pages/Patches/PatchDetailPage").then((module) => ({ default: module.PatchDetailPage })));
+const MigrationListPage = lazy(() =>
+  import("./pages/Migrations/MigrationListPage").then((module) => ({ default: module.MigrationListPage }))
+);
+const MigrationDetailPage = lazy(() =>
+  import("./pages/Migrations/MigrationDetailPage").then((module) => ({ default: module.MigrationDetailPage }))
+);
 const SnapshotListPage = lazy(() => import("./pages/Snapshots/SnapshotListPage").then((module) => ({ default: module.SnapshotListPage })));
 const SnapshotDetailPage = lazy(() =>
   import("./pages/Snapshots/SnapshotDetailPage").then((module) => ({ default: module.SnapshotDetailPage }))
@@ -27,9 +31,14 @@ const AuditLogPage = lazy(() => import("./pages/Audit/AuditLogPage").then((modul
 const snapshotRouteLabel = ({ params }: { params: Record<string, string | undefined> }) =>
   params.id ? `Snapshot · ${params.id.slice(0, 8)}` : "Snapshot";
 
-const PatchDetailRedirect = () => {
+const MigrationDetailRedirect = () => {
   const { id } = useParams();
   return <Navigate to={id ? `/migrations/${id}` : "/migrations"} replace />;
+};
+
+const SettingsTargetRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={id ? `/targets/${id}` : "/targets"} replace />;
 };
 
 const routeElement = (Component: ComponentType) => (
@@ -72,12 +81,12 @@ export const router = createBrowserRouter([
       },
       {
         path: "migrations",
-        element: routeElement(PatchListPage),
+        element: routeElement(MigrationListPage),
         handle: { breadcrumb: "Migrations", targetAware: true, title: "Migrations" }
       },
       {
         path: "migrations/:id",
-        element: routeElement(PatchDetailPage),
+        element: routeElement(MigrationDetailPage),
         handle: {
           breadcrumb: "Migration detail",
           parents: [{ breadcrumb: "Migrations", breadcrumbTo: "/migrations", targetAware: true }],
@@ -108,7 +117,7 @@ export const router = createBrowserRouter([
         }
       },
       { path: "patches", element: <Navigate to="/migrations" replace /> },
-      { path: "patches/:id", element: <PatchDetailRedirect /> },
+      { path: "patches/:id", element: <MigrationDetailRedirect /> },
       {
         path: "runs",
         element: routeElement(RunListPage),
@@ -148,27 +157,8 @@ export const router = createBrowserRouter([
         handle: { breadcrumb: "Audit", title: "Audit" }
       },
       { path: "settings", element: routeElement(SettingsPage), handle: { breadcrumb: "Settings", title: "Settings" } },
-      {
-        path: "settings/targets",
-        element: routeElement(TargetListPage),
-        handle: {
-          breadcrumb: "Targets",
-          parents: [{ breadcrumb: "Settings", breadcrumbTo: "/settings" }],
-          title: "Targets"
-        }
-      },
-      {
-        path: "settings/targets/:id",
-        element: routeElement(TargetFormPage),
-        handle: {
-          breadcrumb: "Target detail",
-          parents: [
-            { breadcrumb: "Settings", breadcrumbTo: "/settings" },
-            { breadcrumb: "Targets", breadcrumbTo: "/settings/targets" }
-          ],
-          title: "Target"
-        }
-      }
+      { path: "settings/targets", element: <Navigate to="/targets" replace /> },
+      { path: "settings/targets/:id", element: <SettingsTargetRedirect /> }
     ]
   }
 ]);

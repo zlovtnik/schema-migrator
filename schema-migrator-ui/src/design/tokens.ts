@@ -3,22 +3,22 @@ type TokenMap = Record<`--${string}`, string>;
 const STYLE_ELEMENT_ID = "schema-migrator-design-tokens";
 
 export const primitiveTokens = {
-  "--color-slate-950": "#09090B",
-  "--color-slate-900": "#141417",
-  "--color-slate-850": "#27272A",
-  "--color-slate-750": "#27272A",
-  "--color-slate-650": "#3F3F46",
-  "--color-slate-500": "#71717A",
-  "--color-slate-400": "#A1A1AA",
-  "--color-slate-100": "#FAFAFA",
-  "--color-blue-500": "#60A5FA",
-  "--color-blue-400": "#60A5FA",
+  "--color-slate-950": "#0B1120",
+  "--color-slate-900": "#111827",
+  "--color-slate-850": "#1F2937",
+  "--color-slate-750": "#334155",
+  "--color-slate-650": "#475569",
+  "--color-slate-500": "#64748B",
+  "--color-slate-400": "#CBD5E1",
+  "--color-slate-100": "#F8FAFC",
+  "--color-blue-500": "#38BDF8",
+  "--color-blue-400": "#7DD3FC",
   "--color-green-500": "#34D399",
-  "--color-amber-500": "#FBBF24",
+  "--color-amber-500": "#F59E0B",
   "--color-red-500": "#FB7185",
-  "--color-violet-500": "#A78BFA",
+  "--color-indigo-700": "#1D4ED8",
   "--color-white": "#FFFFFF",
-  "--color-black": "#09090B"
+  "--color-black": "#0B1120"
 } satisfies TokenMap;
 
 export const semanticDarkTokens = {
@@ -34,8 +34,8 @@ export const semanticDarkTokens = {
   "--color-text-muted": "var(--color-slate-400)",
   "--color-border": "var(--color-slate-750)",
   "--color-border-strong": "var(--color-slate-650)",
-  "--color-accent-primary": "var(--color-violet-500)",
-  "--color-accent-primary-hover": "#C4B5FD",
+  "--color-accent-primary": "var(--color-blue-500)",
+  "--color-accent-primary-hover": "var(--color-blue-400)",
   "--color-accent-contrast": "var(--color-slate-950)",
   "--color-danger": "var(--color-red-500)",
   "--color-danger-hover": "#FDA4AF",
@@ -44,7 +44,7 @@ export const semanticDarkTokens = {
   "--color-success": "var(--color-green-500)",
   "--color-success-text": "var(--color-green-500)",
   "--color-warning": "var(--color-amber-500)",
-  "--color-warning-text": "var(--color-amber-500)",
+  "--color-warning-text": "#FBBF24",
   "--color-info": "var(--color-blue-500)",
   "--color-info-text": "var(--color-blue-500)",
   "--color-schema-accent": "var(--color-accent-primary)",
@@ -53,26 +53,26 @@ export const semanticDarkTokens = {
   "--color-critical": "var(--color-danger)",
   "--color-staged": "var(--color-info)",
   "--color-overlay": "rgb(9 9 11 / 72%)",
-  "--shadow-sm": "0 6px 18px rgb(0 0 0 / 24%)",
-  "--shadow-md": "0 16px 42px rgb(0 0 0 / 34%)",
-  "--shadow-lg": "0 28px 72px rgb(0 0 0 / 46%)"
+  "--shadow-sm": "0 1px 2px rgb(0 0 0 / 28%)",
+  "--shadow-md": "0 8px 18px rgb(0 0 0 / 22%)",
+  "--shadow-lg": "0 14px 32px rgb(0 0 0 / 26%)"
 } satisfies TokenMap;
 
 export const semanticLightTokens = {
-  "--color-bg-base": "#FAFAFA",
+  "--color-bg-base": "#F8FAFC",
   "--color-bg-surface": "#FFFFFF",
-  "--color-bg-elevated": "#F4F4F5",
+  "--color-bg-elevated": "#F1F5F9",
   "--color-surface": "var(--color-bg-surface)",
   "--color-surface-strong": "var(--color-bg-elevated)",
   "--color-surface-hover": "var(--color-bg-elevated)",
-  "--color-on-surface": "#09090B",
-  "--color-text-primary": "#09090B",
-  "--color-text-secondary": "#52525B",
-  "--color-text-muted": "#52525B",
-  "--color-border": "#E4E4E7",
-  "--color-border-strong": "#D4D4D8",
-  "--color-accent-primary": "#6D28D9",
-  "--color-accent-primary-hover": "#5B21B6",
+  "--color-on-surface": "#0F172A",
+  "--color-text-primary": "#0F172A",
+  "--color-text-secondary": "#475569",
+  "--color-text-muted": "#475569",
+  "--color-border": "#CBD5E1",
+  "--color-border-strong": "#94A3B8",
+  "--color-accent-primary": "var(--color-indigo-700)",
+  "--color-accent-primary-hover": "#1E40AF",
   "--color-accent-contrast": "#FFFFFF",
   "--color-danger": "#E11D48",
   "--color-danger-hover": "#BE123C",
@@ -90,9 +90,9 @@ export const semanticLightTokens = {
   "--color-critical": "var(--color-danger)",
   "--color-staged": "var(--color-info)",
   "--color-overlay": "rgb(9 9 11 / 42%)",
-  "--shadow-sm": "0 6px 18px rgb(9 9 11 / 8%)",
-  "--shadow-md": "0 16px 42px rgb(9 9 11 / 12%)",
-  "--shadow-lg": "0 28px 72px rgb(9 9 11 / 16%)"
+  "--shadow-sm": "0 1px 2px rgb(15 23 42 / 8%)",
+  "--shadow-md": "0 6px 14px rgb(15 23 42 / 10%)",
+  "--shadow-lg": "0 10px 24px rgb(15 23 42 / 12%)"
 } satisfies TokenMap;
 
 export const scaleTokens = {
@@ -103,6 +103,7 @@ export const scaleTokens = {
   "--font-size-13": "13px",
   "--font-size-14": "14px",
   "--font-size-16": "16px",
+  "--font-size-18": "18px",
   "--font-size-20": "20px",
   "--font-size-24": "24px",
   "--font-size-32": "32px",

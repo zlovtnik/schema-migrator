@@ -11,7 +11,7 @@ import { ScriptProgressList } from "../../components/ScriptProgressList";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Icon } from "../../components/ui/Icon";
 import { useAuditEvents } from "../../hooks/useAudit";
-import { usePatch } from "../../hooks/usePatches";
+import { useMigration } from "../../hooks/useMigrations";
 import { useRollbackAction } from "../../hooks/useRollbackAction";
 import { useRunStream } from "../../hooks/useRunStream";
 import { runKeys, useAbortRun, useRun } from "../../hooks/useRuns";
@@ -23,7 +23,7 @@ export const RunDetailPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: run, isLoading, error } = useRun(id);
-  const { data: patch } = usePatch(run?.patch_id);
+  const { data: migration } = useMigration(run?.patch_id);
   const { canMutate, canViewAudit } = useSession();
   const { data: activity = [], isLoading: activityLoading } = useAuditEvents(
     { entity_type: "run", entity_id: id ?? null },
@@ -77,7 +77,7 @@ export const RunDetailPage = () => {
   const duration =
     run.ended_at && run.started_at ? `${Math.round((Date.parse(run.ended_at) - Date.parse(run.started_at)) / 1000)} s` : "-";
   const canAbort = stream.runStatus === "running" || stream.runStatus === "pending";
-  const snapshotId = patch?.source_snapshot_id;
+  const snapshotId = migration?.source_snapshot_id;
 
   const rollbackPayload: RollbackToSnapshotPayload | undefined = snapshotId
     ? {
