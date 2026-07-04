@@ -137,6 +137,7 @@ export const DataTable = <T,>({
   const lastVirtualItem = virtualItems[virtualItems.length - 1];
   const topPadding = shouldVirtualize && firstVirtualItem ? firstVirtualItem.start : 0;
   const bottomPadding = shouldVirtualize && lastVirtualItem ? Math.max(0, virtualizer.getTotalSize() - lastVirtualItem.end) : 0;
+  const measureVirtualRow = shouldVirtualize ? virtualizer.measureElement : undefined;
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroups((current) => {
@@ -201,7 +202,12 @@ export const DataTable = <T,>({
                 if (item.type === "group") {
                   const expanded = !collapsedGroups.has(item.group.id);
                   return (
-                    <tr className="data-table__group-row" key={`group-${item.group.id}`}>
+                    <tr
+                      className="data-table__group-row"
+                      data-index={shouldVirtualize ? index : undefined}
+                      key={`group-${item.group.id}`}
+                      ref={measureVirtualRow}
+                    >
                       <th colSpan={columns.length} scope="colgroup">
                         <button
                           aria-expanded={expanded}
@@ -220,7 +226,13 @@ export const DataTable = <T,>({
 
                 const rowState = getRowState?.(item.row);
                 return (
-                  <tr className={rowState?.className} data-selected={rowState?.selected ? "true" : undefined} key={rowKey(item.row)}>
+                  <tr
+                    className={rowState?.className}
+                    data-index={shouldVirtualize ? index : undefined}
+                    data-selected={rowState?.selected ? "true" : undefined}
+                    key={rowKey(item.row)}
+                    ref={measureVirtualRow}
+                  >
                     {columns.map((column) => (
                       <td className={column.className} key={column.id}>
                         {column.cell(item.row)}
