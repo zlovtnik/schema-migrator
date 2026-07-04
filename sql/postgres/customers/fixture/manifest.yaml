@@ -1,0 +1,5 @@
+engine: postgres
+layer: customer
+customer: fixture
+apply_order:
+  - extensions/001_fixture_overlay.sql
