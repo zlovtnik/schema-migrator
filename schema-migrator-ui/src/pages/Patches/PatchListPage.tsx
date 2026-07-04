@@ -8,6 +8,7 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
 import { Icon } from "../../components/ui/Icon";
 import { useErrorGate } from "../../hooks/useErrorGate";
+import { useMutationGuard } from "../../hooks/useMutationGuard";
 import { usePatches, useTriggerRun, useUploadPatch } from "../../hooks/usePatches";
 import { useRuns } from "../../hooks/useRuns";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
@@ -19,6 +20,7 @@ export const PatchListPage = () => {
   const { data: runs = [] } = useRuns(selectedTarget);
   const { isGateBlocked, failedRun } = useErrorGate();
   const { canMutate } = useSession();
+  const mutationGuard = useMutationGuard(canMutate);
   const triggerRun = useTriggerRun();
   const uploadPatch = useUploadPatch();
   const [files, setFiles] = useState<File[]>([]);
@@ -71,6 +73,7 @@ export const PatchListPage = () => {
     () => [...patches].sort((a, b) => b.version.localeCompare(a.version)),
     [patches]
   );
+  const uploadGuard = mutationGuard("Viewer role cannot upload migrations", uploadPatch.isPending);
 
   return (
     <section className="page">
@@ -126,8 +129,8 @@ export const PatchListPage = () => {
               className="button button--primary"
               type="button"
               onClick={upload}
-              disabled={!canMutate || uploadPatch.isPending}
-              title={canMutate ? undefined : "Viewer role cannot upload migrations"}
+              disabled={uploadGuard.disabled}
+              title={uploadGuard.title}
             >
               {uploadPatch.isPending ? "Uploading" : "Confirm upload"}
             </button>
@@ -168,31 +171,34 @@ export const PatchListPage = () => {
               </tr>
             </thead>
             <tbody>
-              {sortedPatches.map((patch) => (
-                <tr key={patch.id}>
-                  <td>
-                    <Link to={`/migrations/${patch.id}`}>{patch.version}</Link>
-                  </td>
-                  <td>{patch.label}</td>
-                  <td>{patch.scripts.length}</td>
-                  <td>
-                    <StatusBadge status={patch.status} />
-                  </td>
-                  <td>{patch.applied_at ? new Date(patch.applied_at).toLocaleString() : "-"}</td>
-                  <td>
-                    <button
-                      className="button button--primary button--small"
-                      type="button"
-                      disabled={!canApply || patch.status !== "pending"}
-                      title={canMutate ? undefined : "Viewer role cannot apply migrations"}
-                      onClick={() => triggerRun.mutate({ patch_id: patch.id, target_id: patch.target_id })}
-                    >
-                      <Icon source={PlayIcon} size={16} weight="fill" />
-                      Apply
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {sortedPatches.map((patch) => {
+                const applyGuard = mutationGuard("Viewer role cannot apply migrations", !canApply || patch.status !== "pending");
+                return (
+                  <tr key={patch.id}>
+                    <td>
+                      <Link to={`/migrations/${patch.id}`}>{patch.version}</Link>
+                    </td>
+                    <td>{patch.label}</td>
+                    <td>{patch.scripts.length}</td>
+                    <td>
+                      <StatusBadge status={patch.status} />
+                    </td>
+                    <td>{patch.applied_at ? new Date(patch.applied_at).toLocaleString() : "-"}</td>
+                    <td>
+                      <button
+                        className="button button--primary button--small"
+                        type="button"
+                        disabled={applyGuard.disabled}
+                        title={applyGuard.title}
+                        onClick={() => triggerRun.mutate({ patch_id: patch.id, target_id: patch.target_id })}
+                      >
+                        <Icon source={PlayIcon} size={16} weight="fill" />
+                        Apply
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

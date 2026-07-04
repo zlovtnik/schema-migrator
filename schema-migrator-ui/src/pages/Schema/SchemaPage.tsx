@@ -103,7 +103,7 @@ export const SchemaPage = () => {
               type="button"
               onClick={() => setSelectedKey(objectKey(object))}
             >
-              <code title={object.name}>{object.name}</code>
+              <code>{object.name}</code>
             </button>
           );
         }
@@ -422,6 +422,8 @@ const formatObjectType = (type: ObjectFilter): string =>
 
 const formatDate = (value: string): string => new Date(value).toLocaleString();
 
+const relativeDateFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
 const formatRelativeDate = (value: string): string => {
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) {
@@ -440,7 +442,7 @@ const formatRelativeDate = (value: string): string => {
   ];
   const [unit, unitMs] = units.find(([, threshold]) => absDiffMs >= threshold) ?? ["second", 1000];
   const amount = Math.round(diffMs / unitMs);
-  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(amount, unit);
+  return relativeDateFormatter.format(amount, unit);
 };
 
 const formatObjectCount = (type: ObjectFilter, count: number): string => {

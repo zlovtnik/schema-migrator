@@ -12,9 +12,10 @@ export class ApiError extends Error {
 
 const API_BASE_KEY = "schemaMigrator.apiBaseUrl";
 const ENCRYPT_KEY = "schemaMigrator.encryptKey";
-const DEV_AUTH_SECRET = import.meta.env.DEV ? import.meta.env.VITE_DEV_AUTH_SECRET?.trim() || "" : "";
-const DEV_AUTH_SUBJECT = import.meta.env.DEV ? import.meta.env.VITE_DEV_AUTH_SUBJECT?.trim() || "docker-dev" : "docker-dev";
-const DEV_AUTH_ROLE = import.meta.env.DEV ? import.meta.env.VITE_DEV_AUTH_ROLE?.trim() || "" : "";
+const DEV_AUTH_ENABLED = import.meta.env.DEV;
+const DEV_AUTH_SECRET = DEV_AUTH_ENABLED ? import.meta.env.VITE_DEV_AUTH_SECRET?.trim() || "" : "";
+const DEV_AUTH_SUBJECT = DEV_AUTH_ENABLED ? import.meta.env.VITE_DEV_AUTH_SUBJECT?.trim() || "docker-dev" : "docker-dev";
+const DEV_AUTH_ROLE = DEV_AUTH_ENABLED ? import.meta.env.VITE_DEV_AUTH_ROLE?.trim() || "" : "";
 const DEV_AUTH_ATTEMPTS = 45;
 const DEV_AUTH_RETRY_MS = 1000;
 let authToken = "";

@@ -2,14 +2,16 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
-import { ActivityTable } from "../../components/ActivityTable";
+import { ActivitySection } from "../../components/ActivitySection";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Icon } from "../../components/ui/Icon";
 import { useAuditEvents } from "../../hooks/useAudit";
+import { useMutationGuard } from "../../hooks/useMutationGuard";
 import { useDeletePatch, usePatch } from "../../hooks/usePatches";
+import { useRollbackAction } from "../../hooks/useRollbackAction";
 import { useSession } from "../../hooks/useSession";
-import { useRollbackToSnapshot } from "../../hooks/useSnapshots";
+import type { RollbackToSnapshotPayload } from "../../types";
 
 export const PatchDetailPage = () => {
   const { id } = useParams();
@@ -21,9 +23,9 @@ export const PatchDetailPage = () => {
     canViewAudit && Boolean(id)
   );
   const deletePatch = useDeletePatch();
-  const rollbackToSnapshot = useRollbackToSnapshot();
+  const mutationGuard = useMutationGuard(canMutate);
+  const rollback = useRollbackAction();
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [rollbackConfirmOpen, setRollbackConfirmOpen] = useState(false);
 
   if (isLoading) {
     return <div className="page empty-state">Loading patch...</div>;
@@ -42,23 +44,22 @@ export const PatchDetailPage = () => {
     });
   };
 
-  const confirmRollback = () => {
-    if (!canMutate || !patch.source_snapshot_id) {
-      return;
-    }
-    rollbackToSnapshot.mutate({
-      snapshot_id: patch.source_snapshot_id,
-      target_id: patch.target_id,
-      source_type: "patch",
-      source_id: patch.id
-    });
-  };
+  const rollbackPayload: RollbackToSnapshotPayload | undefined = patch.source_snapshot_id
+    ? {
+        snapshot_id: patch.source_snapshot_id,
+        target_id: patch.target_id,
+        source_type: "patch",
+        source_id: patch.id
+      }
+    : undefined;
+  const rollbackGuard = mutationGuard("Viewer role cannot start rollback runs", rollback.isPending);
+  const deleteGuard = mutationGuard("Viewer role cannot delete migrations", deletePatch.isPending);
 
   return (
     <section className="page">
       <header className="page-header">
         <div>
-        <span className="eyebrow">Migration detail</span>
+          <span className="eyebrow">Migration detail</span>
           <h1>{patch.version}</h1>
           <p>{patch.label}</p>
         </div>
@@ -68,9 +69,9 @@ export const PatchDetailPage = () => {
             <button
               className="button button--secondary"
               type="button"
-              onClick={() => setRollbackConfirmOpen(true)}
-              disabled={!canMutate || rollbackToSnapshot.isPending}
-              title={canMutate ? undefined : "Viewer role cannot start rollback runs"}
+              onClick={rollback.openConfirm}
+              disabled={rollbackGuard.disabled}
+              title={rollbackGuard.title}
             >
               <Icon source={ArrowCounterClockwiseIcon} size={16} />
               Rollback to snapshot
@@ -81,8 +82,8 @@ export const PatchDetailPage = () => {
               className="button button--danger"
               type="button"
               onClick={() => setConfirmOpen(true)}
-              disabled={!canMutate || deletePatch.isPending}
-              title={canMutate ? undefined : "Viewer role cannot delete migrations"}
+              disabled={deleteGuard.disabled}
+              title={deleteGuard.title}
             >
               <Icon source={TrashIcon} size={16} />
               Delete migration
@@ -139,16 +140,7 @@ export const PatchDetailPage = () => {
         </table>
       </div>
 
-      {canViewAudit ? (
-        <section className="section-block">
-          <h2>Activity</h2>
-          {activityLoading ? (
-            <div className="empty-state">Loading activity...</div>
-          ) : (
-            <ActivityTable events={activity} empty="No audit events recorded for this migration." />
-          )}
-        </section>
-      ) : null}
+      {canViewAudit ? <ActivitySection events={activity} isLoading={activityLoading} empty="No audit events recorded for this migration." /> : null}
 
       <ConfirmDialog
         open={confirmOpen}
@@ -161,13 +153,13 @@ export const PatchDetailPage = () => {
         onConfirm={confirmDelete}
       />
       <ConfirmDialog
-        open={rollbackConfirmOpen}
+        open={rollback.confirmOpen}
         title="Rollback to snapshot"
         message={`Start a rollback run for ${patch.version} back to snapshot ${patch.source_snapshot_id}?`}
         confirmLabel="Start rollback"
-        busy={rollbackToSnapshot.isPending}
-        onCancel={() => setRollbackConfirmOpen(false)}
-        onConfirm={confirmRollback}
+        busy={rollback.isPending}
+        onCancel={rollback.closeConfirm}
+        onConfirm={() => rollback.confirm(canMutate, rollbackPayload)}
       />
     </section>
   );

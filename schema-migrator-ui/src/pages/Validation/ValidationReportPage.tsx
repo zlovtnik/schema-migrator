@@ -4,6 +4,7 @@ import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowClockwis
 import { listRuns } from "../../api/runs";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Icon } from "../../components/ui/Icon";
+import { useMutationGuard } from "../../hooks/useMutationGuard";
 import { ValidationTable } from "../../components/ValidationTable";
 import { runKeys } from "../../hooks/useRuns";
 import { useSession } from "../../hooks/useSession";
@@ -12,6 +13,7 @@ import { useRerunValidation, useValidation } from "../../hooks/useValidation";
 export const ValidationReportPage = () => {
   const { runId } = useParams();
   const { canMutate } = useSession();
+  const mutationGuard = useMutationGuard(canMutate);
   const validationRunId = runId === "latest" ? undefined : runId;
   const runsQuery = useQuery({
     queryKey: runKeys.list(),
@@ -51,6 +53,7 @@ export const ValidationReportPage = () => {
   }
 
   const blockingErrors = result.invalid.filter((row) => row.severity === "error").length;
+  const rerunGuard = mutationGuard("Viewer role cannot re-run validation", rerun.isPending);
 
   return (
     <section className="page">
@@ -66,8 +69,8 @@ export const ValidationReportPage = () => {
             className="button button--secondary"
             type="button"
             onClick={() => rerun.mutate()}
-            disabled={!canMutate || rerun.isPending}
-            title={canMutate ? undefined : "Viewer role cannot re-run validation"}
+            disabled={rerunGuard.disabled}
+            title={rerunGuard.title}
           >
             <Icon source={ArrowClockwiseIcon} size={16} />
             {rerun.isPending ? "Re-validating" : "Re-validate"}

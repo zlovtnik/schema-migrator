@@ -303,7 +303,7 @@ const SqlFilesPage = () => {
               className="button button--danger"
               type="button"
               onClick={handleClear}
-              disabled={loading || !canMutate}
+              disabled={loading || uploading || !canMutate}
               title={canMutate ? undefined : "Viewer role cannot clear SQL files"}
             >
               <Icon source={TrashIcon} size={16} />

@@ -13,10 +13,12 @@ import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { useMutationGuard } from "../../hooks/useMutationGuard";
+import { useRollbackAction } from "../../hooks/useRollbackAction";
 import { useSession } from "../../hooks/useSession";
-import { useRollbackToSnapshot, useSnapshot, useSnapshots } from "../../hooks/useSnapshots";
+import { useSnapshot, useSnapshots } from "../../hooks/useSnapshots";
 import { useTarget } from "../../hooks/useTargets";
-import type { SnapshotFile } from "../../types";
+import type { RollbackToSnapshotPayload, SnapshotFile } from "../../types";
 
 export const SnapshotDetailPage = () => {
   const { id } = useParams();
@@ -24,11 +26,11 @@ export const SnapshotDetailPage = () => {
   const { data: snapshot, isLoading, error } = useSnapshot(id);
   const { data: target } = useTarget(snapshot?.target_id);
   const { data: snapshots = [] } = useSnapshots(snapshot?.target_id);
-  const rollbackToSnapshot = useRollbackToSnapshot();
+  const mutationGuard = useMutationGuard(canMutate);
+  const rollback = useRollbackAction();
   const [otherId, setOtherId] = useState("");
   const [pathFilter, setPathFilter] = useState("");
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
-  const [rollbackConfirmOpen, setRollbackConfirmOpen] = useState(false);
 
   const otherSnapshots = useMemo(
     () => snapshots.filter((candidate) => candidate.id !== snapshot?.id),
@@ -95,14 +97,10 @@ export const SnapshotDetailPage = () => {
     return <div className="page status-banner status-banner--error">Snapshot could not be loaded.</div>;
   }
 
-  const confirmRollback = () => {
-    if (!canMutate) {
-      return;
-    }
-    rollbackToSnapshot.mutate({
-      snapshot_id: snapshot.id,
-      target_id: snapshot.target_id
-    });
+  const rollbackGuard = mutationGuard("Viewer role cannot start rollback runs", rollback.isPending);
+  const rollbackPayload: RollbackToSnapshotPayload = {
+    snapshot_id: snapshot.id,
+    target_id: snapshot.target_id
   };
   const snapshotTitle = `Snapshot · ${formatSnapshotTitleDate(snapshot.created_at)}`;
   const createdAtLabel = new Date(snapshot.created_at).toLocaleString();
@@ -123,9 +121,9 @@ export const SnapshotDetailPage = () => {
               <button
                 className="button button--secondary"
                 type="button"
-                onClick={() => setRollbackConfirmOpen(true)}
-                disabled={!canMutate || rollbackToSnapshot.isPending}
-                title={canMutate ? undefined : "Viewer role cannot start rollback runs"}
+                onClick={rollback.openConfirm}
+                disabled={rollbackGuard.disabled}
+                title={rollbackGuard.title}
               >
                 <Icon source={ArrowCounterClockwiseIcon} size={16} />
                 Rollback
@@ -218,13 +216,13 @@ export const SnapshotDetailPage = () => {
           />
         )}
         <ConfirmDialog
-          open={rollbackConfirmOpen}
+          open={rollback.confirmOpen}
           title="Rollback to snapshot"
           message={`Start a rollback run for ${target?.label ?? snapshot.target_id} back to ${snapshotTitle}?`}
           confirmLabel="Start rollback"
-          busy={rollbackToSnapshot.isPending}
-          onCancel={() => setRollbackConfirmOpen(false)}
-          onConfirm={confirmRollback}
+          busy={rollback.isPending}
+          onCancel={rollback.closeConfirm}
+          onConfirm={() => rollback.confirm(canMutate, rollbackPayload)}
         />
       </section>
     </>

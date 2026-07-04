@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { DownloadIcon } from "@phosphor-icons/react/dist/csr/Download";
 import { SquareIcon } from "@phosphor-icons/react/dist/csr/Square";
-import { ActivityTable } from "../../components/ActivityTable";
+import { ActivitySection } from "../../components/ActivitySection";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { LogViewer } from "../../components/LogViewer";
 import { ScriptProgressList } from "../../components/ScriptProgressList";
@@ -12,10 +12,11 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { Icon } from "../../components/ui/Icon";
 import { useAuditEvents } from "../../hooks/useAudit";
 import { usePatch } from "../../hooks/usePatches";
+import { useRollbackAction } from "../../hooks/useRollbackAction";
 import { useRunStream } from "../../hooks/useRunStream";
 import { runKeys, useAbortRun, useRun } from "../../hooks/useRuns";
 import { useSession } from "../../hooks/useSession";
-import { useRollbackToSnapshot } from "../../hooks/useSnapshots";
+import type { RollbackToSnapshotPayload } from "../../types";
 
 export const RunDetailPage = () => {
   const { id } = useParams();
@@ -29,8 +30,7 @@ export const RunDetailPage = () => {
     canViewAudit && Boolean(id)
   );
   const abortRun = useAbortRun();
-  const rollbackToSnapshot = useRollbackToSnapshot();
-  const [rollbackConfirmOpen, setRollbackConfirmOpen] = useState(false);
+  const rollback = useRollbackAction();
 
   const stream = useRunStream(id, run, {
     enabled: run?.status === "running" || run?.status === "pending",
@@ -79,17 +79,14 @@ export const RunDetailPage = () => {
   const canAbort = stream.runStatus === "running" || stream.runStatus === "pending";
   const snapshotId = patch?.source_snapshot_id;
 
-  const confirmRollback = () => {
-    if (!canMutate || !snapshotId) {
-      return;
-    }
-    rollbackToSnapshot.mutate({
-      snapshot_id: snapshotId,
-      target_id: run.target_id,
-      source_type: "run",
-      source_id: run.id
-    });
-  };
+  const rollbackPayload: RollbackToSnapshotPayload | undefined = snapshotId
+    ? {
+        snapshot_id: snapshotId,
+        target_id: run.target_id,
+        source_type: "run",
+        source_id: run.id
+      }
+    : undefined;
 
   return (
     <section className="page">
@@ -117,8 +114,8 @@ export const RunDetailPage = () => {
             <button
               className="button button--secondary"
               type="button"
-              onClick={() => setRollbackConfirmOpen(true)}
-              disabled={!canMutate || rollbackToSnapshot.isPending}
+              onClick={rollback.openConfirm}
+              disabled={!canMutate || canAbort || rollback.isPending}
               title={canMutate ? undefined : "Viewer role cannot start rollback runs"}
             >
               <Icon source={ArrowCounterClockwiseIcon} size={16} />
@@ -147,25 +144,16 @@ export const RunDetailPage = () => {
         <LogViewer lines={stream.logLines} />
       </section>
 
-      {canViewAudit ? (
-        <section className="section-block">
-          <h2>Activity</h2>
-          {activityLoading ? (
-            <div className="empty-state">Loading activity...</div>
-          ) : (
-            <ActivityTable events={activity} empty="No audit events recorded for this run." />
-          )}
-        </section>
-      ) : null}
+      {canViewAudit ? <ActivitySection events={activity} isLoading={activityLoading} empty="No audit events recorded for this run." /> : null}
 
       <ConfirmDialog
-        open={rollbackConfirmOpen}
+        open={rollback.confirmOpen}
         title="Rollback to snapshot"
         message={`Start a rollback run for ${run.patch_id} back to snapshot ${snapshotId}?`}
         confirmLabel="Start rollback"
-        busy={rollbackToSnapshot.isPending}
-        onCancel={() => setRollbackConfirmOpen(false)}
-        onConfirm={confirmRollback}
+        busy={rollback.isPending}
+        onCancel={rollback.closeConfirm}
+        onConfirm={() => rollback.confirm(canMutate, rollbackPayload)}
       />
     </section>
   );

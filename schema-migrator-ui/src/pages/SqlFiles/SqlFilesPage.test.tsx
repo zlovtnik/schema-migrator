@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import SqlFilesPage, { ZipWriter } from "./SqlFilesPage";
+import { setAuthToken } from "../../api/client";
 import { renderApp } from "../../test/render";
 import type { SqlFileEntry } from "../../api/sqlFiles";
 
@@ -50,8 +51,15 @@ const findSignature = (bytes: Uint8Array, signature: number[]): number => {
 const viewOf = (bytes: Uint8Array): DataView =>
   new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
+const base64Url = (value: string): string =>
+  window.btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
+
+const tokenWithRole = (role: string): string =>
+  `${base64Url("{}")}.${base64Url(JSON.stringify({ role }))}.signature`;
+
 describe("SqlFilesPage", () => {
   beforeEach(() => {
+    setAuthToken(tokenWithRole("operator"));
     vi.stubGlobal(
       "fetch",
       vi.fn((input: RequestInfo | URL) => {
@@ -74,6 +82,7 @@ describe("SqlFilesPage", () => {
   });
 
   afterEach(() => {
+    setAuthToken("");
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();

@@ -321,6 +321,12 @@ code {
   color: var(--success-text);
 }
 
+.role-badge--operator {
+  border-color: color-mix(in srgb, var(--info) 35%, var(--border));
+  background: var(--info-soft);
+  color: var(--info-text);
+}
+
 .role-badge--viewer {
   border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
   background: var(--warning-soft);
@@ -1013,7 +1019,9 @@ label {
 }
 
 .table-panel__scroller {
-  overflow-x: auto;
+  max-height: min(720px, calc(100vh - 280px));
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .table-panel__scroller--virtual {

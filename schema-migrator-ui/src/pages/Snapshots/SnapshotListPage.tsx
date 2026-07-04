@@ -8,6 +8,7 @@ import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { useMutationGuard } from "../../hooks/useMutationGuard";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useCreateSnapshot, useSnapshots } from "../../hooks/useSnapshots";
@@ -16,6 +17,7 @@ import type { Snapshot } from "../../types";
 export const SnapshotListPage = () => {
   const selectedTarget = useSelectedTargetId();
   const { canMutate } = useSession();
+  const mutationGuard = useMutationGuard(canMutate);
   const { data: snapshots = [], isLoading, error } = useSnapshots(selectedTarget);
   const createSnapshot = useCreateSnapshot();
   const [compareBySnapshot, setCompareBySnapshot] = useState<Record<string, string>>({});
@@ -31,6 +33,7 @@ export const SnapshotListPage = () => {
     }
     createSnapshot.mutate({ target_id: selectedTarget });
   };
+  const createGuard = mutationGuard("Viewer role cannot create snapshots", !selectedTarget || createSnapshot.isPending);
 
   const columns = useMemo<DataTableColumn<Snapshot>[]>(
     () => [
@@ -114,10 +117,10 @@ export const SnapshotListPage = () => {
               className="button button--primary"
               type="button"
               onClick={create}
-              disabled={!canMutate || !selectedTarget || createSnapshot.isPending}
+              disabled={createGuard.disabled}
               title={
                 !canMutate
-                  ? "Viewer role cannot create snapshots"
+                  ? createGuard.title
                   : !selectedTarget
                     ? "Select a target before creating a snapshot"
                     : undefined

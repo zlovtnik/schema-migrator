@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { AUTH_TOKEN_CHANGED_EVENT, getAuthToken } from "../api/client";
-
-export type SessionRole = "admin" | "operator" | "viewer";
+import type { UserRole } from "../types";
 
 export interface SessionState {
-  role: SessionRole;
+  role: UserRole;
   subject?: string | undefined;
   tokenPresent: boolean;
   canMutate: boolean;
@@ -12,7 +11,7 @@ export interface SessionState {
   canViewAudit: boolean;
 }
 
-const roleOrder: Record<SessionRole, number> = {
+const roleOrder: Record<UserRole, number> = {
   viewer: 0,
   operator: 1,
   admin: 2
@@ -33,7 +32,7 @@ export const useSession = (): SessionState => {
 
   return useMemo(() => {
     const claims = decodeJwtClaims(token);
-    const role = roleFromClaims(claims) ?? roleFromFallback(token);
+    const role = roleFromClaims(claims) ?? roleFromFallback();
     return {
       role,
       subject: typeof claims?.sub === "string" ? claims.sub : undefined,
@@ -45,9 +44,9 @@ export const useSession = (): SessionState => {
   }, [token]);
 };
 
-export const roleAtLeast = (role: SessionRole, required: SessionRole): boolean => roleOrder[role] >= roleOrder[required];
+export const roleAtLeast = (role: UserRole, required: UserRole): boolean => roleOrder[role] >= roleOrder[required];
 
-const roleFromClaims = (claims: Record<string, unknown> | null): SessionRole | undefined => {
+const roleFromClaims = (claims: Record<string, unknown> | null): UserRole | undefined => {
   if (!claims) {
     return undefined;
   }
@@ -92,7 +91,7 @@ const collectRoles = (...values: unknown[]): string[] => {
   return roles;
 };
 
-const normalizeRole = (value: unknown): SessionRole | undefined => {
+const normalizeRole = (value: unknown): UserRole | undefined => {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -103,12 +102,12 @@ const normalizeRole = (value: unknown): SessionRole | undefined => {
   return undefined;
 };
 
-const roleFromFallback = (token: string): SessionRole => {
+const roleFromFallback = (): UserRole => {
   const configuredRole = import.meta.env.DEV ? normalizeRole(import.meta.env.VITE_DEV_AUTH_ROLE) : undefined;
   if (configuredRole) {
     return configuredRole;
   }
-  return token ? "admin" : "operator";
+  return "viewer";
 };
 
 const decodeJwtClaims = (token: string): Record<string, unknown> | null => {
