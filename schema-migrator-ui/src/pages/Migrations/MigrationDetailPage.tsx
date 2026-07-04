@@ -59,9 +59,11 @@ export const MigrationDetailPage = () => {
     <section className="page">
       <header className="page-header">
         <div>
+        <div>
           <span className="eyebrow">Migration detail</span>
           <h1>{migration.version}</h1>
           <p>{migration.label}</p>
+        </div>
         </div>
         <div className="row-actions">
           <StatusBadge status={migration.status} />

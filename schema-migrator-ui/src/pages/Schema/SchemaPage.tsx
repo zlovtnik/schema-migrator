@@ -101,7 +101,7 @@ export const SchemaPage = () => {
               type="button"
               onClick={() => setSelectedKey(objectKey(object))}
             >
-              <code title={object.name}>{object.name}</code>
+              <code>{object.name}</code>
             </button>
           );
         }
@@ -453,6 +453,8 @@ const formatDensity = (density: TableDensity): string =>
 ||||||| parent of 9382e18 (feat(ui): enhance DataTable with sort icons, add tooltips, density)
 =======
 
+const relativeDateFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
 const formatRelativeDate = (value: string): string => {
   const timestamp = Date.parse(value);
   if (Number.isNaN(timestamp)) {
@@ -471,7 +473,7 @@ const formatRelativeDate = (value: string): string => {
   ];
   const [unit, unitMs] = units.find(([, threshold]) => absDiffMs >= threshold) ?? ["second", 1000];
   const amount = Math.round(diffMs / unitMs);
-  return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(amount, unit);
+  return relativeDateFormatter.format(amount, unit);
 };
 
 const formatObjectCount = (type: ObjectFilter, count: number): string => {
