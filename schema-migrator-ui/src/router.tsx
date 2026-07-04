@@ -24,6 +24,9 @@ const SettingsPage = lazy(() => import("./pages/Settings/SettingsPage").then((mo
 const SqlFilesPage = lazy(() => import("./pages/SqlFiles/SqlFilesPage").then((module) => ({ default: module.default })));
 const AuditLogPage = lazy(() => import("./pages/Audit/AuditLogPage").then((module) => ({ default: module.AuditLogPage })));
 
+const snapshotRouteLabel = ({ params }: { params: Record<string, string | undefined> }) =>
+  params.id ? `Snapshot · ${params.id.slice(0, 8)}` : "Snapshot";
+
 const PatchDetailRedirect = () => {
   const { id } = useParams();
   return <Navigate to={id ? `/migrations/${id}` : "/migrations"} replace />;
@@ -90,9 +93,9 @@ export const router = createBrowserRouter([
         path: "snapshots/:id",
         element: routeElement(SnapshotDetailPage),
         handle: {
-          breadcrumb: "Snapshot detail",
+          breadcrumb: snapshotRouteLabel,
           parents: [{ breadcrumb: "Snapshots", breadcrumbTo: "/snapshots", targetAware: true }],
-          title: "Snapshot"
+          title: snapshotRouteLabel
         }
       },
       {

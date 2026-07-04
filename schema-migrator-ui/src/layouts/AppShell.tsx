@@ -57,7 +57,7 @@ export const AppShell = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const { failedRun } = useErrorGate();
-  const { canViewAudit, role } = useSession();
+  const { canViewAudit, role, subject } = useSession();
   const queryClient = useQueryClient();
   const matches = useMatches();
   const routeTitle = activeRouteTitle(matches);
@@ -189,10 +189,6 @@ export const AppShell = () => {
             ))}
           </nav>
           <div className="sidebar__selector">
-            <div className={`role-badge role-badge--${role}`} title={`Role: ${role}`}>
-              <span>Role</span>
-              <strong>{role}</strong>
-            </div>
             <TargetSelector compact />
           </div>
           <button
@@ -207,6 +203,16 @@ export const AppShell = () => {
           </button>
         </aside>
         <div className="app-main">
+          <header className="app-topbar" aria-label="Session context">
+            <div className="app-topbar__spacer" />
+            <div className="session-context">
+              {subject ? <span className="session-context__subject" title={subject}>{subject}</span> : null}
+              <div className={`role-badge role-badge--${role}`} title={`Role: ${role}`}>
+                <span>Role</span>
+                <strong>{role}</strong>
+              </div>
+            </div>
+          </header>
           <ErrorGateBanner failedRun={failedRun} />
           <main className="main-scroll" id="main-content" tabIndex={-1}>
             <AppBreadcrumbs />

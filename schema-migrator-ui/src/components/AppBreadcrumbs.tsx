@@ -1,7 +1,7 @@
 import { Link, useMatches } from "react-router-dom";
 import { CaretRightIcon } from "@phosphor-icons/react/dist/csr/CaretRight";
 import { useSelectedTargetId } from "../hooks/useSelectedTarget";
-import { breadcrumbTarget, type RouteHandle } from "./breadcrumbs";
+import { breadcrumbTarget, resolveRouteLabel, type RouteHandle } from "./breadcrumbs";
 import { Icon } from "./ui/Icon";
 
 export const AppBreadcrumbs = () => {
@@ -10,7 +10,12 @@ export const AppBreadcrumbs = () => {
   const crumbs = matches
     .flatMap((match) => {
       const handle = match.handle as RouteHandle | undefined;
-      if (!handle?.breadcrumb) {
+      if (!handle) {
+        return [];
+      }
+
+      const label = resolveRouteLabel(handle.breadcrumb, match);
+      if (!label) {
         return [];
       }
 
@@ -21,7 +26,7 @@ export const AppBreadcrumbs = () => {
           to: parent.breadcrumbTo
         })),
         {
-          label: handle.breadcrumb,
+          label,
           targetAware: handle.targetAware === true,
           to: handle.breadcrumbTo ?? match.pathname
         }
