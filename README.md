@@ -89,16 +89,13 @@ sbt "run --sql-dir ./sql --dry-run apply"
 sbt "run --sql-dir ./sql check-connection"
 
 # Apply migrations
-<<<<<<< HEAD
 sbt "run --sql-dir ./sql apply"
-||||||| parent of 7f801e2 (feat: add Postgres drift-check; update UI copy and design tokens)
-sbt "run --db-kind postgres --sql-dir ./sql/postgres apply"
-=======
+
+# Apply a Postgres-specific SQL tree
 sbt "run --db-kind postgres --sql-dir ./sql/postgres apply"
 
 # Fail when the live Postgres catalog drifts from the manifest and refresh the registry
 sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture drift-check"
->>>>>>> 7f801e2 (feat: add Postgres drift-check; update UI copy and design tokens)
 ```
 
 For Oracle, set the database type and provide the necessary credentials or environment variables:
