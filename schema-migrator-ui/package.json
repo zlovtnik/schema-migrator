@@ -2,10 +2,17 @@
   "name": "schema-migrator-ui",
   "private": true,
   "version": "0.1.0",
+  "description": "Desktop and web client for Bedrock Schema Migrator.",
+  "author": "SSL Proxy",
   "type": "module",
+  "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "electron:build": "bun run build && bun run electron:build-main && electron-builder",
+    "electron:build-main": "tsc -p tsconfig.electron.json && tsc -p tsconfig.electron-preload.json",
+    "electron:dev": "bun run electron:build-main && node scripts/electron-dev.mjs",
+    "electron:pack": "bun run build && bun run electron:build-main && electron-builder --dir",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc -b"
@@ -30,13 +37,40 @@
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.5.2",
+    "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "axe-core": "^4.10.2",
+    "electron": "^33.3.1",
+    "electron-builder": "^25.1.8",
     "jsdom": "^25.0.1",
     "typescript": "^5.7.3",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.sslproxy.schema-migrator",
+    "productName": "Bedrock Schema Migrator",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/main.js",
+      "dist-electron/main.js.map",
+      "dist-electron-preload/**",
+      "package.json",
+      "!node_modules/**"
+    ],
+    "mac": {
+      "target": ["dmg"]
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "linux": {
+      "target": ["AppImage"]
+    }
   }
 }

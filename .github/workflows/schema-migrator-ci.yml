@@ -90,3 +90,11 @@ jobs:
           fi
           echo "$output" | grep '"drift_type":"definition_changed"'
           echo "$output" | grep '"name":"sync_stable_uuid(text)"'
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "
+            select customization_status
+              from schema_control.drift_report
+             where customer = 'fixture'
+               and object_schema = 'public'
+               and object_type = 'function'
+               and object_name = 'sync_stable_uuid(text)'
+          " | grep '^customized$'

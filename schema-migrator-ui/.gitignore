@@ -1,5 +1,8 @@
 node_modules
 dist
+dist-electron
+dist-electron-preload
+release
 .env
 .env.*
 !.env.example
