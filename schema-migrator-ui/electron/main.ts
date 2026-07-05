@@ -83,6 +83,15 @@ const proxyApiRequest = (request: IncomingMessage, response: ServerResponse): vo
   const target = apiProxyTarget();
   const requestUrl = new URL(request.url || "/", `http://${request.headers.host || `${staticHost}:${staticPort}`}`);
   const proxyUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, target);
+  const failProxyRequest = (): void => {
+    if (response.headersSent || response.writableEnded) {
+      response.destroy();
+      return;
+    }
+
+    response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Bad gateway");
+  };
   const proxyRequest = (proxyUrl.protocol === "https:" ? createHttpsRequest : createHttpRequest)(
     proxyUrl,
     {
@@ -98,15 +107,10 @@ const proxyApiRequest = (request: IncomingMessage, response: ServerResponse): vo
     }
   );
 
-  proxyRequest.on("error", () => {
-    if (response.headersSent || response.writableEnded) {
-      response.destroy();
-      return;
-    }
-
-    response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end("Bad gateway");
+  proxyRequest.setTimeout(30_000, () => {
+    proxyRequest.destroy(new Error("API proxy request timed out"));
   });
+  proxyRequest.on("error", failProxyRequest);
 
   request.pipe(proxyRequest);
 };
@@ -183,22 +187,32 @@ const appUrl = async (): Promise<string> => {
   return startStaticServer();
 };
 
+const devServerOrigin = (): string | undefined => {
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim();
+  if (!devServerUrl) {
+    return undefined;
+  }
+
+  try {
+    return new URL(devServerUrl).origin;
+  } catch {
+    return undefined;
+  }
+};
+
 const cspOrigins = (): Set<string> => {
   const origins = new Set([`http://${staticHost}:${staticPort}`]);
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim();
-  if (devServerUrl) {
-    try {
-      origins.add(new URL(devServerUrl).origin);
-    } catch {
-      // Ignore malformed dev URLs; appUrl will surface the load failure.
-    }
+  const origin = devServerOrigin();
+  if (origin) {
+    origins.add(origin);
   }
   return origins;
 };
 
 const contentSecurityPolicyFor = (origin: string): string => {
-  const isDevServer = origin === process.env.VITE_DEV_SERVER_URL?.trim().replace(/\/+$/, "");
+  const isDevServer = origin === devServerOrigin();
   const scriptSource = isDevServer ? "script-src 'self' 'unsafe-inline'" : "script-src 'self'";
+  const connectSource = isDevServer ? "connect-src 'self' http: https: ws: wss:" : "connect-src 'self'";
 
   return [
     "default-src 'none'",
@@ -206,7 +220,7 @@ const contentSecurityPolicyFor = (origin: string): string => {
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     "img-src 'self' data: blob:",
-    "connect-src 'self' http: https: ws: wss:",
+    connectSource,
     "base-uri 'none'",
     "form-action 'none'",
     "frame-ancestors 'none'",
