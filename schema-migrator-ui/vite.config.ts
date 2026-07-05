@@ -6,6 +6,7 @@ export default defineConfig(({ mode }) => {
   const apiProxyTarget = env.VITE_API_PROXY_TARGET || "http://localhost:8080";
 
   return {
+    base: "./",
     plugins: [react()],
     server: {
       host: "0.0.0.0",

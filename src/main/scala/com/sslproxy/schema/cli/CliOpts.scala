@@ -70,7 +70,15 @@ object CliOpts:
     Opts
       .option[String]("cors-origins", help = "Comma-separated allowed CORS origins")
       .orNone
-      .map(_.orElse(env.get("BEDROCK_CORS_ORIGINS")).fold(Set("http://localhost:5173"))(commaSet))
+      .map(_.orElse(env.get("BEDROCK_CORS_ORIGINS")).fold(defaultCorsOrigins)(commaSet))
+
+  private val defaultCorsOrigins: Set[String] =
+    Set(
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "http://localhost:4174",
+      "http://127.0.0.1:4174"
+    )
 
   private val encryptKeyOpt: Opts[Option[String]] =
     Opts.option[String]("encrypt-key", help = "Base64 AES-256-GCM response encryption key").orNone
