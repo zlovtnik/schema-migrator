@@ -1,6 +1,7 @@
-import { app, BrowserWindow, Menu, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, Menu, session, shell, type MenuItemConstructorOptions } from "electron";
 import { createReadStream, promises as fs } from "node:fs";
-import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, request as createHttpRequest, type Server, type IncomingMessage, type ServerResponse } from "node:http";
+import { request as createHttpsRequest } from "node:https";
 import { extname, resolve, sep } from "node:path";
 
 const staticHost = "127.0.0.1";
@@ -8,6 +9,7 @@ const configuredStaticPort = Number.parseInt(process.env.BEDROCK_ELECTRON_PORT |
 const staticPort = Number.isInteger(configuredStaticPort) ? configuredStaticPort : 4174;
 
 let staticServer: Server | undefined;
+let staticServerUrl: string | undefined;
 let mainWindow: BrowserWindow | undefined;
 let appOrigin = "";
 
@@ -32,18 +34,81 @@ const isSafeExternalUrl = (value: string): boolean => {
   }
 };
 
+const sendServerError = (response: ServerResponse): void => {
+  response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+  response.end("Internal server error");
+};
+
 const sendFile = (response: ServerResponse, filePath: string): void => {
   const extension = extname(filePath).toLowerCase();
-  response.writeHead(200, {
-    "Content-Type": contentTypes[extension] || "application/octet-stream",
-    "Cache-Control": extension === ".html" ? "no-store" : "public, max-age=31536000, immutable"
+  const stream = createReadStream(filePath);
+
+  stream.once("open", () => {
+    response.writeHead(200, {
+      "Content-Type": contentTypes[extension] || "application/octet-stream",
+      "Cache-Control": extension === ".html" ? "no-store" : "public, max-age=31536000, immutable"
+    });
+    stream.pipe(response);
   });
-  createReadStream(filePath).pipe(response);
+
+  stream.once("error", (error: NodeJS.ErrnoException) => {
+    if (response.headersSent || response.writableEnded) {
+      response.destroy(error);
+      return;
+    }
+
+    if (error.code === "ENOENT") {
+      sendNotFound(response);
+      return;
+    }
+
+    sendServerError(response);
+  });
 };
 
 const sendNotFound = (response: ServerResponse): void => {
   response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
   response.end("Not found");
+};
+
+const apiProxyTarget = (): URL =>
+  new URL(process.env.BEDROCK_API_PROXY_TARGET || process.env.VITE_API_PROXY_TARGET || "http://localhost");
+
+const isApiRequest = (request: IncomingMessage): boolean => {
+  const requestUrl = new URL(request.url || "/", `http://${request.headers.host || `${staticHost}:${staticPort}`}`);
+  return requestUrl.pathname === "/api" || requestUrl.pathname.startsWith("/api/");
+};
+
+const proxyApiRequest = (request: IncomingMessage, response: ServerResponse): void => {
+  const target = apiProxyTarget();
+  const requestUrl = new URL(request.url || "/", `http://${request.headers.host || `${staticHost}:${staticPort}`}`);
+  const proxyUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, target);
+  const proxyRequest = (proxyUrl.protocol === "https:" ? createHttpsRequest : createHttpRequest)(
+    proxyUrl,
+    {
+      method: request.method,
+      headers: {
+        ...request.headers,
+        host: proxyUrl.host
+      }
+    },
+    (proxyResponse) => {
+      response.writeHead(proxyResponse.statusCode || 502, proxyResponse.headers);
+      proxyResponse.pipe(response);
+    }
+  );
+
+  proxyRequest.on("error", () => {
+    if (response.headersSent || response.writableEnded) {
+      response.destroy();
+      return;
+    }
+
+    response.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Bad gateway");
+  });
+
+  request.pipe(proxyRequest);
 };
 
 const requestedFilePath = (root: string, request: IncomingMessage): string | undefined => {
@@ -55,6 +120,11 @@ const requestedFilePath = (root: string, request: IncomingMessage): string | und
 
 const serveRequest = async (root: string, request: IncomingMessage, response: ServerResponse): Promise<void> => {
   try {
+    if (isApiRequest(request)) {
+      proxyApiRequest(request, response);
+      return;
+    }
+
     const candidate = requestedFilePath(root, request);
     if (!candidate) {
       sendNotFound(response);
@@ -75,8 +145,7 @@ const serveRequest = async (root: string, request: IncomingMessage, response: Se
 
     sendFile(response, indexPath);
   } catch {
-    response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end("Internal server error");
+    sendServerError(response);
   }
 };
 
@@ -90,6 +159,10 @@ const listen = (server: Server): Promise<void> =>
   });
 
 const startStaticServer = async (): Promise<string> => {
+  if (staticServerUrl) {
+    return staticServerUrl;
+  }
+
   const rendererDist = resolve(app.getAppPath(), "dist");
   const server = createServer((request, response) => {
     void serveRequest(rendererDist, request, response);
@@ -97,7 +170,8 @@ const startStaticServer = async (): Promise<string> => {
 
   await listen(server);
   staticServer = server;
-  return `http://${staticHost}:${staticPort}/`;
+  staticServerUrl = `http://${staticHost}:${staticPort}/`;
+  return staticServerUrl;
 };
 
 const appUrl = async (): Promise<string> => {
@@ -107,6 +181,63 @@ const appUrl = async (): Promise<string> => {
   }
 
   return startStaticServer();
+};
+
+const cspOrigins = (): Set<string> => {
+  const origins = new Set([`http://${staticHost}:${staticPort}`]);
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL?.trim();
+  if (devServerUrl) {
+    try {
+      origins.add(new URL(devServerUrl).origin);
+    } catch {
+      // Ignore malformed dev URLs; appUrl will surface the load failure.
+    }
+  }
+  return origins;
+};
+
+const contentSecurityPolicyFor = (origin: string): string => {
+  const isDevServer = origin === process.env.VITE_DEV_SERVER_URL?.trim().replace(/\/+$/, "");
+  const scriptSource = isDevServer ? "script-src 'self' 'unsafe-inline'" : "script-src 'self'";
+
+  return [
+    "default-src 'none'",
+    scriptSource,
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    "img-src 'self' data: blob:",
+    "connect-src 'self' http: https: ws: wss:",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+    "object-src 'none'"
+  ].join("; ");
+};
+
+const installContentSecurityPolicy = (): void => {
+  const origins = cspOrigins();
+
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    let origin: string;
+    try {
+      origin = new URL(details.url).origin;
+    } catch {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
+
+    if (!origins.has(origin)) {
+      callback({ responseHeaders: details.responseHeaders });
+      return;
+    }
+
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [contentSecurityPolicyFor(origin)]
+      }
+    });
+  });
 };
 
 const contextMenuFor = (window: BrowserWindow, params: Electron.ContextMenuParams): Menu | undefined => {
@@ -196,7 +327,7 @@ const createWindow = async (): Promise<void> => {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      preload: resolve(app.getAppPath(), "dist-electron/preload.js"),
+      preload: resolve(app.getAppPath(), "dist-electron-preload/preload.js"),
       sandbox: true
     }
   });
@@ -227,6 +358,8 @@ const createWindow = async (): Promise<void> => {
 installApplicationMenu();
 
 app.whenReady().then(() => {
+  installContentSecurityPolicy();
+
   createWindow().catch((error: unknown) => {
     console.error(error);
     app.quit();
@@ -250,4 +383,6 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   staticServer?.close();
+  staticServer = undefined;
+  staticServerUrl = undefined;
 });

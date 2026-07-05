@@ -11,6 +11,25 @@ const env = {
 };
 
 const commandName = (name) => (process.platform === "win32" ? `${name}.cmd` : name);
+const spawnOptions = { env, shell: process.platform === "win32", stdio: "inherit" };
+
+let vite;
+let electron;
+
+const shutdown = () => {
+  vite?.kill();
+  electron?.kill();
+};
+
+const spawnChild = (label, command, args) => {
+  const child = spawn(commandName(command), args, spawnOptions);
+  child.on("error", (error) => {
+    console.error(`Failed to start ${label}: ${error.message}`);
+    shutdown();
+    process.exit(1);
+  });
+  return child;
+};
 
 const waitForUrl = (url, attempts = 120) =>
   new Promise((resolvePromise, reject) => {
@@ -35,18 +54,13 @@ const waitForUrl = (url, attempts = 120) =>
     check();
   });
 
-const vite = spawn(commandName("bun"), ["run", "dev"], { env, stdio: "inherit" });
-
-const shutdown = () => {
-  vite.kill();
-};
-
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 try {
+  vite = spawnChild("Vite dev server", "bun", ["run", "dev"]);
   await waitForUrl(devServerUrl);
-  const electron = spawn(commandName("electron"), ["dist-electron/main.js"], { env, stdio: "inherit" });
+  electron = spawnChild("Electron", "electron", ["dist-electron/main.js"]);
 
   electron.on("exit", (code) => {
     shutdown();
@@ -54,5 +68,6 @@ try {
   });
 } catch (error) {
   shutdown();
-  throw error;
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
 }

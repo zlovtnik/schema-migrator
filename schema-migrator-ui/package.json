@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "electron:build": "bun run build && bun run electron:build-main && electron-builder",
-    "electron:build-main": "tsc -p tsconfig.electron.json",
+    "electron:build-main": "tsc -p tsconfig.electron.json && tsc -p tsconfig.electron-preload.json",
     "electron:dev": "bun run electron:build-main && node scripts/electron-dev.mjs",
     "electron:pack": "bun run build && bun run electron:build-main && electron-builder --dir",
     "preview": "vite preview",
@@ -57,7 +57,9 @@
     },
     "files": [
       "dist/**",
-      "dist-electron/**",
+      "dist-electron/main.js",
+      "dist-electron/main.js.map",
+      "dist-electron-preload/**",
       "package.json",
       "!node_modules/**"
     ],
