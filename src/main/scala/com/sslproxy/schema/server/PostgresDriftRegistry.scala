@@ -34,7 +34,7 @@ private[schema] object PostgresDriftRegistry:
       JdbcSupport.executeStatement(connection, "create schema if not exists schema_control")
       JdbcSupport.executeStatement(connection, PostgresStatements.customizationRegistrySql)
       deleteCustomerRows(connection, customer)
-      insertRows(connection, rows(customer, catalog, drift))
+      insertRows(connection, registryRows(customer, catalog, drift))
       connection.commit()
     catch
       case NonFatal(error) =>
@@ -76,7 +76,7 @@ private[schema] object PostgresDriftRegistry:
   private def setNullable(statement: PreparedStatement, index: Int, value: Option[String]): Unit =
     value.fold(statement.setNull(index, java.sql.Types.VARCHAR))(statement.setString(index, _))
 
-  private def rows(
+  private[schema] def registryRows(
     customer: String,
     catalog: List[SchemaCatalogObject],
     drift: List[DriftItem]
@@ -108,7 +108,7 @@ private[schema] object PostgresDriftRegistry:
       )
     }
 
-  private final case class RegistryRow(
+  private[schema] final case class RegistryRow(
     customer: String,
     objectSchema: String,
     objectName: String,
