@@ -108,22 +108,3 @@ create table if not exists wireless_frames (
 
 alter table wireless_frames
   drop constraint if exists wireless_frames_dedupe_key_fkey;
-
-alter table wireless_frames add column if not exists frame_subtype text;
-
-alter table wireless_frames add column if not exists event_type text;
-alter table wireless_frames add column if not exists transmitter_mac text;
-alter table wireless_frames add column if not exists receiver_mac text;
-alter table wireless_frames add column if not exists noise_dbm integer;
-alter table wireless_frames add column if not exists frequency_mhz integer;
-alter table wireless_frames add column if not exists channel_flags integer;
-alter table wireless_frames add column if not exists data_rate_kbps integer;
-alter table wireless_frames add column if not exists antenna_id integer;
-alter table wireless_frames add column if not exists tsft bigint;
-alter table wireless_frames add column if not exists risk_score double precision;
-alter table wireless_frames add column if not exists identity_source text;
-alter table wireless_frames add column if not exists tags jsonb not null default '[]'::jsonb;
-alter table wireless_frames add column if not exists bssid_oui text
-  generated always as (
-    nullif(lower(substr(regexp_replace(coalesce(nullif(bssid, ''), nullif(destination_bssid, ''), ''), '[:\-]', '', 'g'), 1, 6)), '')
-  ) stored;

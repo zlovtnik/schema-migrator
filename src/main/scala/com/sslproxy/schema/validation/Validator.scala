@@ -8,6 +8,19 @@ import com.sslproxy.schema.parser.{BalanceChecker, HeaderParser}
 
 final class Validator[F[_]: Sync](dbKind: DbKind):
   private val tableColumnWarningLimit = 15
+  private val identifierPattern = """"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*"""
+  private val qualifiedIdentifierPattern = s"(?:$identifierPattern)(?:\\s*\\.\\s*(?:$identifierPattern))?"
+  private val createTablePattern =
+    s"(?is)\\bcreate\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?($qualifiedIdentifierPattern)\\s*\\(".r
+  private val alterTablePattern =
+    s"(?is)\\balter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?($qualifiedIdentifierPattern)\\s+(.*?);".r
+  private val addColumnPattern =
+    s"(?is)(?:^|,)\\s*add\\s+column\\s+(?:if\\s+not\\s+exists\\s+)?($identifierPattern)(?:\\s|$$)".r
+  private val leadingIdentifierPattern = s"(?s)^\\s*($identifierPattern)(?:\\s|$$)".r
+  private val viewDefinitionPattern =
+    s"(?is)\\bcreate\\s+(?:or\\s+replace\\s+)?view\\s+($qualifiedIdentifierPattern)\\s+as\\b".r
+  private val routineDefinitionPattern =
+    s"(?is)\\bcreate\\s+or\\s+replace\\s+(?:(?:non)?editionable\\s+)?(function|procedure)\\s+($qualifiedIdentifierPattern)\\s*\\(".r
   private val createOrReplaceRoutine =
     raw"(?is)\bcreate\s+or\s+replace\s+(?:(?:non)?editionable\s+)?(function|procedure)\b".r
   private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+(?:(?:non)?editionable\s+)?procedure\b".r
@@ -19,7 +32,10 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
       }
       val graphErrors = DependencyValidator.validate(files)
       val rollbackErrors = RollbackValidator.validate(files)
-      fileReport.copy(errors = fileReport.errors ++ graphErrors ++ rollbackErrors)
+      val duplicateDefinitionErrors =
+        if dbKind == DbKind.Postgres then postgresDuplicateDefinitionErrors(files)
+        else Nil
+      fileReport.copy(errors = fileReport.errors ++ graphErrors ++ rollbackErrors ++ duplicateDefinitionErrors)
     }
 
   private def validateOne(report: ValidationReport, file: SqlFile): ValidationReport =
@@ -60,12 +76,13 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
           if !lower.contains("create table if not exists") then
             report.addWarning(s"$path: expected 'CREATE TABLE IF NOT EXISTS' for idempotency")
           else report
-        createTableColumnCount(sql) match
+        val withColumnWarning = createTableColumnCount(sql) match
           case Some(count) if count > tableColumnWarningLimit =>
             withTableWarning.addWarning(
               s"$path: table has $count columns; prefer <= $tableColumnWarningLimit columns and vertical partitioning for hot-path schemas"
             )
           case _ => withTableWarning
+        sameFileDuplicateAddColumnErrors(file, sql).foldLeft(withColumnWarning)(_.addError(_))
       case "functions" if !hasCreateOrReplaceRoutine(sql) =>
         report.addWarning(
           s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency"
@@ -105,16 +122,92 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
       case _ => report
 
   private def createTableColumnCount(sql: String): Option[Int] =
-    val lower = sql.toLowerCase
-    val createPos = lower.indexOf("create table")
-    if createPos < 0 then None
-    else
-      val open = sql.indexOf('(', createPos)
-      if open < 0 then None
-      else
-        matchingCloseParen(sql, open).map { close =>
-          splitTopLevelCommas(sql.substring(open + 1, close)).count(isColumnDefinition)
+    createTableDefinitions(sql).headOption.map(_._2.size)
+
+  private def sameFileDuplicateAddColumnErrors(file: SqlFile, sql: String): List[String] =
+    val createColumnsByTable = createTableDefinitions(sql).toMap
+    alterTableAddColumns(sql)
+      .flatMap { case (table, column) =>
+        createColumnsByTable.get(table).filter(_.contains(column)).map { _ =>
+          s"${file.relativePath}: ALTER TABLE ADD COLUMN '$column' duplicates CREATE TABLE column on '$table'"
         }
+      }
+      .distinct
+      .sorted
+
+  private def createTableDefinitions(sql: String): List[(String, Set[String])] =
+    createTablePattern
+      .findAllMatchIn(sql)
+      .flatMap { definition =>
+        val open = definition.end - 1
+        matchingCloseParen(sql, open).map { close =>
+          val columns = splitTopLevelCommas(sql.substring(open + 1, close))
+            .filter(isColumnDefinition)
+            .flatMap(columnName)
+            .toSet
+          normalizeQualifiedIdentifier(definition.group(1)) -> columns
+        }
+      }
+      .toList
+
+  private def alterTableAddColumns(sql: String): List[(String, String)] =
+    alterTablePattern
+      .findAllMatchIn(sql)
+      .flatMap { statement =>
+        val table = normalizeQualifiedIdentifier(statement.group(1))
+        addColumnPattern.findAllMatchIn(statement.group(2)).map(addColumn => table -> normalizeIdentifier(addColumn.group(1)))
+      }
+      .toList
+
+  private def columnName(part: String): Option[String] =
+    leadingIdentifierPattern.findFirstMatchIn(part).map(matchResult => normalizeIdentifier(matchResult.group(1)))
+
+  private def postgresDuplicateDefinitionErrors(files: List[SqlFile]): List[String] =
+    files
+      .filter(file => file.folder == "views" || file.folder == "functions")
+      .flatMap(duplicateDefinition)
+      .groupBy(definition => (definition.folder, definition.objectName, definition.body))
+      .values
+      .filter(_.lengthCompare(1) > 0)
+      .map { definitions =>
+        val first = definitions.head
+        val paths = definitions.map(_.relativePath).sorted.mkString(", ")
+        s"$paths: duplicate ${first.folder.dropRight(1)} body for ${first.objectName} ignoring header comments"
+      }
+      .toList
+      .sorted
+
+  private def duplicateDefinition(file: SqlFile): Option[DuplicateDefinition] =
+    try
+      val sql = file.readString
+      ddlObjectName(file.folder, sql).map { objectName =>
+        DuplicateDefinition(file.folder, objectName, stripLeadingHeaderComments(sql).trim, file.relativePath)
+      }
+    catch case _: Exception => None
+
+  private def ddlObjectName(folder: String, sql: String): Option[String] =
+    folder match
+      case "views" =>
+        viewDefinitionPattern.findFirstMatchIn(sql).map(matchResult => normalizeQualifiedIdentifier(matchResult.group(1)))
+      case "functions" =>
+        routineDefinitionPattern.findFirstMatchIn(sql).map { matchResult =>
+          s"${matchResult.group(1).toLowerCase} ${normalizeQualifiedIdentifier(matchResult.group(2))}"
+        }
+      case _ => None
+
+  private def stripLeadingHeaderComments(sql: String): String =
+    sql.linesIterator
+      .dropWhile { line =>
+        val trimmed = line.trim
+        trimmed.isEmpty || trimmed.startsWith("--")
+      }
+      .mkString("\n")
+
+  private def normalizeQualifiedIdentifier(value: String): String =
+    normalizeIdentifier(value.split('.').lastOption.getOrElse(value))
+
+  private def normalizeIdentifier(value: String): String =
+    value.trim.stripPrefix("\"").stripSuffix("\"").toLowerCase
 
   private def hasCreateOrReplaceRoutine(sql: String): Boolean =
     createOrReplaceRoutine.findFirstIn(sql).nonEmpty
@@ -186,3 +279,5 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
   private def isColumnDefinition(part: String): Boolean =
     val first = part.split("\\s+").headOption.getOrElse("").stripPrefix("\"").stripSuffix("\"").toLowerCase
     !Set("", "constraint", "primary", "foreign", "unique", "check", "exclude").contains(first)
+
+  private final case class DuplicateDefinition(folder: String, objectName: String, body: String, relativePath: String)

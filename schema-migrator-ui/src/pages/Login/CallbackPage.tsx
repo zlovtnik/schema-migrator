@@ -1,20 +1,30 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { initKeycloak } from "../../auth/keycloak";
+import { takePostAuthRedirect } from "../../auth/postAuthRedirect";
 import { DocumentTitle } from "../../components/DocumentTitle";
 
 export const CallbackPage = () => {
+  const location = useLocation();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [redirectTo, setRedirectTo] = useState("/overview");
 
   useEffect(() => {
     initKeycloak()
-      .then(() => setReady(true))
+      .then((authenticated) => {
+        if (authenticated) {
+          setRedirectTo(takePostAuthRedirect(location.state));
+          setReady(true);
+        } else {
+          setFailed(true);
+        }
+      })
       .catch(() => setFailed(true));
-  }, []);
+  }, [location.state]);
 
   if (ready) {
-    return <Navigate to="/overview" replace />;
+    return <Navigate to={redirectTo} replace />;
   }
 
   return (

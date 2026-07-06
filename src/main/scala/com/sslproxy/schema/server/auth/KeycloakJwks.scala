@@ -71,10 +71,11 @@ final class KeycloakJwks private (
     for
       now <- Clock[IO].realTimeInstant
       current <- cache.get
-      cached = Option.when(current.expiresAt.isAfter(now))(current.keys.get(kid)).flatten
-      result <- cached match
-        case Some(publicKey) => IO.pure(Right(publicKey))
-        case None => refreshKeys(now).map(_.flatMap(_.get(kid).toRight(s"Keycloak JWKS did not contain key '$kid'")))
+      cacheFresh = current.expiresAt.isAfter(now)
+      result <- current.keys.get(kid) match
+        case Some(publicKey) if cacheFresh => IO.pure(Right(publicKey))
+        case None if cacheFresh => IO.pure(Left(s"Keycloak JWKS did not contain key '$kid'"))
+        case _ => refreshKeys(now).map(_.flatMap(_.get(kid).toRight(s"Keycloak JWKS did not contain key '$kid'")))
     yield result
 
   private def refreshKeys(now: Instant): IO[Either[String, Map[String, RSAPublicKey]]] =

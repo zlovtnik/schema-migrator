@@ -1,6 +1,6 @@
 package com.sslproxy.schema.server.auth
 
-import cats.effect.IO
+import cats.effect.{IO, Ref}
 import cats.effect.unsafe.implicits.global
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
@@ -151,6 +151,44 @@ class JwtMiddlewareSuite extends FunSuite:
         .unsafeRunSync()
       assertEquals(response.status, Status.Unauthorized)
     }
+  }
+
+  test("Keycloak verifier does not refresh a fresh JWKS cache for unknown kids") {
+    val fixture = rsaFixture("known-key")
+    val unknownKey = rsaFixture("unknown-key")
+    val config = keycloakConfig()
+    val fetches = Ref.of[IO, Int](0).unsafeRunSync()
+    val jwks = KeycloakJwks.Jwks(
+      List(
+        KeycloakJwks.Jwk(
+          kty = "RSA",
+          kid = fixture.kid,
+          n = base64UrlUInt(fixture.publicKey.getModulus),
+          e = base64UrlUInt(fixture.publicKey.getPublicExponent),
+          use = Some("sig"),
+          alg = Some("RS256")
+        )
+      )
+    )
+    val verifier = KeycloakJwks
+      .createForTest(
+        issuer = config.keycloakIssuer.getOrElse(""),
+        jwksUri = Uri.unsafeFromString("https://keycloak.example.com/realms/bedrock/protocol/openid-connect/certs"),
+        clientId = config.keycloakClientId,
+        audience = config.keycloakAudience,
+        fetchJwks = fetches.update(_ + 1).as(jwks)
+      )
+      .unsafeRunSync()
+
+    val accepted = verifier.verify(keycloakToken(config, fixture)).unsafeRunSync()
+    val beforeUnknownKid = fetches.get.unsafeRunSync()
+    val rejected = verifier.verify(keycloakToken(config, unknownKey)).unsafeRunSync()
+    val afterUnknownKid = fetches.get.unsafeRunSync()
+
+    assert(accepted.isRight)
+    assert(rejected.isLeft)
+    assertEquals(beforeUnknownKid, 1)
+    assertEquals(afterUnknownKid, 1)
   }
 
   private def serverConfig(apiBearerToken: Option[String] = None, devAuthEnabled: Boolean = false): ServerConfig =

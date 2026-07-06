@@ -18,8 +18,3 @@ create table if not exists device_identity_clusters (
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now()
 );
-
-alter table device_identity_clusters
-  add column if not exists embedding_centroid vector(768),
-  add column if not exists centroid_updated_at timestamptz,
-  add column if not exists centroid_sample_count integer not null default 0;

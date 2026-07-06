@@ -218,7 +218,12 @@ export const AppShell = () => {
                 <span>Role</span>
                 <strong>{role}</strong>
               </div>
-              <button className="button button--secondary button--small session-context__logout" type="button" onClick={signOut}>
+              <button
+                aria-label="Sign out"
+                className="button button--secondary button--small session-context__logout"
+                type="button"
+                onClick={signOut}
+              >
                 <Icon source={SignOutIcon} size={16} weight="bold" />
                 <span>Sign out</span>
               </button>

@@ -58,7 +58,7 @@ export const initKeycloak = async (): Promise<boolean> => {
     keycloak.onAuthLogout = () => setAuthToken("");
     keycloak.onAuthRefreshError = () => setAuthToken("");
     keycloak.onTokenExpired = () => {
-      void refreshKeycloakToken();
+      void refreshKeycloakToken().catch(() => setAuthToken(""));
     };
 
     initPromise = keycloak
@@ -73,7 +73,6 @@ export const initKeycloak = async (): Promise<boolean> => {
       })
       .catch((error: unknown) => {
         setAuthToken("");
-        initPromise = undefined;
         throw error;
       });
   }
@@ -182,6 +181,7 @@ export const loginWithKeycloak = async (): Promise<void> => {
   if (!keycloak) {
     throw new Error("Keycloak is not configured");
   }
+  passwordRefreshToken = "";
   await keycloak.login({ redirectUri: keycloakRedirectUri() });
 };
 

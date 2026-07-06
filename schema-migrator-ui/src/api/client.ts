@@ -151,13 +151,20 @@ export const ensureAuthToken = async (): Promise<string> => {
     return "";
   }
 
-  return authTokenProvider();
+  const nextToken = await authTokenProvider();
+  setAuthToken(nextToken);
+  return getAuthToken();
 };
 
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
   const headers = new Headers(options.headers);
-  await ensureAuthToken();
-  const token = getAuthToken();
+  let token: string;
+  try {
+    token = await ensureAuthToken();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Authentication failed";
+    throw new ApiError(message, 401, error);
+  }
   const { body, ...requestOptions } = options;
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const isBlob = typeof Blob !== "undefined" && body instanceof Blob;

@@ -15,9 +15,6 @@ create table if not exists sync_backlog (
   constraint chk_sync_backlog_status check (status in ('pending','synced','sync_failed','failed'))
 );
 
-alter table if exists sync_backlog
-  add column if not exists failure_stage text not null default 'pre_publish';
-
 do $$
 begin
   if not exists (

@@ -1,39 +1,47 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { SignInIcon } from "@phosphor-icons/react/dist/csr/SignIn";
 import { getAuthToken } from "../../api/client";
+import { isKeycloakConfigured, loginWithKeycloak } from "../../auth/keycloak";
+import { rememberPostAuthRedirect, takePostAuthRedirect } from "../../auth/postAuthRedirect";
 import { DocumentTitle } from "../../components/DocumentTitle";
 import { Icon } from "../../components/ui/Icon";
-import { isKeycloakConfigured, loginWithCredentials } from "../../auth/keycloak";
 
 export const LoginPage = () => {
+  const location = useLocation();
   const [authenticated, setAuthenticated] = useState(Boolean(getAuthToken()));
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [redirectTo, setRedirectTo] = useState<string | undefined>(undefined);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const configured = isKeycloakConfigured();
 
   useEffect(() => {
-    setAuthenticated(Boolean(getAuthToken()));
-  }, []);
+    const hasToken = Boolean(getAuthToken());
+    setAuthenticated(hasToken);
+    if (hasToken) {
+      setRedirectTo(takePostAuthRedirect(location.state));
+    }
+  }, [location.state]);
 
-  if (authenticated) {
-    return <Navigate to="/overview" replace />;
+  if (authenticated && redirectTo) {
+    return <Navigate to={redirectTo} replace />;
   }
 
   const signIn = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!username.trim() || !password) {
-      setError("Enter your username and password.");
-      return;
-    }
 
     setError(undefined);
     setSubmitting(true);
-    loginWithCredentials(username.trim(), password)
-      .then(() => setAuthenticated(true))
+    rememberPostAuthRedirect(location.state);
+    loginWithKeycloak()
+      .then(() => {
+        const hasToken = Boolean(getAuthToken());
+        setAuthenticated(hasToken);
+        if (hasToken) {
+          setRedirectTo(takePostAuthRedirect(location.state));
+        }
+      })
       .catch((nextError: unknown) => {
         setError(nextError instanceof Error ? nextError.message : "Sign-in failed.");
       })
@@ -71,28 +79,6 @@ export const LoginPage = () => {
         ) : null}
 
         <form className="auth-form" onSubmit={signIn}>
-          <label htmlFor="login-username">
-            Username
-            <input
-              autoComplete="username"
-              autoFocus
-              id="login-username"
-              name="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-            />
-          </label>
-          <label htmlFor="login-password">
-            Password
-            <input
-              autoComplete="current-password"
-              id="login-password"
-              name="password"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
           <button className="button button--primary auth-button" disabled={!configured || submitting} type="submit">
             <Icon source={SignInIcon} size={20} weight="bold" />
             {submitting ? "Signing in" : "Sign in"}
