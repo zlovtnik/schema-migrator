@@ -1,7 +1,9 @@
 package com.sslproxy.schema.server.auth
 
-import cats.effect.IO
+import cats.effect.{IO, Ref}
 import cats.effect.unsafe.implicits.global
+import com.auth0.jwt.JWT
+import com.auth0.jwt.algorithms.Algorithm
 import com.sslproxy.schema.config.ServerConfig
 import org.http4s.*
 import org.http4s.dsl.io.*
@@ -9,6 +11,11 @@ import org.typelevel.ci.CIString
 import munit.FunSuite
 
 import java.nio.file.Paths
+import java.security.KeyPairGenerator
+import java.security.interfaces.{RSAPrivateKey, RSAPublicKey}
+import java.time.Instant
+import java.util.{Base64, Date}
+import scala.jdk.CollectionConverters.*
 
 class JwtMiddlewareSuite extends FunSuite:
   test("middleware rejects missing tokens and accepts signed bearer token for protected routes") {
@@ -104,6 +111,102 @@ class JwtMiddlewareSuite extends FunSuite:
     assertEquals(enabled.status, Status.Ok)
   }
 
+  test("middleware accepts Keycloak RS256 tokens and extracts client roles") {
+    val fixture = rsaFixture()
+    val config = keycloakConfig()
+    val verifier = keycloakVerifier(config, fixture)
+    val routes = JwtMiddleware(config, Some(verifier))(HttpRoutes.of[IO] { case request @ GET -> Root / "role" =>
+      val claims = AuthContext.claims(request)
+      Ok(s"${claims.subject}:${claims.role}")
+    }).orNotFound
+    val token = keycloakToken(config, fixture, subject = "keycloak-user", resourceRoles = List(UserRole.Admin))
+
+    val response = routes
+      .run(
+        Request[IO](Method.GET, Uri.unsafeFromString("/role"))
+          .putHeaders(Header.Raw(CIString("Authorization"), s"Bearer $token"))
+      )
+      .unsafeRunSync()
+
+    assertEquals(response.status, Status.Ok)
+    assertEquals(response.as[String].unsafeRunSync(), "keycloak-user:admin")
+  }
+
+  test("middleware rejects Keycloak tokens with bad issuer, expiry, or signature") {
+    val fixture = rsaFixture()
+    val wrongKey = rsaFixture()
+    val config = keycloakConfig()
+    val verifier = keycloakVerifier(config, fixture)
+    val routes = JwtMiddleware(config, Some(verifier))(HttpRoutes.of[IO] { case GET -> Root / "protected" => Ok("ok") }).orNotFound
+    val badIssuer = keycloakToken(config, fixture, issuer = "https://keycloak.example.com/realms/other")
+    val expired = keycloakToken(config, fixture, expiresAt = Instant.now.minusSeconds(60))
+    val badSignature = keycloakToken(config, wrongKey.copy(kid = fixture.kid))
+
+    List(badIssuer, expired, badSignature).foreach { token =>
+      val response = routes
+        .run(
+          Request[IO](Method.GET, Uri.unsafeFromString("/protected"))
+            .putHeaders(Header.Raw(CIString("Authorization"), s"Bearer $token"))
+        )
+        .unsafeRunSync()
+      assertEquals(response.status, Status.Unauthorized)
+    }
+  }
+
+  test("Keycloak verifier uses client id as token scope when audience is not configured") {
+    val fixture = rsaFixture()
+    val config = keycloakConfig().copy(keycloakAudience = None, keycloakClientId = Some("bedrock-ui"))
+    val verifier = keycloakVerifier(config, fixture)
+
+    val accepted = verifier(keycloakToken(config, fixture)).unsafeRunSync()
+    val broadRealmToken = keycloakToken(config, fixture, tokenAudience = "account", authorizedParty = "account")
+    val rejected = verifier(broadRealmToken).unsafeRunSync()
+
+    assert(accepted.isRight)
+    assert(rejected.isLeft)
+  }
+
+  test("Keycloak verifier forces one bounded JWKS refresh for unknown kids") {
+    val fixture = rsaFixture("known-key")
+    val unknownKey = rsaFixture("unknown-key")
+    val config = keycloakConfig()
+    val fetches = Ref.of[IO, Int](0).unsafeRunSync()
+    def jwksFor(keys: RsaFixture*) = KeycloakJwks.Jwks(
+      keys.toList.map(key =>
+        KeycloakJwks.Jwk(
+          kty = "RSA",
+          kid = key.kid,
+          n = base64UrlUInt(key.publicKey.getModulus),
+          e = base64UrlUInt(key.publicKey.getPublicExponent),
+          use = Some("sig"),
+          alg = Some("RS256")
+        )
+      )
+    )
+    val verifier = KeycloakJwks
+      .createForTest(
+        issuer = config.keycloakIssuer.getOrElse(""),
+        jwksUri = Uri.unsafeFromString("https://keycloak.example.com/realms/bedrock/protocol/openid-connect/certs"),
+        clientId = config.keycloakClientId,
+        audience = config.keycloakAudience,
+        fetchJwks = fetches.getAndUpdate(_ + 1).map {
+          case 0 => jwksFor(fixture)
+          case _ => jwksFor(fixture, unknownKey)
+        }
+      )
+      .unsafeRunSync()
+
+    val accepted = verifier.verify(keycloakToken(config, fixture)).unsafeRunSync()
+    val beforeUnknownKid = fetches.get.unsafeRunSync()
+    val acceptedAfterRefresh = verifier.verify(keycloakToken(config, unknownKey)).unsafeRunSync()
+    val afterUnknownKid = fetches.get.unsafeRunSync()
+
+    assert(accepted.isRight)
+    assert(acceptedAfterRefresh.isRight)
+    assertEquals(beforeUnknownKid, 1)
+    assertEquals(afterUnknownKid, 2)
+  }
+
   private def serverConfig(apiBearerToken: Option[String] = None, devAuthEnabled: Boolean = false): ServerConfig =
     ServerConfig(
       host = "127.0.0.1",
@@ -117,3 +220,74 @@ class JwtMiddlewareSuite extends FunSuite:
       patchStageDir = Paths.get("."),
       apiBearerToken = apiBearerToken
     )
+
+  private def keycloakConfig(): ServerConfig =
+    serverConfig().copy(
+      keycloakEnabled = true,
+      keycloakIssuer = Some("https://keycloak.example.com/realms/bedrock"),
+      keycloakClientId = Some("bedrock-ui"),
+      keycloakAudience = Some("bedrock-ui")
+    )
+
+  private final case class RsaFixture(kid: String, publicKey: RSAPublicKey, privateKey: RSAPrivateKey)
+
+  private def rsaFixture(kid: String = "test-key"): RsaFixture =
+    val generator = KeyPairGenerator.getInstance("RSA")
+    generator.initialize(2048)
+    val pair = generator.generateKeyPair()
+    RsaFixture(kid, pair.getPublic.asInstanceOf[RSAPublicKey], pair.getPrivate.asInstanceOf[RSAPrivateKey])
+
+  private def keycloakVerifier(config: ServerConfig, fixture: RsaFixture): JwtMiddleware.TokenVerifier =
+    val jwks = KeycloakJwks.Jwks(
+      List(
+        KeycloakJwks.Jwk(
+          kty = "RSA",
+          kid = fixture.kid,
+          n = base64UrlUInt(fixture.publicKey.getModulus),
+          e = base64UrlUInt(fixture.publicKey.getPublicExponent),
+          use = Some("sig"),
+          alg = Some("RS256")
+        )
+      )
+    )
+    KeycloakJwks
+      .createForTest(
+        issuer = config.keycloakIssuer.getOrElse(""),
+        jwksUri = Uri.unsafeFromString("https://keycloak.example.com/realms/bedrock/protocol/openid-connect/certs"),
+        clientId = config.keycloakClientId,
+        audience = config.keycloakAudience,
+        fetchJwks = IO.pure(jwks)
+      )
+      .map(_.verify)
+      .unsafeRunSync()
+
+  private def keycloakToken(
+    config: ServerConfig,
+    fixture: RsaFixture,
+    subject: String = "keycloak-user",
+    issuer: String = "https://keycloak.example.com/realms/bedrock",
+    realmRoles: List[String] = List(UserRole.Viewer),
+    resourceRoles: List[String] = List(UserRole.Operator),
+    expiresAt: Instant = Instant.now.plusSeconds(300),
+    tokenAudience: String = "bedrock-ui",
+    authorizedParty: String = "bedrock-ui"
+  ): String =
+    val realmAccess = Map("roles" -> realmRoles.asJava).asJava
+    val resourceAccess = Map(
+      "bedrock-ui" -> Map("roles" -> resourceRoles.asJava).asJava
+    ).asJava
+    JWT
+      .create()
+      .withKeyId(fixture.kid)
+      .withIssuer(issuer)
+      .withSubject(subject)
+      .withAudience(tokenAudience)
+      .withClaim("azp", authorizedParty)
+      .withClaim("realm_access", realmAccess)
+      .withClaim("resource_access", resourceAccess)
+      .withExpiresAt(Date.from(expiresAt))
+      .sign(Algorithm.RSA256(null, fixture.privateKey))
+
+  private def base64UrlUInt(value: java.math.BigInteger): String =
+    val bytes = value.toByteArray.dropWhile(_ == 0.toByte)
+    Base64.getUrlEncoder.withoutPadding().encodeToString(bytes)

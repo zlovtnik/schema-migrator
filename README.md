@@ -166,9 +166,14 @@ If no command is given, `apply` is used as the default.
 | `ORACLE_PASS_FILE` | File path for Oracle password. |
 | `TNS_ADMIN` | Oracle wallet / TNS admin directory. |
 | `BEDROCK_DB_TEST_ALLOWED_HOSTS` | Comma-separated database hosts allowed for HTTP target connection tests and catalog reads. |
-| `BEDROCK_API_BEARER_TOKEN` | Static bearer token accepted by the HTTP API and injected by nginx for the bundled UI. |
+| `BEDROCK_API_BEARER_TOKEN` | Static bearer token accepted by the HTTP API for service access. Browser auth uses Keycloak tokens when Keycloak is enabled. |
 | `BEDROCK_DEV_AUTH_ENABLED` | Set to `true` to enable the development-only `/api/auth/token` endpoint. Defaults to `false`. |
 | `BEDROCK_DEV_AUTH_SECRET` | Development secret accepted by `/api/auth/token` when dev auth is enabled. |
+| `BEDROCK_KEYCLOAK_ENABLED` | Set to `true` to accept Keycloak RS256 bearer tokens in addition to static and internal HMAC tokens. Defaults to `false`. |
+| `BEDROCK_KEYCLOAK_ISSUER` | Keycloak realm issuer URL, for example `https://keycloak.example.com/realms/bedrock`. Required when Keycloak auth is enabled. |
+| `BEDROCK_KEYCLOAK_JWKS_URI` | Optional JWKS URL. Defaults to `${BEDROCK_KEYCLOAK_ISSUER}/protocol/openid-connect/certs`. |
+| `BEDROCK_KEYCLOAK_CLIENT_ID` | Keycloak client ID used for `resource_access[client].roles` lookup. |
+| `BEDROCK_KEYCLOAK_AUDIENCE` | Optional accepted `aud` or `azp` value for Keycloak access tokens. |
 | `BEDROCK_ENCRYPT_KEY` | Base64 AES-256-GCM key used to encrypt persisted target passwords and API responses. |
 | `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist targets, uploaded SQL files, patches, runs, and validations. |
 | `BEDROCK_MONGO_DATABASE` | MongoDB database for persisted HTTP API state. |

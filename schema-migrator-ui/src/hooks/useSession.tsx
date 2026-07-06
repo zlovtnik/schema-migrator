@@ -32,7 +32,7 @@ export const useSession = (): SessionState => {
 
   return useMemo(() => {
     const claims = decodeJwtClaims(token);
-    const role = roleFromClaims(claims) ?? roleFromFallback();
+    const role = roleFromClaims(claims) ?? "viewer";
     return {
       role,
       subject: typeof claims?.sub === "string" ? claims.sub : undefined,
@@ -100,14 +100,6 @@ const normalizeRole = (value: unknown): UserRole | undefined => {
     return normalized;
   }
   return undefined;
-};
-
-const roleFromFallback = (): UserRole => {
-  const configuredRole = import.meta.env.DEV ? normalizeRole(import.meta.env.VITE_DEV_AUTH_ROLE) : undefined;
-  if (configuredRole) {
-    return configuredRole;
-  }
-  return "viewer";
 };
 
 const decodeJwtClaims = (token: string): Record<string, unknown> | null => {

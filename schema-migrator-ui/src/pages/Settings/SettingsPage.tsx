@@ -3,10 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import {
   getApiBaseUrl,
-  getAuthToken,
   getEncryptKey,
   setApiBaseUrl,
-  setAuthToken,
   setEncryptKey,
   validateEncryptKey
 } from "../../api/client";
@@ -19,7 +17,6 @@ export const SettingsPage = () => {
   const queryClient = useQueryClient();
   const { data: targets = [], isLoading: targetsLoading, error: targetsError } = useTargets();
   const [apiBase, setApiBase] = useState(getApiBaseUrl());
-  const [token, setToken] = useState(getAuthToken());
   const [encryptKey, setEncryptKeyValue] = useState(getEncryptKey());
   const [encryptKeyError, setEncryptKeyError] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useState(() => window.localStorage.getItem(THEME_KEY) || "dark");
@@ -46,7 +43,6 @@ export const SettingsPage = () => {
     }
 
     setApiBaseUrl(apiBase);
-    setAuthToken(token);
     setEncryptKey(encryptKey);
     queryClient.clear();
     setSaved(true);
@@ -91,17 +87,6 @@ export const SettingsPage = () => {
                   value={apiBase}
                   onChange={(event) => setApiBase(event.target.value)}
                   placeholder="/api"
-                />
-              </label>
-              <label htmlFor="settings-bearer-token">
-                Bearer token
-                <input
-                  autoComplete="current-password"
-                  id="settings-bearer-token"
-                  name="bearer-token"
-                  value={token}
-                  onChange={(event) => setToken(event.target.value)}
-                  type="password"
                 />
               </label>
               <label htmlFor="settings-encrypt-key">

@@ -12,8 +12,10 @@ import { ListBulletsIcon } from "@phosphor-icons/react/dist/csr/ListBullets";
 import { PlugsConnectedIcon } from "@phosphor-icons/react/dist/csr/PlugsConnected";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
+import { SignOutIcon } from "@phosphor-icons/react/dist/csr/SignOut";
 import { UploadSimpleIcon } from "@phosphor-icons/react/dist/csr/UploadSimple";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
+import { logoutFromKeycloak } from "../auth/keycloak";
 import { AppBreadcrumbs } from "../components/AppBreadcrumbs";
 import { DocumentTitle } from "../components/DocumentTitle";
 import { activeRouteTitle } from "../components/breadcrumbs";
@@ -133,6 +135,10 @@ export const AppShell = () => {
   }, [queryClient, shortcutHelpOpen]);
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
+  const signOut = () => {
+    queryClient.clear();
+    void logoutFromKeycloak();
+  };
 
   return (
     <>
@@ -212,6 +218,15 @@ export const AppShell = () => {
                 <span>Role</span>
                 <strong>{role}</strong>
               </div>
+              <button
+                aria-label="Sign out"
+                className="button button--secondary button--small session-context__logout"
+                type="button"
+                onClick={signOut}
+              >
+                <Icon source={SignOutIcon} size={16} weight="bold" />
+                <span>Sign out</span>
+              </button>
             </div>
           </header>
           <ErrorGateBanner failedRun={failedRun} />

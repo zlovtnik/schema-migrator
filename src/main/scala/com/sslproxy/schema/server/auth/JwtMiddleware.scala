@@ -95,7 +95,12 @@ object JwtTokens:
     )
 
 object JwtMiddleware:
+  type TokenVerifier = String => IO[Either[String, Claims]]
+
   def apply(config: ServerConfig)(routes: HttpRoutes[IO]): HttpRoutes[IO] =
+    apply(config, None)(routes)
+
+  def apply(config: ServerConfig, keycloakVerifier: Option[TokenVerifier])(routes: HttpRoutes[IO]): HttpRoutes[IO] =
     HttpRoutes { request =>
       if bypassesAuth(config, request) then routes(request)
       else
@@ -103,7 +108,7 @@ object JwtMiddleware:
           case None => OptionT.liftF(IO.pure(unauthorized("missing bearer token")))
           case Some(token) =>
             OptionT.liftF {
-              verify(config, token).flatMap {
+              verify(config, keycloakVerifier, token).flatMap {
                 case Right(claims) =>
                   routes.run(request.withAttribute(AuthContext.claimsKey, claims)).getOrElseF(NotFound())
                 case Left(error) => IO.pure(unauthorized(error))
@@ -111,10 +116,18 @@ object JwtMiddleware:
             }
     }
 
-  private def verify(config: ServerConfig, token: String): IO[Either[String, Claims]] =
+  private def verify(config: ServerConfig, keycloakVerifier: Option[TokenVerifier], token: String): IO[Either[String, Claims]] =
     config.apiBearerToken.filter(expected => constantTimeEquals(expected.trim, token)) match
       case Some(_) => IO.pure(Right(Claims("static-api-token", None, UserRole.Admin)))
-      case None => JwtTokens.verify(config.jwtSecret, token)
+      case None =>
+        JwtTokens.verify(config.jwtSecret, token).flatMap {
+          case Right(claims) => IO.pure(Right(claims))
+          case Left(hmacError) if config.keycloakEnabled =>
+            keycloakVerifier match
+              case Some(verifier) => verifier(token)
+              case None => IO.pure(Left(s"Keycloak auth is enabled but no verifier is configured: $hmacError"))
+          case Left(error) => IO.pure(Left(error))
+        }
 
   private def bypassesAuth(config: ServerConfig, request: Request[IO]): Boolean =
     request.method == Method.OPTIONS || {

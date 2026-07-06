@@ -14,6 +14,3 @@ create table if not exists vec_frame_sequences (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
-alter table vec_frame_sequences
-  add column if not exists semantic_tokens text;

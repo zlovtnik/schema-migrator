@@ -1,6 +1,8 @@
 # sbt / Scala
 target/
 project/target/
+project/metals.sbt
+project/project/
 target/scala-*/
 target/streams/
 

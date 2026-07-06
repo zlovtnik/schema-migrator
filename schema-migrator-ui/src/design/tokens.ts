@@ -123,6 +123,11 @@ export const scaleTokens = {
   "--motion-slow": "280ms",
   "--ease-standard": "cubic-bezier(0.2, 0, 0, 1)",
   "--ease-emphasized": "cubic-bezier(0.16, 1, 0.3, 1)",
+  "--a11y-target-min": "24px",
+  "--a11y-target-comfort": "44px",
+  "--a11y-focus-ring-width": "2px",
+  "--a11y-focus-ring-offset": "2px",
+  "--a11y-focus-obscured-offset": "64px",
   "--sidebar-width": "280px",
   "--sidebar-collapsed-width": "76px"
 } satisfies TokenMap;

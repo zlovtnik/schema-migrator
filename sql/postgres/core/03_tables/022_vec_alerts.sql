@@ -21,7 +21,5 @@ CREATE TABLE IF NOT EXISTS vec_alerts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE vec_alerts ADD COLUMN IF NOT EXISTS explanation_text TEXT;
-
 COMMENT ON TABLE vec_alerts IS
   'Actionable alerts generated from embedding analysis (near-duplicate, behaviour anomaly, etc.).';

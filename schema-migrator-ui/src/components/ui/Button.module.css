@@ -37,8 +37,8 @@
 }
 
 .button:focus-visible {
-  outline: 2px solid var(--color-accent-primary);
-  outline-offset: 2px;
+  outline: var(--a11y-focus-ring-width) solid var(--color-accent-primary);
+  outline-offset: var(--a11y-focus-ring-offset);
 }
 
 .button:disabled,
@@ -48,18 +48,18 @@
 }
 
 .sm {
-  min-height: 32px;
+  min-height: max(32px, var(--a11y-target-min));
   padding: 0 var(--space-3);
   --button-font-size: var(--font-size-12);
 }
 
 .md {
-  min-height: 40px;
+  min-height: max(40px, var(--a11y-target-min));
   padding: 0 var(--space-4);
 }
 
 .lg {
-  min-height: 44px;
+  min-height: max(44px, var(--a11y-target-comfort));
   padding: 0 var(--space-6);
   --button-font-size: var(--font-size-14);
 }

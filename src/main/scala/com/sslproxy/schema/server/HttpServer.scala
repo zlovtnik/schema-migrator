@@ -5,7 +5,7 @@ import cats.syntax.all.*
 import com.comcast.ip4s.{Host, Port}
 import com.mongodb.client.MongoClients
 import com.sslproxy.schema.config.MigratorConfig
-import com.sslproxy.schema.server.auth.JwtMiddleware
+import com.sslproxy.schema.server.auth.{JwtMiddleware, KeycloakJwks}
 import com.sslproxy.schema.server.compress.Bzip2Middleware
 import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
 import com.sslproxy.schema.store.{
@@ -18,6 +18,7 @@ import com.sslproxy.schema.store.{
   ValidationStore
 }
 import org.http4s.ember.server.EmberServerBuilder
+import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.server.Router
 
 object HttpServer:
@@ -65,6 +66,7 @@ object HttpServer:
       validationStore <- ValidationStore.mongo(mongoConfig, config.server.validationsCollection, mongoClient)
       snapshotStore <- SnapshotStore.mongo(mongoConfig, config.server.snapshotsCollection, mongoClient)
       auditStore <- AuditStore.mongo(mongoConfig, config.server.auditCollection, mongoClient)
+      keycloakVerifier <- keycloakVerifierResource(config)
       apiRoutes = Routes.all(
         config,
         targetStore,
@@ -76,7 +78,7 @@ object HttpServer:
         auditStore
       )
       routed = Router("/api" -> apiRoutes)
-      authed = JwtMiddleware(config.server)(routed)
+      authed = JwtMiddleware(config.server, keycloakVerifier)(routed)
       encrypted = AesGcmMiddleware(encryptKey)(authed)
       compressed = Bzip2Middleware(encrypted)
       withCors = CorsMiddleware(config.server)(compressed)
@@ -89,3 +91,11 @@ object HttpServer:
         .withHttpApp(httpApp)
         .build
     yield server
+
+  private def keycloakVerifierResource(config: MigratorConfig): Resource[IO, Option[JwtMiddleware.TokenVerifier]] =
+    if !config.server.keycloakEnabled then Resource.pure[IO, Option[JwtMiddleware.TokenVerifier]](None)
+    else
+      for
+        client <- EmberClientBuilder.default[IO].build
+        verifier <- Resource.eval(KeycloakJwks.create(config.server, client))
+      yield Some(verifier.verify)

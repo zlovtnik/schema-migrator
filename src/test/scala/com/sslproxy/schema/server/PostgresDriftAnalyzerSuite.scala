@@ -177,7 +177,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
       schemaObject(
         kind = "view",
         objectName = "v_wireless_session_timeline override",
-        sourceFile = "views/010_v_wireless_session_timeline.sql",
+        sourceFile = "views/999_v_wireless_session_timeline_override.sql",
         rawSql =
           """-- object: v_wireless_session_timeline override
             |create or replace view v_wireless_session_timeline as
@@ -291,7 +291,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
       now,
       List(
         expected(key, sourceFile = "views/004_v_wireless_session_timeline.sql", expectedDdl = Some(oldSql)),
-        expected(key, sourceFile = "views/010_v_wireless_session_timeline.sql", expectedDdl = Some(newSql))
+        expected(key, sourceFile = "views/999_v_wireless_session_timeline_override.sql", expectedDdl = Some(newSql))
       ),
       List(LiveObject(key, Some(newSql))),
       ControlSnapshot(Nil, None, Nil)
