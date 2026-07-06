@@ -20,13 +20,13 @@ import com.sslproxy.schema.validation.RollbackValidator
 import java.nio.file.{Files, Path}
 import java.sql.{Connection, SQLException}
 
-final class OracleProvider(config: JdbcConnectionConfig) extends DbProvider:
+final class OracleProvider(config: JdbcConnectionConfig) extends DbProvider[IO]:
   override val dialect: SqlDialect = SqlDialect.Oracle
 
-  override def session: Resource[IO, DbSession] =
+  override def session: Resource[IO, DbSession[IO]] =
     JdbcSupport.connection(config).map(OracleSession(_))
 
-final class OracleSession(connection: Connection) extends DbSession:
+final class OracleSession(connection: Connection) extends DbSession[IO]:
   import JdbcSupport.*
 
   private val lockManager = LockManager.oracle(connection)

@@ -1,24 +1,24 @@
 package com.sslproxy.schema.db
 
-import cats.effect.{IO, Resource}
+import cats.effect.Resource
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.engine.*
 
 import java.nio.file.Path
 
-trait DbProvider:
+trait DbProvider[F[_]]:
   def dialect: SqlDialect
-  def session: Resource[IO, DbSession]
+  def session: Resource[F, DbSession[F]]
 
-trait DbSession:
-  def checkConnection: IO[Unit]
-  def bootstrap: IO[Unit]
-  def acquireLock: IO[Unit]
-  def releaseLock: IO[Unit]
-  def prepare(objects: List[SchemaObject]): IO[List[PreparedObject]]
-  def recordSkipped(prepared: PreparedObject): IO[Unit]
-  def executeObject(prepared: PreparedObject): IO[Unit]
-  def rollbackObject(sqlDir: Path, objectName: String): IO[Unit]
-  def fetchStatus: IO[List[ObjectStatus]]
-  def fetchReady: IO[SchemaReadyStatus]
-  def checkReady: IO[Boolean]
+trait DbSession[F[_]]:
+  def checkConnection: F[Unit]
+  def bootstrap: F[Unit]
+  def acquireLock: F[Unit]
+  def releaseLock: F[Unit]
+  def prepare(objects: List[SchemaObject]): F[List[PreparedObject]]
+  def recordSkipped(prepared: PreparedObject): F[Unit]
+  def executeObject(prepared: PreparedObject): F[Unit]
+  def rollbackObject(sqlDir: Path, objectName: String): F[Unit]
+  def fetchStatus: F[List[ObjectStatus]]
+  def fetchReady: F[SchemaReadyStatus]
+  def checkReady: F[Boolean]

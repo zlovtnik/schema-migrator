@@ -13,13 +13,14 @@ Experience a powerful, deterministic, retry-safe schema migration engine built w
 3. [Key Capabilities](#key-capabilities)
 4. [Benefits](#benefits)
 5. [Quick Start](#quick-start)
-6. [Commands](#commands)
-7. [Configuration](#configuration)
-8. [SQL Layout and Manifests](#sql-layout-and-manifests)
-9. [Deterministic Ordering](#deterministic-ordering)
-10. [Validation Without a Database](#validation-without-a-database)
-11. [Oracle Setup](#oracle-setup)
-12. [Building and Testing](#building-and-testing)
+6. [Cats Effect Boundaries](#cats-effect-boundaries)
+7. [Commands](#commands)
+8. [Configuration](#configuration)
+9. [SQL Layout and Manifests](#sql-layout-and-manifests)
+10. [Deterministic Ordering](#deterministic-ordering)
+11. [Validation Without a Database](#validation-without-a-database)
+12. [Oracle Setup](#oracle-setup)
+13. [Building and Testing](#building-and-testing)
 
 ---
 
@@ -114,6 +115,17 @@ Customer overlays are opt-in:
 ```bash
 sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture list"
 ```
+
+---
+
+## Cats Effect Boundaries
+
+The migrator uses `cats.effect.IO` as its production runtime. Custom effects in this codebase are domain algebras and wrappers around existing side-effecting APIs, not a new monad.
+
+- `com.sslproxy.schema.effect.Jdbc[F]` is the blocking JDBC boundary.
+- `EffectPrimitives` documents the three supported lift points: fast synchronous effects, blocking effects, and callback-style async effects.
+- `MigrationContext[F]` exposes migration metadata as a domain effect and can be backed by `cats-mtl` `Ask[F, MigrationRunContext]` for context-aware programs.
+- `MigrationEngine[F]`, `DbProvider[F]`, `DbSession[F]`, and `ApplyCallbacks[F]` are tagless-final boundaries; CLI and server code instantiate them with `IO`.
 
 ---
 

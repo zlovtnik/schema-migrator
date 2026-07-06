@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.engine.{ApplyCallbacks, MigrationEngine, PreparedObject}
+import com.sslproxy.schema.effect.MigrationRunContext
 import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.server.auth.UserRole
 import com.sslproxy.schema.store.{
@@ -73,8 +74,16 @@ private final class RealRunExecutor(
           TargetDatabase.providerFor(config, target).flatMap { case (_, provider) =>
             Ref.of[IO, Option[(String, Throwable)]](None).flatMap { failedScript =>
               val callbacks = callbacksFor(run, patchFiles, failedScript)
+              val context = MigrationRunContext
+                .fromConfig(config.copy(dbKind = dbKind, databaseUrl = Some(target.target.jdbc_url)))
+                .copy(runId = Some(run.id), targetId = Some(run.target_id))
               MigrationEngine(provider, com.sslproxy.schema.discovery.DiscoveryService[IO]())
-                .applyFiles(config.copy(dbKind = dbKind, databaseUrl = Some(target.target.jdbc_url)), patchFiles.map(_.sqlFile), callbacks)
+                .applyFiles(
+                  config.copy(dbKind = dbKind, databaseUrl = Some(target.target.jdbc_url)),
+                  patchFiles.map(_.sqlFile),
+                  callbacks,
+                  context
+                )
                 .attempt
                 .flatMap {
                   case Right(report) if report.failedFiles > 0 =>
@@ -96,11 +105,17 @@ private final class RealRunExecutor(
     run: Run,
     patchFiles: List[PatchSqlFile],
     failedScript: Ref[IO, Option[(String, Throwable)]]
-  ): ApplyCallbacks =
+  ): ApplyCallbacks[IO] =
     val scriptsBySource = patchFiles.map(file => file.sqlFile.relativePath -> file.script).toMap
     val total = run.scripts.length
 
-    ApplyCallbacks.silent.copy(
+    ApplyCallbacks.silent[IO].copy(
+      runStarted = context =>
+        runStore.log(
+          run.id,
+          "info",
+          s"starting ${context.dbKind} migration for target ${context.targetId.getOrElse(run.target_id)}"
+        ),
       warnings = warnings => warnings.traverse_(warning => runStore.log(run.id, "warn", warning)),
       scriptStarted = (prepared, _, _) =>
         scriptFor(prepared, scriptsBySource).traverse_(script =>

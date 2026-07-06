@@ -47,6 +47,7 @@ val circeVersion = "0.14.14"
 val doobieVersion = "1.0.0-RC10"
 val http4sVersion = "0.23.34"
 val mongoDriverVersion = "5.8.0"
+val catsMtlVersion = "1.7.0"
 val oracleJdbcVersion = "23.6.0.24.10"
 val oracleOsdtVersion = "21.18.0.0"
 
@@ -55,6 +56,7 @@ lazy val root = (project in file("."))
     name := "schema-migrator",
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-effect" % catsEffectVersion,
+      "org.typelevel" %% "cats-mtl" % catsMtlVersion,
       "co.fs2" %% "fs2-core" % fs2Version,
       "co.fs2" %% "fs2-io" % fs2Version,
       "org.tpolecat" %% "doobie-core" % doobieVersion,

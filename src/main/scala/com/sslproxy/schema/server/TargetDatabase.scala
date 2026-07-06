@@ -17,7 +17,7 @@ private[server] object TargetDatabase:
       Right(DbKind.Postgres)
     else Left("unsupported database URL for migration execution")
 
-  def providerFor(config: MigratorConfig, target: StoredTarget): IO[(DbKind, DbProvider)] =
+  def providerFor(config: MigratorConfig, target: StoredTarget): IO[(DbKind, DbProvider[IO])] =
     IO.fromEither(dbKindFor(target.target.jdbc_url).leftMap(MigratorError.Validation(_))).flatMap {
       case DbKind.Postgres =>
         IO.fromEither {
