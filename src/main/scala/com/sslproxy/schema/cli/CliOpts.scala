@@ -101,6 +101,36 @@ object CliOpts:
       .orNone
       .map(_.isDefined || envBoolean("BEDROCK_DEV_AUTH_ENABLED", false))
 
+  private val keycloakEnabledOpt: Opts[Boolean] =
+    Opts
+      .flag("keycloak-enabled", help = "Enable Keycloak RS256 bearer token verification")
+      .orNone
+      .map(_.isDefined || envBoolean("BEDROCK_KEYCLOAK_ENABLED", false))
+
+  private val keycloakIssuerOpt: Opts[Option[String]] =
+    Opts
+      .option[String]("keycloak-issuer", help = "Keycloak realm issuer URL")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_KEYCLOAK_ISSUER")).flatMap(nonBlank))
+
+  private val keycloakJwksUriOpt: Opts[Option[String]] =
+    Opts
+      .option[String]("keycloak-jwks-uri", help = "Keycloak JWKS certificate URL")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_KEYCLOAK_JWKS_URI")).flatMap(nonBlank))
+
+  private val keycloakClientIdOpt: Opts[Option[String]] =
+    Opts
+      .option[String]("keycloak-client-id", help = "Keycloak client ID used for resource_access role lookup")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_KEYCLOAK_CLIENT_ID")).flatMap(nonBlank))
+
+  private val keycloakAudienceOpt: Opts[Option[String]] =
+    Opts
+      .option[String]("keycloak-audience", help = "Optional accepted Keycloak audience or azp value")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_KEYCLOAK_AUDIENCE")).flatMap(nonBlank))
+
   private val apiBearerTokenOpt: Opts[Option[String]] =
     Opts
       .option[String]("api-bearer-token", help = "Static bearer token accepted by protected HTTP API routes")
@@ -213,6 +243,11 @@ object CliOpts:
       jwtSecretOpt,
       devAuthSecretOpt,
       devAuthEnabledOpt,
+      keycloakEnabledOpt,
+      keycloakIssuerOpt,
+      keycloakJwksUriOpt,
+      keycloakClientIdOpt,
+      keycloakAudienceOpt,
       apiBearerTokenOpt,
       dbTestAllowedHostsOpt,
       patchStageDirOpt,
@@ -229,6 +264,11 @@ object CliOpts:
         jwtSecret,
         devAuthSecret,
         devAuthEnabled,
+        keycloakEnabled,
+        keycloakIssuer,
+        keycloakJwksUri,
+        keycloakClientId,
+        keycloakAudience,
         apiBearerToken,
         dbTestAllowedHosts,
         patchStageDir,
@@ -246,6 +286,11 @@ object CliOpts:
           jwtSecret = jwtSecret,
           devAuthSecret = devAuthSecret,
           devAuthEnabled = devAuthEnabled,
+          keycloakEnabled = keycloakEnabled,
+          keycloakIssuer = keycloakIssuer,
+          keycloakJwksUri = keycloakJwksUri,
+          keycloakClientId = keycloakClientId,
+          keycloakAudience = keycloakAudience,
           apiBearerToken = apiBearerToken,
           dbTestAllowedHosts = dbTestAllowedHosts,
           patchStageDir = patchStageDir,

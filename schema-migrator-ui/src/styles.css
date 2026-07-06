@@ -413,6 +413,63 @@ code {
   white-space: nowrap;
 }
 
+.session-context__logout {
+  white-space: nowrap;
+}
+
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: var(--space-6);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-node) 92%, #163b34) 0%, var(--bg-database) 54%),
+    var(--bg-database);
+}
+
+.auth-panel {
+  display: grid;
+  gap: var(--space-5);
+  width: min(440px, 100%);
+  padding: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(18px);
+}
+
+.auth-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.auth-brand__mark {
+  width: 48px;
+  height: 48px;
+  flex-basis: 48px;
+}
+
+.auth-copy {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.auth-copy p {
+  color: var(--muted);
+}
+
+.auth-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.auth-button {
+  width: 100%;
+}
+
 .main-scroll {
   min-height: 0;
   flex: 1;
@@ -3066,6 +3123,16 @@ kbd {
     max-width: 160px;
   }
 
+  .session-context__logout {
+    width: 34px;
+    min-height: 34px;
+    padding: 0;
+  }
+
+  .session-context__logout span {
+    display: none;
+  }
+
   .main-scroll {
     min-height: 0;
   }
@@ -3076,6 +3143,16 @@ kbd {
 
   .page {
     padding: 12px 16px 16px;
+  }
+
+  .auth-shell {
+    align-items: stretch;
+    padding: var(--space-3);
+  }
+
+  .auth-panel {
+    align-self: center;
+    padding: var(--space-5);
   }
 
   .page-header,

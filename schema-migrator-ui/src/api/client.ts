@@ -12,14 +12,8 @@ export class ApiError extends Error {
 
 const API_BASE_KEY = "schemaMigrator.apiBaseUrl";
 const ENCRYPT_KEY = "schemaMigrator.encryptKey";
-const DEV_AUTH_ENABLED = import.meta.env.DEV;
-const DEV_AUTH_SECRET = DEV_AUTH_ENABLED ? import.meta.env.VITE_DEV_AUTH_SECRET?.trim() || "" : "";
-const DEV_AUTH_SUBJECT = DEV_AUTH_ENABLED ? import.meta.env.VITE_DEV_AUTH_SUBJECT?.trim() || "docker-dev" : "docker-dev";
-const DEV_AUTH_ROLE = DEV_AUTH_ENABLED ? import.meta.env.VITE_DEV_AUTH_ROLE?.trim() || "" : "";
-const DEV_AUTH_ATTEMPTS = 45;
-const DEV_AUTH_RETRY_MS = 1000;
 let authToken = "";
-let devAuthTokenRequest: Promise<string> | undefined;
+let authTokenProvider: (() => Promise<string>) | undefined;
 export const AUTH_TOKEN_CHANGED_EVENT = "schema-migrator-auth-token-changed";
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "") || "/";
@@ -68,15 +62,16 @@ export const setAuthToken = (value: string): void => {
   window.dispatchEvent(new Event(AUTH_TOKEN_CHANGED_EVENT));
 };
 
+export const setAuthTokenProvider = (provider: (() => Promise<string>) | undefined): void => {
+  authTokenProvider = provider;
+};
+
 export const buildApiUrl = (path: string): string => {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${getApiBaseUrl()}${normalizedPath}`;
 };
 
 type JsonBody = object;
-type AuthTokenResponse = {
-  token: string;
-};
 
 export interface ApiRequestOptions extends Omit<RequestInit, "body"> {
   body?: BodyInit | JsonBody;
@@ -147,73 +142,16 @@ const readResponseText = async (response: Response): Promise<string> => {
   return text;
 };
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, ms));
-
-const fetchDevAuthToken = async (): Promise<string> => {
-  const response = await fetch(buildApiUrl("/auth/token"), {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      secret: DEV_AUTH_SECRET,
-      subject: DEV_AUTH_SUBJECT,
-      ...(DEV_AUTH_ROLE ? { role: DEV_AUTH_ROLE } : {})
-    })
-  });
-
-  if (!response.ok) {
-    const detail = await readErrorBody(response);
-    const message =
-      typeof detail === "object" && detail !== null && "error" in detail
-        ? String((detail as { error: unknown }).error)
-        : `Dev auth failed with ${response.status}`;
-    throw new ApiError(message, response.status, detail);
-  }
-
-  const text = await readResponseText(response);
-  const body = (text === "" ? {} : JSON.parse(text)) as AuthTokenResponse;
-  if (!body.token) {
-    throw new Error("Dev auth response did not include a token");
-  }
-
-  setAuthToken(body.token);
-  return body.token;
-};
-
 export const ensureAuthToken = async (): Promise<string> => {
   if (authToken) {
     return authToken;
   }
 
-  if (!DEV_AUTH_SECRET) {
+  if (!authTokenProvider) {
     return "";
   }
 
-  if (!devAuthTokenRequest) {
-    devAuthTokenRequest = (async () => {
-      let lastError: unknown;
-      for (let attempt = 1; attempt <= DEV_AUTH_ATTEMPTS; attempt += 1) {
-        try {
-          return await fetchDevAuthToken();
-        } catch (error) {
-          lastError = error;
-          if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
-            throw error;
-          }
-          if (attempt < DEV_AUTH_ATTEMPTS) {
-            await sleep(DEV_AUTH_RETRY_MS);
-          }
-        }
-      }
-      throw lastError instanceof Error ? lastError : new Error("Dev auth failed");
-    })().finally(() => {
-      devAuthTokenRequest = undefined;
-    });
-  }
-
-  return devAuthTokenRequest;
+  return authTokenProvider();
 };
 
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T> => {

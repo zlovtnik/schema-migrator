@@ -88,6 +88,11 @@ final case class ServerConfig(
   jwtSecret: String,
   devAuthSecret: String,
   devAuthEnabled: Boolean = false,
+  keycloakEnabled: Boolean = false,
+  keycloakIssuer: Option[String] = None,
+  keycloakJwksUri: Option[String] = None,
+  keycloakClientId: Option[String] = None,
+  keycloakAudience: Option[String] = None,
   dbTestAllowedHosts: Set[String],
   patchStageDir: Path,
   apiBearerToken: Option[String] = None,
@@ -107,6 +112,8 @@ final case class ServerConfig(
     else if jwtSecret.trim.isEmpty then Left("BEDROCK_JWT_SECRET must not be empty")
     else if devAuthEnabled && devAuthSecret.trim.isEmpty then
       Left("BEDROCK_DEV_AUTH_SECRET must not be empty when dev auth is enabled")
+    else if keycloakEnabled && keycloakIssuer.forall(_.trim.isEmpty) then
+      Left("BEDROCK_KEYCLOAK_ISSUER must not be empty when Keycloak auth is enabled")
     else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
     else if sqlFilesCollection.trim.isEmpty then Left("BEDROCK_SQL_FILES_COLLECTION must not be empty")
     else if patchesCollection.trim.isEmpty then Left("BEDROCK_PATCHES_COLLECTION must not be empty")

@@ -59,6 +59,17 @@ class ServerConfigSuite extends FunSuite:
     finally Files.deleteIfExists(stageDir)
   }
 
+  test("server validation requires Keycloak issuer when Keycloak auth is enabled") {
+    val stageDir = Files.createTempDirectory("schema-migrator-config")
+    try
+      val disabled = validConfig(stageDir).copy(keycloakEnabled = false, keycloakIssuer = None)
+      val enabled = validConfig(stageDir).copy(keycloakEnabled = true, keycloakIssuer = None)
+
+      assertEquals(disabled.validate, Right(()))
+      assertEquals(enabled.validate, Left("BEDROCK_KEYCLOAK_ISSUER must not be empty when Keycloak auth is enabled"))
+    finally Files.deleteIfExists(stageDir)
+  }
+
   private def validConfig(stageDir: java.nio.file.Path): ServerConfig =
     ServerConfig(
       host = "127.0.0.1",
