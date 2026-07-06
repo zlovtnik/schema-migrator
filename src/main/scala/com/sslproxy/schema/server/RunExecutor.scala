@@ -136,7 +136,7 @@ private final class RealRunExecutor(
           failedScript.set(Some(script.id -> error)) *>
             runStore.scriptFailed(run.id, script.id, script.filename, scriptError, elapsed)
         },
-      shouldContinue = runStore.currentStatus(run.id).map(_.forall(status => !RunStatePublic.isTerminal(status)))
+      shouldContinue = runStore.currentStatus(run.id).map(_.forall(status => !RunStore.isTerminalStatus(status)))
     )
 
   private def scriptFor(prepared: PreparedObject, scriptsBySource: Map[String, Script]): Option[Script] =
@@ -234,7 +234,7 @@ private final class SimulatedRunExecutor(
         val total = run.scripts.length
         val program = run.scripts.traverse_ { script =>
           runStore.currentStatus(run.id).flatMap {
-            case Some(status) if RunStatePublic.isTerminal(status) => IO.unit
+            case Some(status) if RunStore.isTerminalStatus(status) => IO.unit
             case _ =>
               for
                 started <- runStore.scriptStarted(run.id, script.script_id, script.filename, script.order, total)
@@ -278,9 +278,3 @@ private final class SimulatedRunExecutor(
         )
         .void
     }
-
-private object RunStatePublic:
-  private val terminalStatuses = Set("completed", "failed", "aborted")
-
-  def isTerminal(status: String): Boolean =
-    terminalStatuses.contains(status)

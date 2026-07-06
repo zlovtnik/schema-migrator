@@ -7,6 +7,7 @@ import com.auth0.jwt.algorithms.Algorithm
 import com.auth0.jwt.exceptions.JWTVerificationException
 import com.auth0.jwt.interfaces.DecodedJWT
 import com.sslproxy.schema.config.ServerConfig
+import com.sslproxy.schema.effect.{Retry, RetryPolicy}
 import io.circe.{Decoder, Json}
 import io.circe.parser.parse
 import org.http4s.Uri
@@ -103,6 +104,8 @@ final class KeycloakJwks private (
 object KeycloakJwks:
   private val CacheTtl = 10.minutes
   private val UnknownKidRefreshInterval = 30.seconds
+  private val JwksFetchTimeout = 3.seconds
+  private val JwksRetryPolicy = RetryPolicy(maxAttempts = 3, baseDelay = 100.millis)
 
   final case class Jwks(keys: List[Jwk])
   final case class Jwk(kty: String, kid: String, n: String, e: String, use: Option[String], alg: Option[String])
@@ -125,7 +128,7 @@ object KeycloakJwks:
       jwksUri = jwksUri,
       clientId = config.keycloakClientId,
       audience = config.keycloakAudience,
-      fetchJwks = client.expect[Jwks](jwksUri),
+      fetchJwks = resilientFetch(client.expect[Jwks](jwksUri)),
       cache = cache
     )
 
@@ -142,10 +145,19 @@ object KeycloakJwks:
         jwksUri = jwksUri,
         clientId = clientId,
         audience = audience,
-        fetchJwks = fetchJwks,
+        fetchJwks = resilientFetch(fetchJwks),
         cache = cache
       )
     }
+
+  private def resilientFetch(fetchJwks: IO[Jwks]): IO[Jwks] =
+    Retry.withBackoff[IO, Jwks](
+      JwksRetryPolicy,
+      {
+        case NonFatal(_) => true
+        case _ => false
+      }
+    )(fetchJwks.timeout(JwksFetchTimeout))
 
   private def configuredIssuer(config: ServerConfig): Either[Throwable, String] =
     config.keycloakIssuer
