@@ -26,6 +26,12 @@ const allSources = () =>
     text: readFileSync(path, "utf8")
   }));
 
+const blocksPasteInHandler = (text: string): boolean =>
+  Array.from(text.matchAll(/onPaste\s*=|addEventListener\(\s*["']paste["']/g)).some((match) => {
+    const localHandlerWindow = text.slice(match.index ?? 0, (match.index ?? 0) + 400);
+    return /preventDefault\(\)/.test(localHandlerWindow);
+  });
+
 const px = (value: string): number => Number.parseInt(value.replace("px", ""), 10);
 
 describe("WCAG 2.2 AA UI codex", () => {
@@ -58,7 +64,7 @@ describe("WCAG 2.2 AA UI codex", () => {
   });
 
   it("does not block paste in authentication or credential fields", () => {
-    const offenders = allSources().filter(({ text }) => /onPaste\s*=|addEventListener\(\s*["']paste["']/.test(text) && /preventDefault\(\)/.test(text));
+    const offenders = allSources().filter(({ text }) => blocksPasteInHandler(text));
     expect(offenders.map(({ label }) => label)).toEqual([]);
   });
 

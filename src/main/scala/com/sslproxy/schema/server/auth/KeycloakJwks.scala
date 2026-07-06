@@ -59,7 +59,7 @@ final class KeycloakJwks private (
     }.recover { case error: JWTVerificationException => Left(error.getMessage) }
 
   private def validateAudience(decoded: DecodedJWT): Either[String, Unit] =
-    audience match
+    audience.orElse(clientId) match
       case None => Right(())
       case Some(expected) =>
         val audiences = Option(decoded.getAudience).map(_.asScala.toSet).getOrElse(Set.empty)
@@ -72,28 +72,45 @@ final class KeycloakJwks private (
       now <- Clock[IO].realTimeInstant
       current <- cache.get
       cacheFresh = current.expiresAt.isAfter(now)
+      unknownKidRefreshAllowed = current.lastUnknownKidRefresh.forall(_.plusSeconds(UnknownKidRefreshInterval.toSeconds).isBefore(now))
       result <- current.keys.get(kid) match
         case Some(publicKey) if cacheFresh => IO.pure(Right(publicKey))
+        case None if cacheFresh && unknownKidRefreshAllowed =>
+          refreshKeys(now, lastUnknownKidRefresh = Some(now))
+            .map(_.flatMap(_.get(kid).toRight(s"Keycloak JWKS did not contain key '$kid'")))
         case None if cacheFresh => IO.pure(Left(s"Keycloak JWKS did not contain key '$kid'"))
         case _ => refreshKeys(now).map(_.flatMap(_.get(kid).toRight(s"Keycloak JWKS did not contain key '$kid'")))
     yield result
 
-  private def refreshKeys(now: Instant): IO[Either[String, Map[String, RSAPublicKey]]] =
-    fetchJwks
-      .flatMap(jwks => IO.fromEither(keysFromJwks(jwks).leftMap(new IllegalArgumentException(_))))
-      .flatTap(keys => cache.set(KeyCache(keys, now.plusSeconds(CacheTtl.toSeconds))))
-      .attempt
-      .map {
-        case Right(keys) => Right(keys)
-        case Left(error) => Left(s"failed to refresh Keycloak JWKS from $jwksUri: ${error.getMessage}")
-      }
+  private def refreshKeys(
+    now: Instant,
+    lastUnknownKidRefresh: Option[Instant] = None
+  ): IO[Either[String, Map[String, RSAPublicKey]]] =
+    lastUnknownKidRefresh.traverse_(refreshedAt => cache.update(_.copy(lastUnknownKidRefresh = Some(refreshedAt)))) *>
+      fetchJwks
+        .flatMap(jwks => IO.fromEither(keysFromJwks(jwks).leftMap(new IllegalArgumentException(_))))
+        .flatTap(keys =>
+          cache.update(current =>
+            KeyCache(keys, now.plusSeconds(CacheTtl.toSeconds), lastUnknownKidRefresh.orElse(current.lastUnknownKidRefresh))
+          )
+        )
+        .attempt
+        .map {
+          case Right(keys) => Right(keys)
+          case Left(error) => Left(s"failed to refresh Keycloak JWKS from $jwksUri: ${error.getMessage}")
+        }
 
 object KeycloakJwks:
   private val CacheTtl = 10.minutes
+  private val UnknownKidRefreshInterval = 30.seconds
 
   final case class Jwks(keys: List[Jwk])
   final case class Jwk(kty: String, kid: String, n: String, e: String, use: Option[String], alg: Option[String])
-  private final case class KeyCache(keys: Map[String, RSAPublicKey], expiresAt: Instant)
+  private final case class KeyCache(
+    keys: Map[String, RSAPublicKey],
+    expiresAt: Instant,
+    lastUnknownKidRefresh: Option[Instant]
+  )
 
   given Decoder[Jwk] = Decoder.forProduct6("kty", "kid", "n", "e", "use", "alg")(Jwk.apply)
   given Decoder[Jwks] = Decoder.forProduct1("keys")(Jwks.apply)
@@ -102,7 +119,7 @@ object KeycloakJwks:
     for
       issuer <- IO.fromEither(configuredIssuer(config))
       jwksUri <- IO.fromEither(configuredJwksUri(config, issuer))
-      cache <- Ref.of[IO, KeyCache](KeyCache(Map.empty, Instant.EPOCH))
+      cache <- Ref.of[IO, KeyCache](KeyCache(Map.empty, Instant.EPOCH, None))
     yield KeycloakJwks(
       issuer = issuer,
       jwksUri = jwksUri,
@@ -119,7 +136,7 @@ object KeycloakJwks:
     audience: Option[String],
     fetchJwks: IO[Jwks]
   ): IO[KeycloakJwks] =
-    Ref.of[IO, KeyCache](KeyCache(Map.empty, Instant.EPOCH)).map { cache =>
+    Ref.of[IO, KeyCache](KeyCache(Map.empty, Instant.EPOCH, None)).map { cache =>
       KeycloakJwks(
         issuer = normalizeIssuer(issuer),
         jwksUri = jwksUri,

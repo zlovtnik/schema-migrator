@@ -177,23 +177,29 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
       .toList
       .sorted
 
-  private def duplicateDefinition(file: SqlFile): Option[DuplicateDefinition] =
+  private def duplicateDefinition(file: SqlFile): List[DuplicateDefinition] =
     try
       val sql = file.readString
-      ddlObjectName(file.folder, sql).map { objectName =>
+      ddlObjectNames(file.folder, sql).map { objectName =>
         DuplicateDefinition(file.folder, objectName, stripLeadingHeaderComments(sql).trim, file.relativePath)
       }
-    catch case _: Exception => None
+    catch case _: Exception => Nil
 
-  private def ddlObjectName(folder: String, sql: String): Option[String] =
+  private def ddlObjectNames(folder: String, sql: String): List[String] =
     folder match
       case "views" =>
-        viewDefinitionPattern.findFirstMatchIn(sql).map(matchResult => normalizeQualifiedIdentifier(matchResult.group(1)))
+        viewDefinitionPattern
+          .findAllMatchIn(sql)
+          .map(matchResult => normalizeQualifiedIdentifier(matchResult.group(1)))
+          .toList
       case "functions" =>
-        routineDefinitionPattern.findFirstMatchIn(sql).map { matchResult =>
-          s"${matchResult.group(1).toLowerCase} ${normalizeQualifiedIdentifier(matchResult.group(2))}"
-        }
-      case _ => None
+        routineDefinitionPattern
+          .findAllMatchIn(sql)
+          .map { matchResult =>
+            s"${matchResult.group(1).toLowerCase} ${normalizeQualifiedIdentifier(matchResult.group(2))}"
+          }
+          .toList
+      case _ => Nil
 
   private def stripLeadingHeaderComments(sql: String): String =
     sql.linesIterator
@@ -204,10 +210,30 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
       .mkString("\n")
 
   private def normalizeQualifiedIdentifier(value: String): String =
-    normalizeIdentifier(value.split('.').lastOption.getOrElse(value))
+    splitQualifiedIdentifier(value).map(normalizeIdentifier).mkString(".")
 
   private def normalizeIdentifier(value: String): String =
     value.trim.stripPrefix("\"").stripSuffix("\"").toLowerCase
+
+  private def splitQualifiedIdentifier(value: String): List[String] =
+    val parts = scala.collection.mutable.ListBuffer.empty[String]
+    var start = 0
+    var index = 0
+    var inDouble = false
+    while index < value.length do
+      value.charAt(index) match
+        case '"' =>
+          inDouble = !inDouble
+          index += 1
+        case '.' if !inDouble =>
+          parts.append(value.substring(start, index).trim)
+          start = index + 1
+          index += 1
+        case _ =>
+          index += 1
+    val tail = value.substring(start).trim
+    if tail.nonEmpty then parts.append(tail)
+    parts.toList
 
   private def hasCreateOrReplaceRoutine(sql: String): Boolean =
     createOrReplaceRoutine.findFirstIn(sql).nonEmpty

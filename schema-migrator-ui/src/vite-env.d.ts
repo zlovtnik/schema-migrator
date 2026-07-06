@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_KEYCLOAK_REALM?: string;
   readonly VITE_KEYCLOAK_CLIENT_ID?: string;
   readonly VITE_KEYCLOAK_REDIRECT_URI?: string;
+  readonly VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS?: string;
 }
 
 interface ImportMeta {

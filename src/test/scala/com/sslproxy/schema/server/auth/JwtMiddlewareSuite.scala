@@ -153,18 +153,31 @@ class JwtMiddlewareSuite extends FunSuite:
     }
   }
 
-  test("Keycloak verifier does not refresh a fresh JWKS cache for unknown kids") {
+  test("Keycloak verifier uses client id as token scope when audience is not configured") {
+    val fixture = rsaFixture()
+    val config = keycloakConfig().copy(keycloakAudience = None, keycloakClientId = Some("bedrock-ui"))
+    val verifier = keycloakVerifier(config, fixture)
+
+    val accepted = verifier(keycloakToken(config, fixture)).unsafeRunSync()
+    val broadRealmToken = keycloakToken(config, fixture, tokenAudience = "account", authorizedParty = "account")
+    val rejected = verifier(broadRealmToken).unsafeRunSync()
+
+    assert(accepted.isRight)
+    assert(rejected.isLeft)
+  }
+
+  test("Keycloak verifier forces one bounded JWKS refresh for unknown kids") {
     val fixture = rsaFixture("known-key")
     val unknownKey = rsaFixture("unknown-key")
     val config = keycloakConfig()
     val fetches = Ref.of[IO, Int](0).unsafeRunSync()
-    val jwks = KeycloakJwks.Jwks(
-      List(
+    def jwksFor(keys: RsaFixture*) = KeycloakJwks.Jwks(
+      keys.toList.map(key =>
         KeycloakJwks.Jwk(
           kty = "RSA",
-          kid = fixture.kid,
-          n = base64UrlUInt(fixture.publicKey.getModulus),
-          e = base64UrlUInt(fixture.publicKey.getPublicExponent),
+          kid = key.kid,
+          n = base64UrlUInt(key.publicKey.getModulus),
+          e = base64UrlUInt(key.publicKey.getPublicExponent),
           use = Some("sig"),
           alg = Some("RS256")
         )
@@ -176,19 +189,22 @@ class JwtMiddlewareSuite extends FunSuite:
         jwksUri = Uri.unsafeFromString("https://keycloak.example.com/realms/bedrock/protocol/openid-connect/certs"),
         clientId = config.keycloakClientId,
         audience = config.keycloakAudience,
-        fetchJwks = fetches.update(_ + 1).as(jwks)
+        fetchJwks = fetches.getAndUpdate(_ + 1).map {
+          case 0 => jwksFor(fixture)
+          case _ => jwksFor(fixture, unknownKey)
+        }
       )
       .unsafeRunSync()
 
     val accepted = verifier.verify(keycloakToken(config, fixture)).unsafeRunSync()
     val beforeUnknownKid = fetches.get.unsafeRunSync()
-    val rejected = verifier.verify(keycloakToken(config, unknownKey)).unsafeRunSync()
+    val acceptedAfterRefresh = verifier.verify(keycloakToken(config, unknownKey)).unsafeRunSync()
     val afterUnknownKid = fetches.get.unsafeRunSync()
 
     assert(accepted.isRight)
-    assert(rejected.isLeft)
+    assert(acceptedAfterRefresh.isRight)
     assertEquals(beforeUnknownKid, 1)
-    assertEquals(afterUnknownKid, 1)
+    assertEquals(afterUnknownKid, 2)
   }
 
   private def serverConfig(apiBearerToken: Option[String] = None, devAuthEnabled: Boolean = false): ServerConfig =
@@ -252,7 +268,9 @@ class JwtMiddlewareSuite extends FunSuite:
     issuer: String = "https://keycloak.example.com/realms/bedrock",
     realmRoles: List[String] = List(UserRole.Viewer),
     resourceRoles: List[String] = List(UserRole.Operator),
-    expiresAt: Instant = Instant.now.plusSeconds(300)
+    expiresAt: Instant = Instant.now.plusSeconds(300),
+    tokenAudience: String = "bedrock-ui",
+    authorizedParty: String = "bedrock-ui"
   ): String =
     val realmAccess = Map("roles" -> realmRoles.asJava).asJava
     val resourceAccess = Map(
@@ -263,8 +281,8 @@ class JwtMiddlewareSuite extends FunSuite:
       .withKeyId(fixture.kid)
       .withIssuer(issuer)
       .withSubject(subject)
-      .withAudience(config.keycloakAudience.getOrElse("bedrock-ui"))
-      .withClaim("azp", config.keycloakClientId.getOrElse("bedrock-ui"))
+      .withAudience(tokenAudience)
+      .withClaim("azp", authorizedParty)
       .withClaim("realm_access", realmAccess)
       .withClaim("resource_access", resourceAccess)
       .withExpiresAt(Date.from(expiresAt))

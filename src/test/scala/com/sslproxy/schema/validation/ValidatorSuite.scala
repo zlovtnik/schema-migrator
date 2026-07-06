@@ -61,6 +61,31 @@ class ValidatorSuite extends FunSuite:
     }
   }
 
+  test("does not collapse schema-qualified table names when checking duplicate columns") {
+    withTempDir { dir =>
+      val path = dir.resolve("001_table.sql")
+      Files.writeString(
+        path,
+        """-- object: events
+          |-- folder: tables
+          |-- depends_on: -
+          |create table if not exists public.events (
+          |  id bigint primary key,
+          |  status text
+          |);
+          |
+          |alter table audit.events add column if not exists status text;
+          |""".stripMargin
+      )
+
+      val report = Validator[IO](DbKind.Postgres)
+        .validate(List(SqlFile("tables", path, "001_table.sql", "001_table.sql")))
+        .unsafeRunSync()
+
+      assert(!report.errors.exists(_.contains("duplicates CREATE TABLE column")))
+    }
+  }
+
   test("reports duplicate postgres view bodies that only differ by header comments") {
     withTempDir { dir =>
       val first = dir.resolve("001_demo_view.sql")
@@ -94,6 +119,48 @@ class ValidatorSuite extends FunSuite:
         .unsafeRunSync()
 
       assert(report.errors.exists(_.contains("duplicate view body for demo_view")))
+    }
+  }
+
+  test("reports duplicate postgres view definitions after the first definition in a grouped file") {
+    withTempDir { dir =>
+      val grouped = dir.resolve("001_grouped_views.sql")
+      val duplicate = dir.resolve("002_second_view.sql")
+      Files.writeString(
+        grouped,
+        """-- object: grouped views
+          |-- folder: views
+          |-- depends_on: -
+          |create or replace view first_view as
+          |select 1 as id;
+          |
+          |create or replace view second_view as
+          |select 2 as id;
+          |""".stripMargin
+      )
+      Files.writeString(
+        duplicate,
+        """-- object: second_view copy
+          |-- folder: views
+          |-- depends_on: second_view
+          |create or replace view first_view as
+          |select 1 as id;
+          |
+          |create or replace view second_view as
+          |select 2 as id;
+          |""".stripMargin
+      )
+
+      val report = Validator[IO](DbKind.Postgres)
+        .validate(
+          List(
+            SqlFile("views", grouped, "001_grouped_views.sql", "core/06_views/001_grouped_views.sql"),
+            SqlFile("views", duplicate, "002_second_view.sql", "core/06_views/002_second_view.sql")
+          )
+        )
+        .unsafeRunSync()
+
+      assert(report.errors.exists(_.contains("duplicate view body for second_view")))
     }
   }
 

@@ -143,12 +143,8 @@ const readResponseText = async (response: Response): Promise<string> => {
 };
 
 export const ensureAuthToken = async (): Promise<string> => {
-  if (authToken) {
-    return authToken;
-  }
-
   if (!authTokenProvider) {
-    return "";
+    return authToken;
   }
 
   const nextToken = await authTokenProvider();
@@ -157,7 +153,6 @@ export const ensureAuthToken = async (): Promise<string> => {
 };
 
 export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {}): Promise<T> => {
-  const headers = new Headers(options.headers);
   let token: string;
   try {
     token = await ensureAuthToken();
@@ -170,19 +165,6 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
   const isBlob = typeof Blob !== "undefined" && body instanceof Blob;
   const isUrlSearchParams = typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams;
 
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
-  if (body !== undefined && !isFormData && !isBlob && !isUrlSearchParams && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  const requestInit: RequestInit = {
-    ...requestOptions,
-    credentials: options.credentials ?? "same-origin",
-    headers
-  };
   const requestBody =
     body === undefined
       ? undefined
@@ -190,11 +172,38 @@ export const apiRequest = async <T>(path: string, options: ApiRequestOptions = {
         ? (body as BodyInit)
         : JSON.stringify(body);
 
-  if (requestBody !== undefined) {
-    requestInit.body = requestBody;
-  }
+  const send = (nextToken: string): Promise<Response> => {
+    const headers = new Headers(options.headers);
+    if (nextToken) {
+      headers.set("Authorization", `Bearer ${nextToken}`);
+    }
+    if (body !== undefined && !isFormData && !isBlob && !isUrlSearchParams && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
 
-  const response = await fetch(buildApiUrl(path), requestInit);
+    const requestInit: RequestInit = {
+      ...requestOptions,
+      credentials: options.credentials ?? "same-origin",
+      headers
+    };
+    if (requestBody !== undefined) {
+      requestInit.body = requestBody;
+    }
+    return fetch(buildApiUrl(path), requestInit);
+  };
+
+  let response = await send(token);
+
+  if (response.status === 401) {
+    setAuthToken("");
+    try {
+      token = await ensureAuthToken();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Authentication failed";
+      throw new ApiError(message, 401, error);
+    }
+    response = await send(token);
+  }
 
   if (!response.ok) {
     const detail = await readErrorBody(response);

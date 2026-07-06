@@ -70,6 +70,27 @@ class ServerConfigSuite extends FunSuite:
     finally Files.deleteIfExists(stageDir)
   }
 
+  test("server validation requires a Keycloak audience or client id when Keycloak auth is enabled") {
+    val stageDir = Files.createTempDirectory("schema-migrator-config")
+    try
+      val missingScope = validConfig(stageDir).copy(
+        keycloakEnabled = true,
+        keycloakIssuer = Some("https://keycloak.example.com/realms/bedrock"),
+        keycloakAudience = None,
+        keycloakClientId = None
+      )
+      val withAudience = missingScope.copy(keycloakAudience = Some("bedrock-ui"))
+      val withClientId = missingScope.copy(keycloakClientId = Some("bedrock-ui"))
+
+      assertEquals(
+        missingScope.validate,
+        Left("BEDROCK_KEYCLOAK_AUDIENCE or BEDROCK_KEYCLOAK_CLIENT_ID must be set when Keycloak auth is enabled")
+      )
+      assertEquals(withAudience.validate, Right(()))
+      assertEquals(withClientId.validate, Right(()))
+    finally Files.deleteIfExists(stageDir)
+  }
+
   private def validConfig(stageDir: java.nio.file.Path): ServerConfig =
     ServerConfig(
       host = "127.0.0.1",
