@@ -9,7 +9,7 @@ import com.sslproxy.schema.db.postgres.PostgresProvider
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.discovery.{BaselineGenerator, DiscoveryService}
 import com.sslproxy.schema.effect.{Lock, Retry, RetryPolicy}
-import com.sslproxy.schema.engine.MigrationEngine
+import com.sslproxy.schema.engine.{ApplyCallbacks, MigrationEngine}
 import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.output.{JsonReporter, ReportPrinter}
 import com.sslproxy.schema.server.{HttpServer, PostgresDriftCheck}
@@ -74,7 +74,7 @@ object Commands:
           else
             withProvider(config) { provider =>
               val engine = MigrationEngine(provider, DiscoveryService[IO]())
-              engine.apply(config).flatMap { report =>
+              engine.apply(config, ApplyCallbacks.console(config)).flatMap { report =>
                 val print = if config.json then JsonReporter.applyReport(report) else ReportPrinter.applyReport(report)
                 print.as(if report.failedFiles == 0 then success else partialFailure)
               }
@@ -126,10 +126,10 @@ object Commands:
       case CliCommand.Apply if config.dryRun => config.validateSqlOnly
       case _ => config.validate
 
-  private def withProvider[A](config: MigratorConfig)(use: DbProvider => IO[A]): IO[A] =
+  private def withProvider[A](config: MigratorConfig)(use: DbProvider[IO] => IO[A]): IO[A] =
     providerFor(config).flatMap(use)
 
-  private def withSession[A](config: MigratorConfig)(use: com.sslproxy.schema.db.DbSession => IO[A]): IO[A] =
+  private def withSession[A](config: MigratorConfig)(use: com.sslproxy.schema.db.DbSession[IO] => IO[A]): IO[A] =
     providerFor(config).flatMap { provider =>
       Retry.withBackoff(
         RetryPolicy(config.connectRetries + 1, config.connectRetryBackoff),
@@ -137,7 +137,7 @@ object Commands:
       )(provider.session.use(use))
     }
 
-  private def providerFor(config: MigratorConfig): IO[DbProvider] =
+  private def providerFor(config: MigratorConfig): IO[DbProvider[IO]] =
     config.dbKind match
       case DbKind.Postgres => PostgresProvider.fromConfig(config)
       case DbKind.Oracle => OracleProvider.fromConfig(config)

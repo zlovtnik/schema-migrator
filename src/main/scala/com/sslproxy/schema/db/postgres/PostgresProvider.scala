@@ -28,13 +28,13 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import java.sql.SQLException
 
-final class PostgresProvider(config: JdbcConnectionConfig) extends DbProvider:
+final class PostgresProvider(config: JdbcConnectionConfig) extends DbProvider[IO]:
   override val dialect: SqlDialect = SqlDialect.Postgres
 
-  override def session: Resource[IO, DbSession] =
+  override def session: Resource[IO, DbSession[IO]] =
     DoobieSupport.postgresSessionTransactor(config).map(PostgresSession(_))
 
-final class PostgresSession(transactor: Transactor[IO]) extends DbSession:
+final class PostgresSession(transactor: Transactor[IO]) extends DbSession[IO]:
   private val nonTransactionalTransactor = DoobieSupport.withoutTransaction(transactor)
 
   private val lockManager = LockManager.postgres(PostgresSession.applyLockKey, PostgresSession.applyLockNamespace)
