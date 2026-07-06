@@ -1,0 +1,4 @@
+interface:
+  display_name: "Schema Migrator UI Quality"
+  short_description: "Validate WCAG 2.2 AA UI rules"
+  default_prompt: "Use $schema-migrator-ui-quality to review and validate Schema Migrator UI changes against the project WCAG 2.2 AA codex."
