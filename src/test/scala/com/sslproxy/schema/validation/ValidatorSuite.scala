@@ -49,7 +49,7 @@ class ValidatorSuite extends FunSuite:
           |  status text
           |);
           |
-          |alter table sample add column if not exists status text;
+          |alter table sample add column status text;
           |""".stripMargin
       )
 
@@ -58,6 +58,31 @@ class ValidatorSuite extends FunSuite:
         .unsafeRunSync()
 
       assert(report.errors.exists(_.contains("duplicates CREATE TABLE column")))
+    }
+  }
+
+  test("allows idempotent same-file duplicate postgres table column patches") {
+    withTempDir { dir =>
+      val path = dir.resolve("001_table.sql")
+      Files.writeString(
+        path,
+        """-- object: sample
+          |-- folder: tables
+          |-- depends_on: -
+          |create table if not exists sample (
+          |  id bigint primary key,
+          |  status text
+          |);
+          |
+          |alter table sample add column if not exists status text;
+          |""".stripMargin
+      )
+
+      val report = Validator[IO](DbKind.Postgres)
+        .validate(List(SqlFile("tables", path, "001_table.sql", "001_table.sql")))
+        .unsafeRunSync()
+
+      assert(!report.errors.exists(_.contains("duplicates CREATE TABLE column")))
     }
   }
 

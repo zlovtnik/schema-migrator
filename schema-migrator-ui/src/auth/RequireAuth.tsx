@@ -7,7 +7,9 @@ type AuthStatus = "checking" | "authenticated" | "anonymous";
 
 export const RequireAuth = () => {
   const location = useLocation();
-  const [status, setStatus] = useState<AuthStatus>(() => (getAuthToken() ? "authenticated" : "checking"));
+  const [status, setStatus] = useState<AuthStatus>(() =>
+    getAuthToken() || !isKeycloakConfigured() ? "authenticated" : "checking"
+  );
 
   useEffect(() => {
     let active = true;
@@ -21,7 +23,7 @@ export const RequireAuth = () => {
     };
 
     if (!isKeycloakConfigured()) {
-      setStatus("anonymous");
+      setStatus("authenticated");
     } else {
       initKeycloak().then(refresh).catch(() => {
         if (active) {

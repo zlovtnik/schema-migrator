@@ -15,7 +15,7 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
   private val alterTablePattern =
     s"(?is)\\balter\\s+table\\s+(?:if\\s+exists\\s+)?(?:only\\s+)?($qualifiedIdentifierPattern)\\s+(.*?);".r
   private val addColumnPattern =
-    s"(?is)(?:^|,)\\s*add\\s+column\\s+(?:if\\s+not\\s+exists\\s+)?($identifierPattern)(?:\\s|$$)".r
+    s"(?is)(?:^|,)\\s*add\\s+column\\s+(if\\s+not\\s+exists\\s+)?($identifierPattern)(?:\\s|$$)".r
   private val leadingIdentifierPattern = s"(?s)^\\s*($identifierPattern)(?:\\s|$$)".r
   private val viewDefinitionPattern =
     s"(?is)\\bcreate\\s+(?:or\\s+replace\\s+)?view\\s+($qualifiedIdentifierPattern)\\s+as\\b".r
@@ -127,10 +127,12 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
   private def sameFileDuplicateAddColumnErrors(file: SqlFile, sql: String): List[String] =
     val createColumnsByTable = createTableDefinitions(sql).toMap
     alterTableAddColumns(sql)
-      .flatMap { case (table, column) =>
-        createColumnsByTable.get(table).filter(_.contains(column)).map { _ =>
-          s"${file.relativePath}: ALTER TABLE ADD COLUMN '$column' duplicates CREATE TABLE column on '$table'"
-        }
+      .flatMap { case (table, column, idempotent) =>
+        if idempotent then None
+        else
+          createColumnsByTable.get(table).filter(_.contains(column)).map { _ =>
+            s"${file.relativePath}: ALTER TABLE ADD COLUMN '$column' duplicates CREATE TABLE column on '$table'"
+          }
       }
       .distinct
       .sorted
@@ -150,12 +152,14 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
       }
       .toList
 
-  private def alterTableAddColumns(sql: String): List[(String, String)] =
+  private def alterTableAddColumns(sql: String): List[(String, String, Boolean)] =
     alterTablePattern
       .findAllMatchIn(sql)
       .flatMap { statement =>
         val table = normalizeQualifiedIdentifier(statement.group(1))
-        addColumnPattern.findAllMatchIn(statement.group(2)).map(addColumn => table -> normalizeIdentifier(addColumn.group(1)))
+        addColumnPattern
+          .findAllMatchIn(statement.group(2))
+          .map(addColumn => (table, normalizeIdentifier(addColumn.group(2)), Option(addColumn.group(1)).exists(_.trim.nonEmpty)))
       }
       .toList
 
