@@ -14,6 +14,7 @@ trait TargetStore:
   def get(id: String): IO[Option[Target]]
   def getStored(id: String): IO[Option[StoredTarget]]
   def update(id: String, payload: TargetPayload): IO[Option[Target]]
+  def recordRepoSync(id: String, commitSha: String, syncedAt: String): IO[Boolean]
   def delete(id: String): IO[Boolean]
 
 object TargetStore:
@@ -50,10 +51,27 @@ private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]])
       values.get(id) match
         case None => values -> Option.empty[Target]
         case Some(existing) =>
-          val target = toTarget(id, existing.target.created_at, payload)
+          val target = toTarget(id, existing.target.created_at, payload).copy(
+            last_synced_commit = existing.target.last_synced_commit,
+            last_synced_at = existing.target.last_synced_at
+          )
           val password = payload.password.filter(_.nonEmpty).orElse(existing.password)
           val stored = StoredTarget(target, password)
           values.updated(id, stored) -> Some(target)
+    }
+
+  override def recordRepoSync(id: String, commitSha: String, syncedAt: String): IO[Boolean] =
+    ref.modify { values =>
+      values.get(id) match
+        case None => values -> false
+        case Some(existing) =>
+          val updated = existing.copy(
+            target = existing.target.copy(
+              last_synced_commit = Some(commitSha),
+              last_synced_at = Some(syncedAt)
+            )
+          )
+          values.updated(id, updated) -> true
     }
 
   override def delete(id: String): IO[Boolean] =
@@ -66,7 +84,12 @@ private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]])
       app_name = payload.app_name,
       env = payload.env,
       jdbc_url = payload.jdbc_url,
-      created_at = createdAt
+      created_at = createdAt,
+      repo_url = payload.repo_url,
+      repo_branch = payload.repo_branch,
+      repo_sql_path = payload.repo_sql_path,
+      last_synced_commit = None,
+      last_synced_at = None
     )
 
   private def nowString: IO[String] =

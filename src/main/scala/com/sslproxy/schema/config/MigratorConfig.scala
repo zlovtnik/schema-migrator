@@ -98,6 +98,9 @@ final case class ServerConfig(
   apiBearerToken: Option[String] = None,
   mongo: Option[MongoConfig] = None,
   sqlFilesCollection: String = "sql_files",
+  repoSyncCollection: String = "repo_sync_state",
+  repoCacheDir: Path = Path.of(sys.props.getOrElse("java.io.tmpdir", "."), "schema-migrator-repos"),
+  repoCloneTimeoutSeconds: Int = 60,
   patchesCollection: String = "patches",
   runsCollection: String = "runs",
   validationsCollection: String = "validations",
@@ -118,12 +121,17 @@ final case class ServerConfig(
       Left("BEDROCK_KEYCLOAK_AUDIENCE or BEDROCK_KEYCLOAK_CLIENT_ID must be set when Keycloak auth is enabled")
     else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
     else if sqlFilesCollection.trim.isEmpty then Left("BEDROCK_SQL_FILES_COLLECTION must not be empty")
+    else if repoSyncCollection.trim.isEmpty then Left("BEDROCK_REPO_SYNC_COLLECTION must not be empty")
+    else if repoCloneTimeoutSeconds < 1 then Left("BEDROCK_REPO_CLONE_TIMEOUT_SECONDS must be at least 1")
     else if patchesCollection.trim.isEmpty then Left("BEDROCK_PATCHES_COLLECTION must not be empty")
     else if runsCollection.trim.isEmpty then Left("BEDROCK_RUNS_COLLECTION must not be empty")
     else if validationsCollection.trim.isEmpty then Left("BEDROCK_VALIDATIONS_COLLECTION must not be empty")
     else if snapshotsCollection.trim.isEmpty then Left("BEDROCK_SNAPSHOTS_COLLECTION must not be empty")
     else if auditCollection.trim.isEmpty then Left("BEDROCK_AUDIT_COLLECTION must not be empty")
-    else validateEncryptKeyBase64().flatMap(_ => validateMongo()).flatMap(_ => validatePatchStageDir())
+    else validateEncryptKeyBase64()
+      .flatMap(_ => validateMongo())
+      .flatMap(_ => validatePatchStageDir())
+      .flatMap(_ => validateRepoCacheDir())
 
   def mongoConfig: Either[String, MongoConfig] =
     mongo.toRight(
@@ -147,14 +155,20 @@ final case class ServerConfig(
     mongoConfig.flatMap(_.validate)
 
   private def validatePatchStageDir(): Either[String, Unit] =
+    validateWritableDirectory(patchStageDir, "patch stage")
+
+  private def validateRepoCacheDir(): Either[String, Unit] =
+    validateWritableDirectory(repoCacheDir, "repo cache")
+
+  private def validateWritableDirectory(path: Path, label: String): Either[String, Unit] =
     try
-      if Files.exists(patchStageDir) && !Files.isDirectory(patchStageDir) then
-        Left(s"patch stage path '$patchStageDir' is not a directory")
+      if Files.exists(path) && !Files.isDirectory(path) then
+        Left(s"$label path '$path' is not a directory")
       else
-        if Files.notExists(patchStageDir) then Files.createDirectories(patchStageDir)
-        if !Files.isDirectory(patchStageDir) then Left(s"patch stage path '$patchStageDir' is not a directory")
-        else if !Files.isWritable(patchStageDir) then Left(s"patch stage directory '$patchStageDir' is not writable")
+        if Files.notExists(path) then Files.createDirectories(path)
+        if !Files.isDirectory(path) then Left(s"$label path '$path' is not a directory")
+        else if !Files.isWritable(path) then Left(s"$label directory '$path' is not writable")
         else Right(())
     catch
       case error: Exception =>
-        Left(s"patch stage directory '$patchStageDir' is not usable: ${error.getMessage}")
+        Left(s"$label directory '$path' is not usable: ${error.getMessage}")

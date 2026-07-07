@@ -48,7 +48,22 @@ class RunStoreSuite extends FunSuite:
             )
           )
           run <- runStore.create(TriggerRunPayload(patch.id, "target-1"), patch, "test")
-          target = StoredTarget(Target("target-1", "Target", "app", "dev", "jdbc:postgresql://localhost:5432/app", "now"), None)
+          target = StoredTarget(
+            Target(
+              "target-1",
+              "Target",
+              "app",
+              "dev",
+              "jdbc:postgresql://localhost:5432/app",
+              "now",
+              "https://example.com/schema-migrator.git",
+              "main",
+              "sql",
+              None,
+              None
+            ),
+            None
+          )
           fiber <- executor.run(target, run, patch).start
           _ <- waitUntil(runStore.get(run.id).map(_.exists(_.status == "running")), 100)
           _ <- runStore.abort(run.id)

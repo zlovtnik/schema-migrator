@@ -19,25 +19,39 @@ final case class Target(
   app_name: String,
   env: String,
   jdbc_url: String,
-  created_at: String
+  created_at: String,
+  repo_url: String,
+  repo_branch: String,
+  repo_sql_path: String,
+  last_synced_commit: Option[String],
+  last_synced_at: Option[String]
 ):
   override def toString: String =
-    s"Target(id=$id, label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, created_at=$created_at)"
+    s"Target(id=$id, label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, created_at=$created_at, repo_url=$repo_url, repo_branch=$repo_branch, repo_sql_path=$repo_sql_path, last_synced_commit=$last_synced_commit, last_synced_at=$last_synced_at)"
 
 final case class TargetPayload(
   label: String,
   app_name: String,
   env: String,
   jdbc_url: String,
-  password: Option[String]
+  password: Option[String],
+  repo_url: String,
+  repo_branch: String,
+  repo_sql_path: String
 ):
   override def toString: String =
-    s"TargetPayload(label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, password=${redacted(password)})"
+    s"TargetPayload(label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, password=${redacted(password)}, repo_url=$repo_url, repo_branch=$repo_branch, repo_sql_path=$repo_sql_path)"
 
 object TargetPayload:
   def rejectInlineCredentials(jdbcUrl: String): Either[String, Unit] =
     if containsInlineCredentials(jdbcUrl) then
       Left("JDBC URL must not contain inline credentials; provide credentials in the password field")
+    else Right(())
+
+  def rejectInlineRepoCredentials(repoUrl: String): Either[String, Unit] =
+    val normalized = repoUrl.trim
+    if normalized.matches("(?i)^https://[^/?#\\s]+:[^@/?#\\s]+@.*") then
+      Left("Repository URL must not contain inline credentials")
     else Right(())
 
   private def containsInlineCredentials(jdbcUrl: String): Boolean =

@@ -157,15 +157,33 @@ object TargetRoutes:
 
   private[server] def validateTargetPayload(payload: TargetPayload): Either[String, TargetPayload] =
     val jdbcUrl = payload.jdbc_url.trim
-    val trimmedPayload = payload.copy(jdbc_url = jdbcUrl)
+    val repoUrl = payload.repo_url.trim
+    val repoBranch = Option(payload.repo_branch.trim).filter(_.nonEmpty).getOrElse("main")
+    val repoSqlPath = Option(payload.repo_sql_path.trim).filter(_.nonEmpty).getOrElse("sql")
+    val trimmedPayload = payload.copy(
+      jdbc_url = jdbcUrl,
+      repo_url = repoUrl,
+      repo_branch = repoBranch,
+      repo_sql_path = repoSqlPath
+    )
     if jdbcUrl.isEmpty then Left("Database URL is required")
-    else if isPostgresUrl(jdbcUrl) then normalizePostgresPayload(trimmedPayload, jdbcUrl)
-    else if jdbcUrl.startsWith("jdbc:postgres://") then
-      Left(
-        "Postgres JDBC URLs must start with jdbc:postgresql://, for example jdbc:postgresql://host:5432/database?user=username"
-      )
-    else if isSupportedJdbcUrl(jdbcUrl) then TargetPayload.rejectInlineCredentials(jdbcUrl).as(trimmedPayload)
-    else Left("unsupported database URL: expected postgres://..., postgresql://..., jdbc:postgresql://..., or jdbc:oracle:thin:...")
+    else if repoUrl.isEmpty then Left("Repository URL is required")
+    else if !repoUrl.startsWith("https://") then Left("Repository URL must start with https://")
+    else if repoSqlPath.startsWith("/") || repoSqlPath.contains("..") || repoSqlPath.contains("\\") then
+      Left("Repository SQL path must be a relative path inside the repository")
+    else
+      for
+        _ <- TargetPayload.rejectInlineRepoCredentials(repoUrl)
+        validated <-
+          if isPostgresUrl(jdbcUrl) then normalizePostgresPayload(trimmedPayload, jdbcUrl)
+          else if jdbcUrl.startsWith("jdbc:postgres://") then
+            Left(
+              "Postgres JDBC URLs must start with jdbc:postgresql://, for example jdbc:postgresql://host:5432/database?user=username"
+            )
+          else if isSupportedJdbcUrl(jdbcUrl) then TargetPayload.rejectInlineCredentials(jdbcUrl).as(trimmedPayload)
+          else
+            Left("unsupported database URL: expected postgres://..., postgresql://..., jdbc:postgresql://..., or jdbc:oracle:thin:...")
+      yield validated
 
   private def normalizePostgresPayload(payload: TargetPayload, rawUrl: String): Either[String, TargetPayload] =
     for
@@ -268,4 +286,4 @@ object TargetRoutes:
       case _ => None
 
   private val invalidPayloadMessage: String =
-    "invalid target payload: expected label, app_name, env, jdbc_url, and optional password fields"
+    "invalid target payload: expected label, app_name, env, jdbc_url, repo_url, repo_branch, repo_sql_path, and optional password fields"

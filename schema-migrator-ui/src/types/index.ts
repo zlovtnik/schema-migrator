@@ -71,6 +71,11 @@ export interface Target {
   env: Env;
   jdbc_url: string;
   created_at: Rfc3339Timestamp;
+  repo_url: string;
+  repo_branch: string;
+  repo_sql_path: string;
+  last_synced_commit?: string | null;
+  last_synced_at?: Rfc3339Timestamp | null;
 }
 
 export interface ScriptError {
@@ -267,7 +272,12 @@ export const targetSchema = z.object({
   app_name: z.string(),
   env: envSchema,
   jdbc_url: z.string(),
-  created_at: rfc3339TimestampSchema
+  created_at: rfc3339TimestampSchema,
+  repo_url: z.string(),
+  repo_branch: z.string().default("main"),
+  repo_sql_path: z.string().default("sql"),
+  last_synced_commit: nullableOptionalStringSchema,
+  last_synced_at: rfc3339TimestampSchema.nullish()
 });
 
 export const connectionTestResultSchema = z.object({
@@ -502,7 +512,21 @@ export const targetFormSchema = z.object({
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: supportedDatabaseUrlMessage });
       }
     }),
-  password: z.string().optional()
+  password: z.string().optional(),
+  repo_url: z
+    .string()
+    .trim()
+    .min(1, "Repository URL is required")
+    .url("Repository URL must be a valid URL")
+    .refine((value) => value.startsWith("https://"), "Repository URL must start with https://")
+    .refine((value) => !/^https:\/\/[^/?#\s]+:[^@/?#\s]+@/iu.test(value), "Repository URL must not include credentials"),
+  repo_branch: z.string().trim().min(1, "Branch is required").default("main"),
+  repo_sql_path: z
+    .string()
+    .trim()
+    .min(1, "SQL path is required")
+    .refine((value) => !value.startsWith("/") && !value.includes("..") && !value.includes("\\"), "SQL path must stay inside the repository")
+    .default("sql")
 });
 
 export type TargetFormValues = z.infer<typeof targetFormSchema>;
@@ -518,6 +542,9 @@ export const normalizeTargetPayload = (values: TargetFormValues): TargetPayload 
     app_name: values.app_name.trim(),
     env: values.env,
     jdbc_url: values.jdbc_url.trim(),
+    repo_url: values.repo_url.trim(),
+    repo_branch: values.repo_branch.trim() || "main",
+    repo_sql_path: values.repo_sql_path.trim() || "sql",
     ...(password ? { password } : {})
   };
 };

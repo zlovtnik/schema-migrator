@@ -143,6 +143,19 @@ object CliOpts:
       .orNone
       .map(_.orElse(env.get("BEDROCK_PATCH_STAGE_DIR").map(Paths.get(_))).getOrElse(defaultPatchStageDir))
 
+  private val repoCacheDirOpt: Opts[Path] =
+    Opts
+      .option[Path]("repo-cache-dir", help = "Directory used for temporary repository clones")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_REPO_CACHE_DIR").map(Paths.get(_))).getOrElse(defaultRepoCacheDir))
+
+  private val repoCloneTimeoutSecondsOpt: Opts[Int] =
+    Opts
+      .option[Int]("repo-clone-timeout-seconds", help = "Repository clone timeout in seconds")
+      .orNone
+      .map(_.orElse(env.get("BEDROCK_REPO_CLONE_TIMEOUT_SECONDS").flatMap(value => Either.catchNonFatal(value.toInt).toOption)).getOrElse(60))
+      .validate("repo-clone-timeout-seconds must be at least 1")(_ >= 1)
+
   private val dbTestAllowedHostsOpt: Opts[Set[String]] =
     Opts
       .option[String]("db-test-allowed-hosts", help = "Comma-separated JDBC hosts allowed for /targets/test")
@@ -173,6 +186,7 @@ object CliOpts:
 
   private final case class CollectionOptions(
     sqlFiles: String,
+    repoSync: String,
     patches: String,
     runs: String,
     validations: String,
@@ -197,9 +211,17 @@ object CliOpts:
   private val sqlFilesCollectionOpt: Opts[String] =
     collectionOpt(
       "sql-files-collection",
-      "MongoDB collection for uploaded SQL files",
+      "MongoDB collection for synced SQL files",
       "BEDROCK_SQL_FILES_COLLECTION",
       "sql_files"
+    )
+
+  private val repoSyncCollectionOpt: Opts[String] =
+    collectionOpt(
+      "repo-sync-collection",
+      "MongoDB collection for repository sync state",
+      "BEDROCK_REPO_SYNC_COLLECTION",
+      "repo_sync_state"
     )
 
   private val runsCollectionOpt: Opts[String] =
@@ -227,6 +249,7 @@ object CliOpts:
   private val collectionOpts: Opts[CollectionOptions] =
     (
       sqlFilesCollectionOpt,
+      repoSyncCollectionOpt,
       patchesCollectionOpt,
       runsCollectionOpt,
       validationsCollectionOpt,
@@ -251,6 +274,8 @@ object CliOpts:
       apiBearerTokenOpt,
       dbTestAllowedHostsOpt,
       patchStageDirOpt,
+      repoCacheDirOpt,
+      repoCloneTimeoutSecondsOpt,
       mongoUriOpt,
       mongoDatabaseOpt,
       mongoTargetsCollectionOpt,
@@ -272,6 +297,8 @@ object CliOpts:
         apiBearerToken,
         dbTestAllowedHosts,
         patchStageDir,
+        repoCacheDir,
+        repoCloneTimeoutSeconds,
         mongoUri,
         mongoDatabase,
         mongoTargetsCollection,
@@ -296,6 +323,9 @@ object CliOpts:
           patchStageDir = patchStageDir,
           mongo = mongoResult.toOption.flatten,
           sqlFilesCollection = collections.sqlFiles,
+          repoSyncCollection = collections.repoSync,
+          repoCacheDir = repoCacheDir,
+          repoCloneTimeoutSeconds = repoCloneTimeoutSeconds,
           patchesCollection = collections.patches,
           runsCollection = collections.runs,
           validationsCollection = collections.validations,
@@ -443,6 +473,9 @@ object CliOpts:
 
   private def defaultPatchStageDir: Path =
     Paths.get(sys.props.getOrElse("java.io.tmpdir", "."), "schema-migrator-patches")
+
+  private def defaultRepoCacheDir: Path =
+    Paths.get(sys.props.getOrElse("java.io.tmpdir", "."), "schema-migrator-repos")
 
 sealed trait CliCommand
 

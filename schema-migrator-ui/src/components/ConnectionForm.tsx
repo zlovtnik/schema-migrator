@@ -31,7 +31,10 @@ const defaultsFromTarget = (target?: Target): TargetFormValues => ({
   app_name: target?.app_name ?? "",
   env: target?.env ?? "dev",
   jdbc_url: target?.jdbc_url ?? "",
-  password: ""
+  password: "",
+  repo_url: target?.repo_url ?? "",
+  repo_branch: target?.repo_branch ?? "main",
+  repo_sql_path: target?.repo_sql_path ?? "sql"
 });
 
 const fieldIds = {
@@ -39,7 +42,10 @@ const fieldIds = {
   app_name: "target-app-name",
   env: "target-env",
   jdbc_url: "target-jdbc-url",
-  password: "target-password"
+  password: "target-password",
+  repo_url: "target-repo-url",
+  repo_branch: "target-repo-branch",
+  repo_sql_path: "target-repo-sql-path"
 } satisfies Record<keyof TargetFormValues, string>;
 
 export const ConnectionForm = ({
@@ -138,6 +144,32 @@ export const ConnectionForm = ({
             {...fieldState("jdbc_url")}
           />
           {renderError("jdbc_url")}
+        </label>
+      </div>
+
+      <div className="form-grid">
+        <label className="form-field--wide" htmlFor={fieldIds.repo_url}>
+          Repository URL{renderRequired()}
+          <input
+            id={fieldIds.repo_url}
+            {...register("repo_url")}
+            autoComplete="off"
+            disabled={readOnly}
+            placeholder="https://github.com/example/schema-repo.git"
+            spellCheck={false}
+            {...fieldState("repo_url")}
+          />
+          {renderError("repo_url")}
+        </label>
+        <label htmlFor={fieldIds.repo_branch}>
+          Branch{renderRequired()}
+          <input id={fieldIds.repo_branch} {...register("repo_branch")} autoComplete="off" disabled={readOnly} {...fieldState("repo_branch")} />
+          {renderError("repo_branch")}
+        </label>
+        <label htmlFor={fieldIds.repo_sql_path}>
+          SQL path{renderRequired()}
+          <input id={fieldIds.repo_sql_path} {...register("repo_sql_path")} autoComplete="off" disabled={readOnly} {...fieldState("repo_sql_path")} />
+          {renderError("repo_sql_path")}
         </label>
       </div>
 

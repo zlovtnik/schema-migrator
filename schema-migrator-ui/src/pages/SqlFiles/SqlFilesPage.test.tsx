@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import SqlFilesPage, { ZipWriter } from "./SqlFilesPage";
+import SqlFilesPage from "./SqlFilesPage";
 import { setAuthToken } from "../../api/client";
 import { renderApp } from "../../test/render";
 import type { SqlFileEntry } from "../../api/sqlFiles";
@@ -41,15 +41,19 @@ const jsonResponse = (body: unknown): Response =>
     headers: { "Content-Type": "application/json" }
   });
 
-const findSignature = (bytes: Uint8Array, signature: number[]): number => {
-  for (let i = 0; i <= bytes.length - signature.length; i++) {
-    if (signature.every((byte, offset) => bytes[i + offset] === byte)) return i;
-  }
-  throw new Error(`ZIP signature not found: ${signature.map((byte) => byte.toString(16)).join(" ")}`);
+const target = {
+  id: "target-1",
+  label: "Local",
+  app_name: "app",
+  env: "dev",
+  jdbc_url: "jdbc:postgresql://localhost:5432/app?user=app",
+  created_at: "2026-06-28T12:00:00Z",
+  repo_url: "https://github.com/example/schema.git",
+  repo_branch: "main",
+  repo_sql_path: "sql",
+  last_synced_commit: null,
+  last_synced_at: null
 };
-
-const viewOf = (bytes: Uint8Array): DataView =>
-  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 
 const base64Url = (value: string): string =>
   window.btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
@@ -62,8 +66,41 @@ describe("SqlFilesPage", () => {
     setAuthToken(tokenWithRole("operator"));
     vi.stubGlobal(
       "fetch",
-      vi.fn((input: RequestInfo | URL) => {
-        const url = String(input);
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        if (url.endsWith("/targets")) {
+          return Promise.resolve(jsonResponse({ targets: [target] }));
+        }
+        if (url.endsWith("/targets/target-1")) {
+          return Promise.resolve(jsonResponse(target));
+        }
+        if (url.endsWith("/targets/target-1/repo-sync/status")) {
+          return Promise.resolve(
+            jsonResponse({
+              target_id: "target-1",
+              repo_url: target.repo_url,
+              repo_branch: "main",
+              repo_sql_path: "sql",
+              last_synced_commit: "abc123def456",
+              last_synced_at: "2026-06-28T12:00:00Z",
+              remote_head_commit: "abc123def456",
+              drift: false
+            })
+          );
+        }
+        if (url.endsWith("/targets/target-1/repo-sync") && method === "POST") {
+          return Promise.resolve(
+            jsonResponse({
+              added: 1,
+              removed: 0,
+              changed: 0,
+              unchanged: 2,
+              commit_sha: "abc123def4567890",
+              synced_at: "2026-06-28T12:00:00Z"
+            })
+          );
+        }
         if (url.includes("/sql-files/status")) {
           return Promise.resolve(
             jsonResponse({
@@ -90,7 +127,7 @@ describe("SqlFilesPage", () => {
 
   it("renders collapsed folder groups with filtering and expansion controls", async () => {
     const user = userEvent.setup();
-    renderApp(<SqlFilesPage />);
+    renderApp(<SqlFilesPage />, { route: "/sql-files?target=target-1" });
 
     expect(await screen.findByText("tables")).toBeInTheDocument();
     expect(screen.getByLabelText("Filter SQL files")).toBeInTheDocument();
@@ -106,7 +143,7 @@ describe("SqlFilesPage", () => {
 
   it("expands matching folders when the file filter is used", async () => {
     const user = userEvent.setup();
-    renderApp(<SqlFilesPage />);
+    renderApp(<SqlFilesPage />, { route: "/sql-files?target=target-1" });
 
     await screen.findByText("tables");
     await user.type(screen.getByLabelText("Filter SQL files"), "view");
@@ -122,7 +159,7 @@ describe("SqlFilesPage", () => {
     const writeText = vi.spyOn(clipboard, "writeText").mockResolvedValue(undefined);
 
     const user = userEvent.setup();
-    renderApp(<SqlFilesPage />);
+    renderApp(<SqlFilesPage />, { route: "/sql-files?target=target-1" });
 
     await screen.findByText("tables");
     await user.click(screen.getByRole("button", { name: /expand all/i }));
@@ -132,35 +169,18 @@ describe("SqlFilesPage", () => {
     expect(await screen.findByText("Hash copied for 001_devices.sql")).toBeInTheDocument();
   });
 
-  it("activates the SQL directory picker from the keyboard", async () => {
+  it("triggers repository sync from the keyboard", async () => {
     const user = userEvent.setup();
-    const inputClick = vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(() => undefined);
-    renderApp(<SqlFilesPage />);
+    const fetchMock = vi.mocked(fetch);
+    renderApp(<SqlFilesPage />, { route: "/sql-files?target=target-1" });
 
-    const chooser = await screen.findByRole("button", { name: /choose sql directory/i });
-    chooser.focus();
+    const sync = await screen.findByRole("button", { name: /sync now/i });
+    sync.focus();
     await user.keyboard("{Enter}");
 
-    expect(inputClick).toHaveBeenCalled();
-  });
-});
-
-describe("ZipWriter", () => {
-  it("writes stored entries in local and central directory headers", async () => {
-    const payload = new TextEncoder().encode("select 1;\n");
-    const writer = new ZipWriter();
-    writer.addFile("tables/001.sql", payload);
-
-    const bytes = writer.toBytes();
-    const view = viewOf(bytes);
-    const localOffset = findSignature(bytes, [0x50, 0x4b, 0x03, 0x04]);
-    const centralOffset = findSignature(bytes, [0x50, 0x4b, 0x01, 0x02]);
-    const eocdOffset = findSignature(bytes, [0x50, 0x4b, 0x05, 0x06]);
-
-    expect(view.getUint16(localOffset + 8, true)).toBe(0);
-    expect(view.getUint16(centralOffset + 10, true)).toBe(0);
-    expect(view.getUint32(localOffset + 18, true)).toBe(payload.length);
-    expect(view.getUint32(centralOffset + 20, true)).toBe(payload.length);
-    expect(view.getUint32(eocdOffset + 12, true)).toBe(eocdOffset - centralOffset);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/targets/target-1/repo-sync"), expect.objectContaining({ method: "POST" }))
+    );
+    expect(await screen.findByText(/synced commit abc123def456/i)).toBeInTheDocument();
   });
 });

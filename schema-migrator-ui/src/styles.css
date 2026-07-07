@@ -2226,6 +2226,25 @@ kbd {
   flex-wrap: wrap;
 }
 
+.repo-sync-summary {
+  display: grid;
+  gap: var(--space-1);
+  min-width: min(100%, 360px);
+  max-width: min(100%, 680px);
+}
+
+.repo-sync-summary strong {
+  overflow-wrap: anywhere;
+}
+
+.repo-sync-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
 .sql-files-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));

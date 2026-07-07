@@ -2,7 +2,7 @@ package com.sslproxy.schema.store
 
 import cats.effect.{Clock, IO, Resource}
 import cats.syntax.all.*
-import com.mongodb.client.model.Indexes
+import com.mongodb.client.model.{Indexes, Updates}
 import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.MongoConfig
 import com.sslproxy.schema.server.crypto.AesGcm
@@ -66,7 +66,10 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
           for
             existing <- storedFromDocument(document)
             now <- nowString
-            target = toTarget(id, existing.target.created_at, payload)
+            target = toTarget(id, existing.target.created_at, payload).copy(
+              last_synced_commit = existing.target.last_synced_commit,
+              last_synced_at = existing.target.last_synced_at
+            )
             password = payload.password.filter(_.nonEmpty).orElse(existing.password)
             replacement <- documentFor(StoredTarget(target, password), now)
             result <- IO.blocking(collection.replaceOne(idFilter(id), replacement))
@@ -77,6 +80,19 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
 
   override def delete(id: String): IO[Boolean] =
     IO.blocking(collection.deleteOne(idFilter(id)).getDeletedCount > 0)
+
+  override def recordRepoSync(id: String, commitSha: String, syncedAt: String): IO[Boolean] =
+    IO.blocking {
+      collection
+        .updateOne(
+          idFilter(id),
+          Updates.combine(
+            Updates.set("last_synced_commit", commitSha),
+            Updates.set("last_synced_at", syncedAt)
+          )
+        )
+        .getMatchedCount > 0
+    }
 
   private[store] def initialize: IO[Unit] =
     IO.blocking(collection.createIndex(Indexes.ascending("created_at"))).void
@@ -90,7 +106,12 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
       .append("env", target.env)
       .append("jdbc_url", target.jdbc_url)
       .append("created_at", target.created_at)
+      .append("repo_url", target.repo_url)
+      .append("repo_branch", target.repo_branch)
+      .append("repo_sql_path", target.repo_sql_path)
       .append("updated_at", updatedAt)
+    target.last_synced_commit.foreach(document.append("last_synced_commit", _))
+    target.last_synced_at.foreach(document.append("last_synced_at", _))
     stored.password.traverse(passwordCrypto.encrypt).map {
       case Some(encrypted) =>
         document
@@ -109,13 +130,21 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
       app_name = requiredString(document, "app_name"),
       env = requiredString(document, "env"),
       jdbc_url = requiredString(document, "jdbc_url"),
-      created_at = requiredString(document, "created_at")
+      created_at = requiredString(document, "created_at"),
+      repo_url = optionalString(document, "repo_url").getOrElse("https://example.com/schema-migrator.git"),
+      repo_branch = optionalString(document, "repo_branch").getOrElse("main"),
+      repo_sql_path = optionalString(document, "repo_sql_path").getOrElse("sql"),
+      last_synced_commit = optionalString(document, "last_synced_commit"),
+      last_synced_at = optionalString(document, "last_synced_at")
     )
 
   private def requiredString(document: Document, field: String): String =
     Option(document.getString(field))
       .filter(_.nonEmpty)
       .getOrElse(throw IllegalStateException(s"target document is missing required field '$field'"))
+
+  private def optionalString(document: Document, field: String): Option[String] =
+    Option(document.getString(field)).filter(_.nonEmpty)
 
   private def idFilter(id: String): Document =
     new Document("_id", id)
@@ -127,7 +156,12 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
       app_name = payload.app_name,
       env = payload.env,
       jdbc_url = payload.jdbc_url,
-      created_at = createdAt
+      created_at = createdAt,
+      repo_url = payload.repo_url,
+      repo_branch = payload.repo_branch,
+      repo_sql_path = payload.repo_sql_path,
+      last_synced_commit = None,
+      last_synced_at = None
     )
 
   private def nowString: IO[String] =
