@@ -179,6 +179,54 @@ class DiscoveryServiceSuite extends FunSuite:
     assertEquals(discovered.warnings, Nil)
   }
 
+  test("ignores auxiliary registry and teardown folders from stored SQL files") {
+    val files = List(
+      SqlFile(
+        "sql/registry",
+        Path.of("sql/registry/drift_report.sql"),
+        "drift_report.sql",
+        "sql/registry/drift_report.sql"
+      ),
+      SqlFile(
+        "sql/teardown",
+        Path.of("sql/teardown/oracle_nuclear_drop.sql"),
+        "oracle_nuclear_drop.sql",
+        "sql/teardown/oracle_nuclear_drop.sql"
+      ),
+      SqlFile(
+        "sql/postgres/core/03_tables",
+        Path.of("sql/postgres/core/03_tables/001_table.sql"),
+        "001_table.sql",
+        "sql/postgres/core/03_tables/001_table.sql"
+      )
+    )
+
+    val discovered = DiscoveryService[IO]().discoverFromFiles(files, DbKind.Postgres)
+
+    assertEquals(discovered.files.map(_.relativePath), List("postgres/core/03_tables/001_table.sql"))
+    assertEquals(discovered.warnings, Nil)
+  }
+
+  test("folder discovery ignores auxiliary folders but still warns on unknown SQL folders") {
+    withTempDir { dir =>
+      Files.createDirectories(dir.resolve("tables"))
+      Files.createDirectories(dir.resolve("registry"))
+      Files.createDirectories(dir.resolve("teardown"))
+      Files.createDirectories(dir.resolve("scratch"))
+      Files.writeString(dir.resolve("tables").resolve("001_table.sql"), "select 1;")
+      Files.writeString(dir.resolve("registry").resolve("drift_report.sql"), "select 1;")
+      Files.writeString(dir.resolve("teardown").resolve("oracle_nuclear_drop.sql"), "select 1;")
+      Files.writeString(dir.resolve("scratch").resolve("001_unknown.sql"), "select 1;")
+
+      val discovered = DiscoveryService[IO]().discover(dir, DbKind.Postgres).unsafeRunSync()
+
+      assertEquals(discovered.files.map(_.relativePath), List("tables/001_table.sql"))
+      assert(!discovered.warnings.exists(_.contains("registry")))
+      assert(!discovered.warnings.exists(_.contains("teardown")))
+      assert(discovered.warnings.exists(_.contains("scratch")))
+    }
+  }
+
   test("discovers split Oracle baseline folders in deterministic order") {
     withTempDir { dir =>
       FolderOrder.oracle.foreach(folder => Files.createDirectories(dir.resolve(folder)))

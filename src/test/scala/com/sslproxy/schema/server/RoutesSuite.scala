@@ -1,5 +1,6 @@
 package com.sslproxy.schema.server
 
+import cats.data.Kleisli
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.TestSqlSupport
@@ -484,7 +485,7 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           uploadedAt = "2026-07-02T12:00:00Z"
         )
         _ <- store.replaceAll(List(existing))
-        routes = SqlFileRoutes.routes(store).orNotFound
+        routes = authedForTest(SqlFileRoutes.routes(store).orNotFound)
         multipart = Multipart[IO](Vector(Part.formData[IO]("note", "empty")))
         response <- routes.run(
           Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload"))
@@ -928,24 +929,26 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           snapshotStore <- SnapshotStore.inMemory
           auditStore <- AuditStore.inMemory
           runExecutor = RunExecutor.simulated(patchStore, runStore, validationStore, auditStore = Some(auditStore))
-        yield Routes
-          .all(
-            migratorConfig(patchStageDir, sqlDir, allowedHosts),
-            targetStore,
-            patchStore,
-            runStore,
-            validationStore,
-            sqlFileStore,
-            snapshotStore,
-            auditStore,
-            runExecutor
-          )
-          .orNotFound
+        yield
+          val app = Routes
+            .all(
+              migratorConfig(patchStageDir, sqlDir, allowedHosts),
+              targetStore,
+              patchStore,
+              runStore,
+              validationStore,
+              sqlFileStore,
+              snapshotStore,
+              auditStore,
+              runExecutor
+            )
+            .orNotFound
+          authedForTest(app)
       }
 
   private def sqlFileRoutesWithLimits(limits: SqlFileRoutes.UploadLimits): cats.effect.Resource[IO, HttpApp[IO]] =
     cats.effect.Resource.eval(
-      SqlFileStore.inMemory.map(store => SqlFileRoutes.routes(store, limits).orNotFound)
+      SqlFileStore.inMemory.map(store => authedForTest(SqlFileRoutes.routes(store, limits).orNotFound))
     )
 
   private def migratorConfig(stageDir: Path, sqlDir: Path, allowedHosts: Set[String]): MigratorConfig =
@@ -994,6 +997,14 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
 
   private def jsonRequest(method: Method, path: String, body: Json): Request[IO] =
     Request[IO](method, Uri.unsafeFromString(path)).withEntity(body)
+
+  private def authedForTest(app: HttpApp[IO]): HttpApp[IO] =
+    Kleisli((request: Request[IO]) => app.run(withDefaultClaims(request)))
+
+  private def withDefaultClaims(request: Request[IO]): Request[IO] =
+    request.attributes.lookup(AuthContext.claimsKey) match
+      case Some(_) => request
+      case None => withClaims(request, Claims("test-admin", None, UserRole.Admin))
 
   private def withClaims(request: Request[IO], claims: Claims): Request[IO] =
     request.withAttribute(AuthContext.claimsKey, claims)

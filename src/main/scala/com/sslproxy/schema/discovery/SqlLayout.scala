@@ -8,6 +8,7 @@ import java.util.Locale
 object SqlLayout:
   val ManifestName = "manifest.yaml"
   val GeneratedBaselineName = "_generated_baseline.sql"
+  val AuxiliaryFolders: Set[String] = Set("registry", "teardown")
 
   def engineName(dbKind: DbKind): String =
     dbKind match
@@ -33,6 +34,11 @@ object SqlLayout:
     val categories = FolderOrder.forDb(dbKind).toSet
     parts.dropRight(1).reverse.map(canonicalFolder).find(categories.contains).getOrElse {
       parts.dropRight(1).lastOption.map(canonicalFolder).getOrElse("uncategorized")
+    }
+
+  def isAuxiliaryPath(path: String): Boolean =
+    path.replace('\\', '/').split('/').toList.find(_.nonEmpty).exists { first =>
+      AuxiliaryFolders.contains(canonicalFolder(first))
     }
 
   def hasLayerManifest(path: Path): Boolean =

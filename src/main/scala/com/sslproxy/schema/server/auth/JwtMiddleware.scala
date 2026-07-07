@@ -50,15 +50,19 @@ object UserRole:
 
 object AuthContext:
   val claimsKey: Key[Claims] = Key.newKey[SyncIO, Claims].unsafeRunSync()
-  val testAdmin: Claims = Claims("test-admin", None, UserRole.Admin)
 
-  def claims(request: Request[IO]): Claims =
-    request.attributes.lookup(claimsKey).getOrElse(testAdmin)
+  def claims(request: Request[IO]): Either[Response[IO], Claims] =
+    request.attributes.lookup(claimsKey).toRight(unauthorized("missing auth context"))
 
   def requireRole(request: Request[IO], required: String)(use: Claims => IO[Response[IO]]): IO[Response[IO]] =
-    val current = claims(request)
-    if UserRole.atLeast(current.role, required) then use(current)
-    else Forbidden(Json.obj("error" -> Json.fromString(s"$required role required")))
+    claims(request) match
+      case Left(response) => IO.pure(response)
+      case Right(current) =>
+        if UserRole.atLeast(current.role, required) then use(current)
+        else Forbidden(Json.obj("error" -> Json.fromString(s"$required role required")))
+
+  private def unauthorized(message: String): Response[IO] =
+    Response[IO](Status.Unauthorized).withEntity(Json.obj("error" -> Json.fromString(message)))
 
 object JwtTokens:
   private val issuer = "schema-migrator"

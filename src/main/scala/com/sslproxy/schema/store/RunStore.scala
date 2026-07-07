@@ -5,12 +5,14 @@ import cats.syntax.all.*
 import com.mongodb.{ErrorCategory, MongoWriteException}
 import com.mongodb.client.model.{IndexOptions, Indexes}
 import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
+import com.sslproxy.schema.effect.{Retry, RetryPolicy}
 import fs2.Stream
 import fs2.concurrent.Topic
 import io.circe.Json
 import org.bson.Document
 
 import java.util.UUID
+import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
 
 trait RunStore:
@@ -32,6 +34,9 @@ trait RunStore:
 object RunStore:
   final case class ConcurrentRun(targetId: String)
       extends RuntimeException(s"target '$targetId' already has an active run")
+
+  def isTerminalStatus(status: String): Boolean =
+    RunState.isTerminal(status)
 
   def mongo(config: com.sslproxy.schema.config.MongoConfig, collectionName: String): Resource[IO, RunStore] =
     Resource
@@ -313,6 +318,8 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
 private final class MongoRunStore(collection: MongoCollection[Document], protected val topic: Topic[IO, RunEvent])
     extends RunStore
     with RunStoreEvents:
+  import MongoRunStore.*
+
   override def list(targetId: Option[String]): IO[List[Run]] =
     IO.blocking {
       val filter = targetId.fold(new Document())(id => new Document("target_id", id))
@@ -433,6 +440,16 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
     updateRun(id)(RunState.updateScript(_, scriptId)(f)).map(_.nonEmpty)
 
   private def updateRun(id: String)(f: Run => Option[Run]): IO[Option[Run]] =
+    Retry
+      .withBackoff[IO, Option[Run]](CasRetryPolicy, { case _: CasConflict => true; case _ => false }) {
+        updateRunOnce(id)(f)
+      }
+      .handleErrorWith {
+        case _: CasConflict => IO.pure(None)
+        case error => IO.raiseError(error)
+      }
+
+  private def updateRunOnce(id: String)(f: Run => Option[Run]): IO[Option[Run]] =
     IO.blocking(Option(collection.find(idFilter(id)).first()).map(fromDocument)).flatMap {
       case None => IO.pure(None)
       case Some(run) =>
@@ -440,7 +457,10 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
           case None => IO.pure(None)
           case Some(next) =>
             IO.blocking(collection.replaceOne(snapshotFilter(run), toDocument(next)))
-              .map(result => Option.when(result.getMatchedCount > 0)(next))
+              .flatMap { result =>
+                if result.getMatchedCount > 0 then IO.pure(Some(next))
+                else IO.raiseError(CasConflict(id))
+              }
     }
 
   private def toDocument(run: Run): Document =
@@ -513,7 +533,11 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
     new Document("_id", id)
 
   private def snapshotFilter(run: Run): Document =
-    new Document("_id", run.id).append("status", run.status)
+    val snapshot = toDocument(run)
+    new Document("_id", run.id)
+      .append("status", run.status)
+      .append("ended_at", snapshot.get("ended_at"))
+      .append("scripts", snapshot.get("scripts"))
 
   private def requiredString(document: Document, field: String): String =
     optionalString(document, field)
@@ -534,3 +558,8 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
 
   private def optionalLong(document: Document, field: String): Option[Long] =
     Option(document.get(field)).collect { case number: java.lang.Number => number.longValue() }
+
+private object MongoRunStore:
+  private val CasRetryPolicy = RetryPolicy(maxAttempts = 5, baseDelay = 10.millis)
+
+  private final case class CasConflict(id: String) extends RuntimeException(s"concurrent update for run '$id'")

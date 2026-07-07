@@ -62,7 +62,7 @@ class JwtMiddlewareSuite extends FunSuite:
   test("middleware exposes signed roles and maps static token to admin") {
     val config = serverConfig(apiBearerToken = Some("static-token"))
     val routes = JwtMiddleware(config)(HttpRoutes.of[IO] { case request @ GET -> Root / "role" =>
-      Ok(AuthContext.claims(request).role)
+      AuthContext.requireRole(request, UserRole.Viewer)(claims => Ok(claims.role))
     }).orNotFound
     val operatorToken = JwtTokens.create(config.jwtSecret, "tester", UserRole.Operator).map(_._1).unsafeRunSync()
 
@@ -81,6 +81,16 @@ class JwtMiddlewareSuite extends FunSuite:
 
     assertEquals(operator.as[String].unsafeRunSync(), UserRole.Operator)
     assertEquals(static.as[String].unsafeRunSync(), UserRole.Admin)
+  }
+
+  test("auth context fails closed when middleware did not attach claims") {
+    val route = HttpRoutes.of[IO] { case request @ GET -> Root / "protected" =>
+      AuthContext.requireRole(request, UserRole.Viewer)(_ => Ok("ok"))
+    }.orNotFound
+
+    val response = route.run(Request[IO](Method.GET, Uri.unsafeFromString("/protected"))).unsafeRunSync()
+
+    assertEquals(response.status, Status.Unauthorized)
   }
 
   test("middleware rejects query token fallback on run stream routes") {
@@ -116,8 +126,7 @@ class JwtMiddlewareSuite extends FunSuite:
     val config = keycloakConfig()
     val verifier = keycloakVerifier(config, fixture)
     val routes = JwtMiddleware(config, Some(verifier))(HttpRoutes.of[IO] { case request @ GET -> Root / "role" =>
-      val claims = AuthContext.claims(request)
-      Ok(s"${claims.subject}:${claims.role}")
+      AuthContext.requireRole(request, UserRole.Viewer)(claims => Ok(s"${claims.subject}:${claims.role}"))
     }).orNotFound
     val token = keycloakToken(config, fixture, subject = "keycloak-user", resourceRoles = List(UserRole.Admin))
 
@@ -205,6 +214,42 @@ class JwtMiddlewareSuite extends FunSuite:
     assert(acceptedAfterRefresh.isRight)
     assertEquals(beforeUnknownKid, 1)
     assertEquals(afterUnknownKid, 2)
+  }
+
+  test("Keycloak verifier retries transient JWKS fetch failures") {
+    val fixture = rsaFixture()
+    val config = keycloakConfig()
+    val fetches = Ref.of[IO, Int](0).unsafeRunSync()
+    val jwks = KeycloakJwks.Jwks(
+      List(
+        KeycloakJwks.Jwk(
+          kty = "RSA",
+          kid = fixture.kid,
+          n = base64UrlUInt(fixture.publicKey.getModulus),
+          e = base64UrlUInt(fixture.publicKey.getPublicExponent),
+          use = Some("sig"),
+          alg = Some("RS256")
+        )
+      )
+    )
+    val verifier = KeycloakJwks
+      .createForTest(
+        issuer = config.keycloakIssuer.getOrElse(""),
+        jwksUri = Uri.unsafeFromString("https://keycloak.example.com/realms/bedrock/protocol/openid-connect/certs"),
+        clientId = config.keycloakClientId,
+        audience = config.keycloakAudience,
+        fetchJwks = fetches.getAndUpdate(_ + 1).flatMap {
+          case 0 => IO.raiseError(RuntimeException("temporary JWKS failure"))
+          case _ => IO.pure(jwks)
+        }
+      )
+      .unsafeRunSync()
+
+    val accepted = verifier.verify(keycloakToken(config, fixture)).unsafeRunSync()
+    val fetchCount = fetches.get.unsafeRunSync()
+
+    assert(accepted.isRight)
+    assertEquals(fetchCount, 2)
   }
 
   private def serverConfig(apiBearerToken: Option[String] = None, devAuthEnabled: Boolean = false): ServerConfig =
