@@ -4,7 +4,13 @@ import com.sslproxy.schema.config.DbKind
 
 import java.nio.file.{Files, Path}
 
-final case class SqlFile(folder: String, path: Path, name: String, relativePath: String, content: Option[String] = None):
+final case class SqlFile(
+  folder: String,
+  path: Path,
+  name: String,
+  relativePath: String,
+  content: Option[String] = None
+):
   def readString: String =
     content.getOrElse(Files.readString(path))
 
@@ -38,6 +44,7 @@ object SqlPathNormalizer:
       dbKind match
         case DbKind.Oracle => Right(Some(withNormalizedPath(file, "baseline", normalized)))
         case DbKind.Postgres => Right(None)
+    else if SqlLayout.isAuxiliaryPath(normalized.path) then Right(None)
     else
       val category = SqlLayout.folderFromPath(normalized.path, dbKind)
       if FolderOrder.forDb(dbKind).contains(category) then Right(Some(withNormalizedPath(file, category, normalized)))
@@ -46,7 +53,8 @@ object SqlPathNormalizer:
   private def discoveryPath(file: SqlFile): String =
     val relativePath = file.relativePath.replace('\\', '/').trim
     val folder = file.folder.replace('\\', '/').trim
-    if relativePath.contains("/") || folder.isEmpty || folder == "baseline" || folder == "uncategorized" then relativePath
+    if relativePath.contains("/") || folder.isEmpty || folder == "baseline" || folder == "uncategorized" then
+      relativePath
     else s"$folder/${file.name}"
 
   private def withNormalizedPath(file: SqlFile, folder: String, normalized: NormalizedPath): SqlFile =

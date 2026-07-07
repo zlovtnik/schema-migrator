@@ -440,9 +440,14 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
     updateRun(id)(RunState.updateScript(_, scriptId)(f)).map(_.nonEmpty)
 
   private def updateRun(id: String)(f: Run => Option[Run]): IO[Option[Run]] =
-    Retry.withBackoff[IO, Option[Run]](CasRetryPolicy, { case _: CasConflict => true; case _ => false }) {
-      updateRunOnce(id)(f)
-    }
+    Retry
+      .withBackoff[IO, Option[Run]](CasRetryPolicy, { case _: CasConflict => true; case _ => false }) {
+        updateRunOnce(id)(f)
+      }
+      .handleErrorWith {
+        case _: CasConflict => IO.pure(None)
+        case error => IO.raiseError(error)
+      }
 
   private def updateRunOnce(id: String)(f: Run => Option[Run]): IO[Option[Run]] =
     IO.blocking(Option(collection.find(idFilter(id)).first()).map(fromDocument)).flatMap {

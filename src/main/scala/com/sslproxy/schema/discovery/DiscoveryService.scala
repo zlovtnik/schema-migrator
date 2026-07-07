@@ -21,7 +21,10 @@ final class DiscoveryService[F[_]: Sync]:
     val normalized = files.map(file => SqlPathNormalizer.normalizeForDb(file, dbKind))
     val filesByFolder = normalized.collect { case Right(Some(file)) => file }.groupBy(_.folder)
 
-    val extraFolderWarnings = normalized.collect { case Left(folder) => folder }.distinct.sorted
+    val extraFolderWarnings = normalized
+      .collect { case Left(folder) => folder }
+      .distinct
+      .sorted
       .filterNot(folder => folder == "uncategorized")
       .map(folder => s"unrecognized sql folder '$folder' contains .sql files but is not part of $dbKind folder order")
 
@@ -59,7 +62,9 @@ final class DiscoveryService[F[_]: Sync]:
       List(
         "core" -> engineRoot.resolve("core").resolve(SqlLayout.ManifestName),
         "contracts" -> engineRoot.resolve("contracts").resolve(SqlLayout.ManifestName)
-      ) ++ customer.toList.map(name => "customer" -> engineRoot.resolve("customers").resolve(name).resolve(SqlLayout.ManifestName))
+      ) ++ customer.toList.map(name =>
+        "customer" -> engineRoot.resolve("customers").resolve(name).resolve(SqlLayout.ManifestName)
+      )
 
     val manifestResults = layerManifests.map { case (layer, manifestPath) =>
       if Files.isRegularFile(manifestPath) then
@@ -118,7 +123,9 @@ final class DiscoveryService[F[_]: Sync]:
         .asScala
         .filter(path => Files.isRegularFile(path) && path.getFileName.toString.endsWith(".sql"))
         .filterNot(path => listed.contains(path.normalize()))
-        .map(path => s"${requestedRoot.normalize().relativize(path).toString}: SQL file is not listed in ${manifest.path}")
+        .map(path =>
+          s"${requestedRoot.normalize().relativize(path).toString}: SQL file is not listed in ${manifest.path}"
+        )
         .toList
         .sorted
     }
@@ -139,10 +146,11 @@ final class DiscoveryService[F[_]: Sync]:
             .filter(Files.isDirectory(_))
             .flatMap { dir =>
               val name = dir.getFileName.toString
-              if !allowed
-                  .contains(name) && !Files.list(dir).iterator().asScala.exists(_.getFileName.toString.endsWith(".sql"))
+              val folder = SqlLayout.canonicalFolder(name)
+              val known = allowed.contains(folder) || SqlLayout.AuxiliaryFolders.contains(folder)
+              if !known && !hasSqlFiles(dir)
               then Nil
-              else if !allowed.contains(name) then
+              else if !known then
                 List(
                   s"unrecognized sql subdirectory '$name' contains .sql files but is not part of $dbKind folder order"
                 )
@@ -194,3 +202,8 @@ final class DiscoveryService[F[_]: Sync]:
     if Files.isRegularFile(baseline) then
       List(SqlFile("baseline", baseline, "000_baseline.sql", sqlDir.relativize(baseline).toString))
     else Nil
+
+  private def hasSqlFiles(dir: Path): Boolean =
+    scala.util.Using.resource(Files.list(dir)) { stream =>
+      stream.iterator().asScala.exists(path => Files.isRegularFile(path) && path.getFileName.toString.endsWith(".sql"))
+    }

@@ -186,6 +186,11 @@ If no command is given, `apply` is used as the default.
 | `BEDROCK_KEYCLOAK_JWKS_URI` | Optional JWKS URL. Defaults to `${BEDROCK_KEYCLOAK_ISSUER}/protocol/openid-connect/certs`. |
 | `BEDROCK_KEYCLOAK_CLIENT_ID` | Keycloak client ID used for `resource_access[client].roles` lookup. |
 | `BEDROCK_KEYCLOAK_AUDIENCE` | Optional accepted `aud` or `azp` value for Keycloak access tokens. |
+| `VITE_KEYCLOAK_URL` | Browser-facing Keycloak base URL baked into the Vite UI build. |
+| `VITE_KEYCLOAK_REALM` | Keycloak realm name baked into the Vite UI build. |
+| `VITE_KEYCLOAK_CLIENT_ID` | Keycloak public client ID baked into the Vite UI build. |
+| `VITE_KEYCLOAK_REDIRECT_URI` | Optional browser redirect URI. Defaults to the current origin plus `/callback` when omitted. |
+| `VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS` | Set to `true` only when the Keycloak client allows username/password direct access grants. Defaults to `false`. |
 | `BEDROCK_ENCRYPT_KEY` | Base64 AES-256-GCM key used to encrypt persisted target passwords and API responses. |
 | `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist targets, uploaded SQL files, patches, runs, and validations. |
 | `BEDROCK_MONGO_DATABASE` | MongoDB database for persisted HTTP API state. |
