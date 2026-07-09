@@ -87,7 +87,7 @@ export const SchemaPage = () => {
     () => [
       {
         id: "name",
-        header: "Object",
+        header: "Object name",
         className: "schema-table__object",
         sortValue: (object) => object.name,
         cell: (object) => {
@@ -101,6 +101,7 @@ export const SchemaPage = () => {
               type="button"
               onClick={() => setSelectedKey(objectKey(object))}
             >
+              <Icon source={objectTypeIconSource(object.object_type)} size={16} weight="bold" />
               <code>{object.name}</code>
             </button>
           );
@@ -135,20 +136,8 @@ export const SchemaPage = () => {
         cell: (object) => <StatusBadge status={object.status} />
       },
       {
-        id: "source",
-        header: "Source",
-        className: "schema-table__source",
-        sortValue: (object) => object.source_file ?? "",
-        cell: (object) =>
-          object.source_file ? (
-            <code title={object.source_file}>{object.source_file}</code>
-          ) : (
-            <span className="cell-subtle">Live catalog</span>
-          )
-      },
-      {
         id: "checked",
-        header: "Checked",
+        header: "Last updated",
         className: "schema-table__checked",
         sortValue: (object) => object.last_checked,
         cell: (object) => {
@@ -261,23 +250,22 @@ export const SchemaPage = () => {
                   ? `No schema objects match "${textFilter}".`
                   : filter === "all"
                     ? "No schema objects were returned."
-                    : `No ${formatObjectType(filter)} objects were returned.`
+                  : `No ${formatObjectType(filter)} objects were returned.`
               }
             />
-          </div>
-
-          <div className="schema-workspace__detail">
-            {copyError ? (
-              <div className="status-banner status-banner--error" role="alert">
-                {copyError}
-              </div>
-            ) : null}
-            {copyStatus ? (
-              <div className="status-banner" role="status">
-                {copyStatus}
-              </div>
-            ) : null}
-            <SchemaObjectDetail object={selectedObject} onCopyChecksum={handleCopyChecksum} />
+            <div className="schema-workspace__detail">
+              {copyError ? (
+                <div className="status-banner status-banner--error" role="alert">
+                  {copyError}
+                </div>
+              ) : null}
+              {copyStatus ? (
+                <div className="status-banner" role="status">
+                  {copyStatus}
+                </div>
+              ) : null}
+              <SchemaObjectDetail object={selectedObject} onCopyChecksum={handleCopyChecksum} />
+            </div>
           </div>
         </div>
       ) : null}

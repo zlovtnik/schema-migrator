@@ -72,8 +72,8 @@
 }
 
 .secondary {
-  --button-bg: color-mix(in srgb, var(--color-bg-elevated) 74%, transparent);
-  --button-bg-hover: var(--color-bg-elevated);
+  --button-bg: var(--color-bg-elevated);
+  --button-bg-hover: color-mix(in srgb, var(--color-accent-primary) 8%, var(--color-bg-elevated));
   --button-border: var(--color-border);
   --button-color: var(--color-text-primary);
 }
