@@ -76,6 +76,7 @@ export const OverviewPage = () => {
         </div>
       </section>
 
+      {/* Duplicate of the health-summary message above — kept as deliberate emphasis for visibility */}
       {!runsLoading && failedRuns.length > 0 ? (
         <div className="status-banner status-banner--error">
           <Icon source={WarningIcon} size={20} weight="bold" />

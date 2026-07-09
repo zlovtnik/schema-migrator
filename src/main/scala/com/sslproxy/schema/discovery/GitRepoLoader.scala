@@ -9,7 +9,7 @@ import org.eclipse.jgit.lib.ObjectId
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
 
-final class GitRepoLoader:
+final class GitRepoLoader(transportTimeoutSeconds: Int = 60):
   def cloned[A](repoUrl: String, branch: String, cacheDir: Path)(use: Path => IO[A]): IO[A] =
     cloneResource(repoUrl, branch, cacheDir).use(use)
 
@@ -41,6 +41,7 @@ final class GitRepoLoader:
         .lsRemoteRepository()
         .setRemote(repoUrl)
         .setHeads(true)
+        .setTimeout(transportTimeoutSeconds)
         .call()
         .asScala
         .toList

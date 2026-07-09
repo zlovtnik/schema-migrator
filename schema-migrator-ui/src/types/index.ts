@@ -519,7 +519,10 @@ export const targetFormSchema = z.object({
     .min(1, "Repository URL is required")
     .url("Repository URL must be a valid URL")
     .refine((value) => value.startsWith("https://"), "Repository URL must start with https://")
-    .refine((value) => !/^https:\/\/[^/?#\s]+:[^@/?#\s]+@/iu.test(value), "Repository URL must not include credentials"),
+    .refine(
+      (value) => !/^https:\/\/[^/?#\s]*@/iu.test(value),
+      "Repository URL must not include credentials"
+    ),
   repo_branch: z.string().trim().min(1, "Branch is required").default("main"),
   repo_sql_path: z
     .string()

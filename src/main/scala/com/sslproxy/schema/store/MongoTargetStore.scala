@@ -64,15 +64,29 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
       updated <- document
         .traverse { document =>
           for
-            existing <- storedFromDocument(document)
             now <- nowString
-            target = toTarget(id, existing.target.created_at, payload).copy(
-              last_synced_commit = existing.target.last_synced_commit,
-              last_synced_at = existing.target.last_synced_at
+            update = Updates.combine(
+              Updates.set("label", payload.label),
+              Updates.set("app_name", payload.app_name),
+              Updates.set("env", payload.env),
+              Updates.set("jdbc_url", payload.jdbc_url),
+              Updates.set("repo_url", payload.repo_url),
+              Updates.set("repo_branch", payload.repo_branch),
+              Updates.set("repo_sql_path", payload.repo_sql_path),
+              Updates.set("updated_at", now)
             )
-            password = payload.password.filter(_.nonEmpty).orElse(existing.password)
-            replacement <- documentFor(StoredTarget(target, password), now)
-            result <- IO.blocking(collection.replaceOne(idFilter(id), replacement))
+            password = payload.password.filter(_.nonEmpty)
+            passwordUpdate <- password match
+              case Some(value) => passwordCrypto.encrypt(value).map { encrypted =>
+                Updates.combine(
+                  update,
+                  Updates.set("password_ciphertext", encrypted.cipherTextBase64),
+                  Updates.set("password_iv", encrypted.ivBase64)
+                )
+              }
+              case None => IO.pure(update)
+            result <- IO.blocking(collection.updateOne(idFilter(id), passwordUpdate))
+            target = toTarget(id, requiredString(document, "created_at"), payload)
           yield Option.when(result.getMatchedCount > 0)(target)
         }
         .map(_.flatten)
@@ -131,7 +145,7 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
       env = requiredString(document, "env"),
       jdbc_url = requiredString(document, "jdbc_url"),
       created_at = requiredString(document, "created_at"),
-      repo_url = optionalString(document, "repo_url").getOrElse("https://example.com/schema-migrator.git"),
+      repo_url = optionalString(document, "repo_url").getOrElse(""),
       repo_branch = optionalString(document, "repo_branch").getOrElse("main"),
       repo_sql_path = optionalString(document, "repo_sql_path").getOrElse("sql"),
       last_synced_commit = optionalString(document, "last_synced_commit"),

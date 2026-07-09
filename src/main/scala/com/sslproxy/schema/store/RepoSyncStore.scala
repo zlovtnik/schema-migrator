@@ -2,7 +2,7 @@ package com.sslproxy.schema.store
 
 import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
-import com.mongodb.client.model.{Indexes, ReplaceOptions}
+import com.mongodb.client.model.ReplaceOptions
 import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.MongoConfig
 import org.bson.Document
@@ -63,7 +63,7 @@ private final class MongoRepoSyncStore(collection: MongoCollection[Document]) ex
     IO.blocking(collection.deleteOne(idFilter(targetId))).void
 
   private[store] def initialize: IO[Unit] =
-    IO.blocking(collection.createIndex(Indexes.ascending("synced_at"))).void
+    IO.unit
 
   private def fromDocument(document: Document): RepoSyncState =
     RepoSyncState(

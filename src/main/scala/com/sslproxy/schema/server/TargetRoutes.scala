@@ -5,7 +5,7 @@ import cats.syntax.all.*
 import com.sslproxy.schema.config.ServerConfig
 import com.sslproxy.schema.db.postgres.PostgresProvider
 import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
-import com.sslproxy.schema.store.{AuditStore, Models, PatchStore, RunStore, TargetPayload, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{AuditStore, Models, PatchStore, RepoSyncStore, RunStore, TargetPayload, TargetStore, ValidationStore}
 import io.circe.Json
 import io.circe.syntax.*
 import org.http4s.{HttpRoutes, Request, Response}
@@ -31,7 +31,8 @@ object TargetRoutes:
     patchStore: PatchStore,
     runStore: RunStore,
     validationStore: ValidationStore,
-    auditStore: AuditStore
+    auditStore: AuditStore,
+    repoSyncStore: RepoSyncStore
   ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
       case GET -> Root / "targets" =>
@@ -108,7 +109,9 @@ object TargetRoutes:
             case None =>
               store.delete(id).flatMap {
                 case true =>
-                  auditStore.record(claims.subject, claims.role, "target.delete", "target", id, Some(id)).void *> NoContent()
+                  repoSyncStore
+                    .clear(id)
+                    .flatMap(_ => auditStore.record(claims.subject, claims.role, "target.delete", "target", id, Some(id)).void) *> NoContent()
                 case false => RouteJson.notFound(s"target '$id' was not found")
               }
           }

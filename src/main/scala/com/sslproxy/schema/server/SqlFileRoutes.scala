@@ -54,7 +54,6 @@ object SqlFileRoutes:
             case Some(target) =>
               repoSyncService
                 .sync(id, target)
-                .flatMap(result => targetStore.recordRepoSync(id, result.commitSha, result.syncedAt).as(result))
                 .flatMap(result => RouteJson.created(syncResultJson(result)))
                 .handleErrorWith(error => RouteJson.badRequest(error.getMessage))
             case None => RouteJson.notFound(s"target '$id' was not found")

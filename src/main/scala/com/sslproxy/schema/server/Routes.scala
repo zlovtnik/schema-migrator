@@ -19,7 +19,7 @@ object Routes:
     snapshotStore: SnapshotStore,
     auditStore: AuditStore
   ): HttpRoutes[IO] =
-    val loader = GitRepoLoader()
+    val loader = GitRepoLoader(config.server.repoCloneTimeoutSeconds)
     all(
       config,
       targetStore,
@@ -37,7 +37,8 @@ object Routes:
         repoSyncStore,
         loader,
         config.server.repoCacheDir,
-        config.server.repoCloneTimeoutSeconds
+        config.server.repoCloneTimeoutSeconds,
+        targetStore
       )
     )
 
@@ -53,7 +54,7 @@ object Routes:
     auditStore: AuditStore,
     runExecutor: RunExecutor
   ): HttpRoutes[IO] =
-    val loader = GitRepoLoader()
+    val loader = GitRepoLoader(config.server.repoCloneTimeoutSeconds)
     all(
       config,
       targetStore,
@@ -71,7 +72,8 @@ object Routes:
         repoSyncStore,
         loader,
         config.server.repoCacheDir,
-        config.server.repoCloneTimeoutSeconds
+        config.server.repoCloneTimeoutSeconds,
+        targetStore
       )
     )
 
@@ -91,7 +93,7 @@ object Routes:
   ): HttpRoutes[IO] =
     HealthRoute.routes <+>
       AuthRoutes.routes(config.server) <+>
-      TargetRoutes.routes(config.server, targetStore, patchStore, runStore, validationStore, auditStore) <+>
+      TargetRoutes.routes(config.server, targetStore, patchStore, runStore, validationStore, auditStore, repoSyncStore) <+>
       SchemaRoutes.routes(config, targetStore, sqlFileStore) <+>
       PatchRoutes.routes(targetStore, patchStore, auditStore) <+>
       RunRoutes.routes(config, targetStore, patchStore, runStore, validationStore, auditStore, runExecutor) <+>

@@ -49,8 +49,10 @@ object TargetPayload:
     else Right(())
 
   def rejectInlineRepoCredentials(repoUrl: String): Either[String, Unit] =
-    val normalized = repoUrl.trim
-    if normalized.matches("(?i)^https://[^/?#\\s]+:[^@/?#\\s]+@.*") then
+    val normalized = repoUrl.trim.split("[?#]", 2)(0)
+    val authority = normalized.drop("https://".length)
+    val hasUserinfo = authority.takeWhile(_ != '/').contains('@')
+    if hasUserinfo then
       Left("Repository URL must not contain inline credentials")
     else Right(())
 

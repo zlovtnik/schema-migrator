@@ -1,7 +1,7 @@
 package com.sslproxy.schema.discovery
 
 import cats.effect.unsafe.implicits.global
-import com.sslproxy.schema.store.{RepoSyncStore, SqlFileStore, StoredSqlFile, Target}
+import com.sslproxy.schema.store.{RepoSyncStore, SqlFileStore, StoredSqlFile, Target, TargetStore}
 import munit.FunSuite
 import org.eclipse.jgit.api.Git
 
@@ -18,7 +18,8 @@ class RepoSyncServiceSuite extends FunSuite:
         (for
           sqlStore <- SqlFileStore.inMemory
           syncStore <- RepoSyncStore.inMemory
-          service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 30)
+          targetStore <- TargetStore.inMemory
+          service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 30, targetStore)
           first <- service.sync("target-1", target(repo))
           second <- service.sync("target-1", target(repo))
           files <- sqlStore.list
@@ -53,7 +54,8 @@ class RepoSyncServiceSuite extends FunSuite:
           sqlStore <- SqlFileStore.inMemory
           _ <- sqlStore.replaceAll(List(existing))
           syncStore <- RepoSyncStore.inMemory
-          service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 1)
+          targetStore <- TargetStore.inMemory
+          service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 1, targetStore)
           failed <- service.sync("target-1", target(Path.of("/does/not/exist"))).attempt
           files <- sqlStore.list
           state <- syncStore.getSyncState("target-1")

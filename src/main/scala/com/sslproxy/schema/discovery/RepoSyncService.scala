@@ -2,7 +2,7 @@ package com.sslproxy.schema.discovery
 
 import cats.effect.{Clock, IO, Resource}
 import cats.syntax.all.*
-import com.sslproxy.schema.store.{RepoSyncStore, SqlFileStore, Target}
+import com.sslproxy.schema.store.{RepoSyncStore, SqlFileStore, Target, TargetStore}
 
 import java.nio.file.Path
 import java.util.concurrent.Semaphore
@@ -23,6 +23,7 @@ final class RepoSyncService(
   loader: GitRepoLoader,
   cacheDir: Path,
   cloneTimeoutSeconds: Int,
+  targetStore: TargetStore,
   syncLock: Semaphore = new Semaphore(1)
 ):
   def sync(targetId: String, target: Target): IO[SyncResult] =
@@ -44,6 +45,7 @@ final class RepoSyncService(
         _ <- IO.whenA(result.added > 0 || result.removed > 0 || result.changed > 0)(sqlFileStore.replaceAll(newFiles))
         syncedAt <- Clock[IO].realTimeInstant.map(_.toString)
         _ <- repoSyncStore.recordSync(targetId, commitSha, syncedAt)
+        _ <- targetStore.recordRepoSync(targetId, commitSha, syncedAt)
       yield result.copy(commitSha = commitSha, syncedAt = syncedAt)
     }
 
@@ -70,6 +72,7 @@ object RepoSyncService:
     repoSyncStore: RepoSyncStore,
     loader: GitRepoLoader,
     cacheDir: Path,
-    cloneTimeoutSeconds: Int
+    cloneTimeoutSeconds: Int,
+    targetStore: TargetStore
   ): RepoSyncService =
-    new RepoSyncService(sqlFileStore, repoSyncStore, loader, cacheDir, cloneTimeoutSeconds)
+    new RepoSyncService(sqlFileStore, repoSyncStore, loader, cacheDir, cloneTimeoutSeconds, targetStore)
