@@ -1,11 +1,13 @@
 package com.sslproxy.schema.db
 
+import cats.data.NonEmptyList
 import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.db.oracle.OracleStatements
 import com.sslproxy.schema.db.postgres.PostgresStatements
 import com.sslproxy.schema.engine.*
 import com.sslproxy.schema.error.MigratorError
+import com.sslproxy.schema.server.PostgresDriftAnalyzer
 import doobie.*
 import doobie.implicits.*
 import doobie.postgres.implicits.*
@@ -76,6 +78,8 @@ object SchemaControlStore:
     """
 
 final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
+  import PostgresDriftAnalyzer.*
+
   override def prepare(objects: List[SchemaObject]): ConnectionIO[List[PreparedObject]] =
     objects.traverse(prepareOne)
 
@@ -90,7 +94,9 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
           """.query[(String, String)].option
         oldSha = existing.map(_._1)
         oldStatus = existing.map(_._2)
-        needsApply = !oldSha.exists(_ == objectDef.sha256) || !oldStatus.exists(Set("applied", "skipped"))
+        liveCurrent <- liveCatalogCurrent(objectDef)
+        controlCurrent = oldSha.exists(_ == objectDef.sha256) && oldStatus.exists(Set("applied", "skipped"))
+        needsApply = !controlCurrent || !liveCurrent
         status = if needsApply then "pending" else "skipped"
         _ <- Update[
           (String, String, String, List[String], Option[String], String, String, String, String)
@@ -115,6 +121,129 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
         s"failed to prepare schema control state for ${objectDef.kind}:${objectDef.objectName}: ${error.getMessage}",
         error
       )
+    }
+
+  private def liveCatalogCurrent(objectDef: SchemaObject): ConnectionIO[Boolean] =
+    val expectedDefinitions = catalogDefinitions(objectDef.rawSql)
+    if expectedDefinitions.isEmpty then true.pure[ConnectionIO]
+    else
+      expectedDefinitions.traverse { definition =>
+        liveDefinition(definition.key).map {
+          case None => false
+          case Some(None) => true
+          case Some(Some(actualDdl)) =>
+            definitionHash(definition.key, definition.ddl) == definitionHash(definition.key, actualDdl)
+        }
+      }.map(_.forall(identity))
+
+  private def liveDefinition(key: ObjectKey): ConnectionIO[Option[Option[String]]] =
+    key.objectType match
+      case "schema" =>
+        sql"""
+        select format('create schema %I', n.nspname)::text
+          from pg_namespace n
+         where n.nspname = ${key.schema}
+        """.query[String].option.map(_.map(Some(_)))
+      case "extension" =>
+        sql"""
+        select format('create extension if not exists %I with schema %I', e.extname, n.nspname)::text
+          from pg_extension e
+          join pg_namespace n on n.oid = e.extnamespace
+         where n.nspname = ${key.schema} and e.extname = ${key.name}
+        """.query[String].option.map(_.map(Some(_)))
+      case "table" =>
+        relationExists(key, Set("r", "p")).map(exists => Option.when(exists)(None))
+      case "sequence" =>
+        relationExists(key, Set("S")).map(exists => Option.when(exists)(None))
+      case "view" =>
+        relationDefinition(key, Set("v"), "create view")
+      case "materialized_view" =>
+        relationDefinition(key, Set("m"), "create materialized view")
+      case "index" =>
+        sql"""
+        select pg_get_indexdef(c.oid)
+          from pg_class c
+          join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname = ${key.schema}
+           and c.relname = ${key.name}
+           and c.relkind in ('i', 'I')
+        """.query[String].option.map(_.map(Some(_)))
+      case "function" | "procedure" =>
+        routineDefinition(key)
+      case "type" =>
+        sql"""
+        select null::text
+          from pg_type typ
+          join pg_namespace n on n.oid = typ.typnamespace
+          left join pg_class c on c.oid = typ.typrelid
+         where n.nspname = ${key.schema}
+           and typ.typname = ${key.name}
+           and typ.typtype in ('e', 'd', 'r', 'c')
+           and (typ.typrelid = 0 or c.relkind = 'c')
+        """.query[Option[String]].option
+      case "trigger" =>
+        val dot = key.name.indexOf('.')
+        if dot < 0 then none[Option[String]].pure[ConnectionIO]
+        else
+          val tableName = key.name.substring(0, dot)
+          val triggerName = key.name.substring(dot + 1)
+          sql"""
+          select pg_get_triggerdef(t.oid, true)
+            from pg_trigger t
+            join pg_class c on c.oid = t.tgrelid
+            join pg_namespace n on n.oid = c.relnamespace
+           where n.nspname = ${key.schema}
+             and c.relname = $tableName
+             and t.tgname = $triggerName
+             and not t.tgisinternal
+          """.query[String].option.map(_.map(Some(_)))
+      case _ =>
+        Some(None).pure[ConnectionIO]
+
+  private def relationExists(key: ObjectKey, relKinds: Set[String]): ConnectionIO[Boolean] =
+    (fr"""
+    select exists (
+      select 1
+        from pg_class c
+        join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = ${key.schema}
+         and c.relname = ${key.name}
+         and
+    """ ++ Fragments.in(fr"c.relkind", NonEmptyList.fromListUnsafe(relKinds.toList)) ++ fr")")
+      .query[Boolean]
+      .unique
+
+  private def relationDefinition(key: ObjectKey, relKinds: Set[String], createPrefix: String): ConnectionIO[Option[Option[String]]] =
+    (fr"""
+    select format($createPrefix || ' %I.%I as %s', n.nspname, c.relname, pg_get_viewdef(c.oid, true))::text
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = ${key.schema}
+       and c.relname = ${key.name}
+       and
+    """ ++ Fragments.in(fr"c.relkind", NonEmptyList.fromListUnsafe(relKinds.toList)))
+      .query[String]
+      .option
+      .map(_.map(Some(_)))
+
+  private def routineDefinition(key: ObjectKey): ConnectionIO[Option[Option[String]]] =
+    val routineName = key.name.takeWhile(_ != '(')
+    val proKind = if key.objectType == "procedure" then "p" else "f"
+    sql"""
+    select n.nspname,
+           concat(p.proname::text, '(', oidvectortypes(p.proargtypes)::text, ')') as routine_name,
+           pg_get_functiondef(p.oid)
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = ${key.schema}
+       and p.proname = $routineName
+       and p.prokind = $proKind
+    """.query[(String, String, String)].to[List].map { rows =>
+      rows.collectFirst {
+        case (schema, name, ddl)
+            if normalizeObjectKey(ObjectKey(schema, name, key.objectType)) == normalizeObjectKey(key) =>
+          Some(ddl)
+      }
     }
 
   override def fetchStatus: ConnectionIO[List[ObjectStatus]] =

@@ -128,6 +128,8 @@ final case class Run(
 
 final case class TriggerRunPayload(patch_id: String, target_id: String)
 
+final case class DriftRunPayload(target_id: String, source_files: Option[List[String]])
+
 final case class SnapshotFile(
   path: String,
   folder: String,
@@ -245,12 +247,23 @@ final case class SchemaControlSummary(
   last_updated_at: Option[String]
 )
 
+final case class SchemaControlObject(
+  kind: String,
+  object_name: String,
+  source_file: String,
+  apply_status: String,
+  checksum: String,
+  applied_at: Option[String],
+  updated_at: Option[String]
+)
+
 final case class DriftResponse(
   target_id: String,
   db_kind: String,
   supported: Boolean,
   checked_at: String,
   control_summary: Option[SchemaControlSummary],
+  control_objects: List[SchemaControlObject],
   items: List[DriftItem],
   warnings: List[String]
 )
@@ -268,6 +281,7 @@ final case class AuthTokenResponse(token: String, token_type: String, expires_in
 object Models:
   given Decoder[TargetPayload] = deriveDecoder
   given Decoder[TriggerRunPayload] = deriveDecoder
+  given Decoder[DriftRunPayload] = deriveDecoder
   given Decoder[CreateSnapshotPayload] = deriveDecoder
   given Decoder[RollbackToSnapshotPayload] = deriveDecoder
   given Decoder[AuthTokenRequest] = deriveDecoder
@@ -290,5 +304,6 @@ object Models:
   given Encoder[SchemaCatalogResponse] = deriveEncoder
   given Encoder[DriftItem] = deriveEncoder
   given Encoder[SchemaControlSummary] = deriveEncoder
+  given Encoder[SchemaControlObject] = deriveEncoder
   given Encoder[DriftResponse] = deriveEncoder
   given Encoder[AuthTokenResponse] = deriveEncoder

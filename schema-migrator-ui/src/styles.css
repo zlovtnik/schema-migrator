@@ -1608,6 +1608,21 @@ label {
   background: var(--surface-strong);
 }
 
+.control-summary__metric--success {
+  border-color: color-mix(in srgb, var(--success) 22%, var(--border));
+  background: color-mix(in srgb, var(--success-soft) 56%, var(--surface-strong));
+}
+
+.control-summary__metric--warning {
+  border-color: color-mix(in srgb, var(--warning) 24%, var(--border));
+  background: color-mix(in srgb, var(--warning-soft) 56%, var(--surface-strong));
+}
+
+.control-summary__metric--error {
+  border-color: color-mix(in srgb, var(--danger) 24%, var(--border));
+  background: color-mix(in srgb, var(--danger-soft) 56%, var(--surface-strong));
+}
+
 .control-summary__metric span,
 .control-summary__timestamps dt,
 .control-summary__failed span {
@@ -1619,6 +1634,18 @@ label {
 .control-summary__metric strong {
   font-family: var(--font-mono);
   font-size: var(--font-size-18);
+}
+
+.control-summary__metric--success strong {
+  color: var(--success-text);
+}
+
+.control-summary__metric--warning strong {
+  color: var(--warning-text);
+}
+
+.control-summary__metric--error strong {
+  color: var(--danger-text);
 }
 
 .control-summary__timestamps {
@@ -1717,6 +1744,7 @@ dd {
 .object-type-chip {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   max-width: 100%;
   min-width: 0;
   min-height: 24px;
@@ -1730,6 +1758,19 @@ dd {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.object-type-chip__icon {
+  flex: 0 0 auto;
+  color: var(--schema-accent);
+  opacity: 0.78;
+}
+
+.drift-table__type .object-type-chip,
+.drift-table__status .status-badge {
+  display: inline-flex;
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .drift-toolbar {
@@ -1749,16 +1790,37 @@ dd {
   max-width: none;
 }
 
+.drift-workspace .data-table {
+  min-width: 1130px;
+}
+
 .drift-table__object {
-  width: 38%;
+  width: 32%;
   min-width: 280px;
 }
 
-.drift-table__type,
-.drift-table__schema,
-.drift-table__status,
+.drift-table__type {
+  width: 120px;
+  white-space: nowrap;
+}
+
+.drift-table__schema {
+  width: 110px;
+  white-space: nowrap;
+}
+
+.drift-table__status {
+  width: 165px;
+  white-space: nowrap;
+}
+
 .drift-table__detected {
-  width: 1%;
+  width: 180px;
+  white-space: nowrap;
+}
+
+.drift-table__action {
+  width: 112px;
   white-space: nowrap;
 }
 
@@ -1781,6 +1843,10 @@ dd {
   display: block;
   white-space: normal;
   line-height: 1.45;
+}
+
+.drift-run-button {
+  width: 84px;
 }
 
 .sql-preview-grid {
@@ -1992,12 +2058,45 @@ dd {
   background: var(--surface-strong);
 }
 
+.drift-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.drift-section-header__title {
+  font-size: var(--font-size-16);
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0;
+}
+
+.drift-section-header__description {
+  color: var(--muted);
+  font-size: var(--font-size-12);
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
 .drift-chip--active {
   color: var(--schema-accent);
 }
 
 .drift-chip strong {
   font-family: var(--font-mono);
+}
+
+.row--drift-missing_actual,
+.row--drift-untracked_actual,
+.row--drift-definition_changed,
+.row--drift-pending_or_failed_control {
+  background: color-mix(in srgb, var(--warning-soft) 34%, transparent);
+}
+
+.row--drift-pending_or_failed_control {
+  background: color-mix(in srgb, var(--danger-soft) 30%, transparent);
 }
 
 .snapshot-id-pair {

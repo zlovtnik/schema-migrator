@@ -91,7 +91,7 @@ export const RunListPage = () => {
             <thead>
               <tr>
                 <th scope="col">Target</th>
-                <th scope="col">Migration</th>
+                <th scope="col">Run source</th>
                 <th scope="col">Started</th>
                 <th scope="col">Duration</th>
                 <th scope="col">Status</th>

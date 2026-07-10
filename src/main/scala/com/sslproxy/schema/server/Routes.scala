@@ -94,7 +94,7 @@ object Routes:
     HealthRoute.routes <+>
       AuthRoutes.routes(config.server) <+>
       TargetRoutes.routes(config.server, targetStore, patchStore, runStore, validationStore, auditStore, repoSyncStore) <+>
-      SchemaRoutes.routes(config, targetStore, sqlFileStore) <+>
+      SchemaRoutes.routes(config, targetStore, sqlFileStore, patchStore, runStore, auditStore, runExecutor) <+>
       PatchRoutes.routes(targetStore, patchStore, auditStore) <+>
       RunRoutes.routes(config, targetStore, patchStore, runStore, validationStore, auditStore, runExecutor) <+>
       ValidationRoutes.routes(targetStore, patchStore, runStore, validationStore, auditStore) <+>

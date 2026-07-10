@@ -757,6 +757,14 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     assertEquals(snapshot.summary.map(_.failed_count), Some(1L))
     assertEquals(snapshot.summary.map(_.ready), Some(false))
     assertEquals(snapshot.summary.map(_.failed_objects), Some(List("view:public.failed_view")))
+    assertEquals(
+      snapshot.rows.map(_.source_file),
+      List("tables/001_devices.sql", "indexes/001_devices_idx.sql", "functions/001_pending.sql", "views/001_failed.sql")
+    )
+    assertEquals(snapshot.rows.map(_.apply_status), List("applied", "skipped", "pending", "failed"))
+    assertEquals(snapshot.rows.head.checksum, "sha-tables/001_devices.sql")
+    assertEquals(snapshot.rows.head.applied_at, Some("2026-07-02T12:00:00Z"))
+    assertEquals(snapshot.rows.head.updated_at, Some("2026-07-02T12:05:00Z"))
   }
 
   private def schemaObject(kind: String, objectName: String, sourceFile: String, rawSql: String): SchemaObject =

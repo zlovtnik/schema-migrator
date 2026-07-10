@@ -64,7 +64,6 @@ const EntityLink = ({ event }: { event: AuditEvent }) => {
 
 const entityUrl = (event: AuditEvent): string | undefined => {
   if (event.entity_type === "target") return `/targets/${event.entity_id}/overview`;
-  if (event.entity_type === "patch" || event.entity_type === "migration") return `/migrations/${event.entity_id}`;
   if (event.entity_type === "run") return `/runs/${event.entity_id}`;
   if (event.entity_type === "snapshot") return `/snapshots/${event.entity_id}`;
   return undefined;

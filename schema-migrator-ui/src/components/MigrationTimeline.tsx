@@ -14,7 +14,7 @@ interface MigrationTimelineProps {
 
 export const MigrationTimeline = ({ items }: MigrationTimelineProps) => {
   if (items.length === 0) {
-    return <div className="empty-state">No migration history is available for this object.</div>;
+    return <div className="empty-state">No apply history is available for this object.</div>;
   }
 
   return (

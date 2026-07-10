@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DriftPage } from "./DriftPage";
+import { setAuthToken } from "../../api/client";
 import { renderApp } from "../../test/render";
 
 const jsonResponse = (body: unknown): Response =>
@@ -14,6 +15,7 @@ describe("DriftPage", () => {
   let driftPayload: unknown;
 
   beforeEach(() => {
+    setAuthToken(testToken("operator"));
     driftPayload = {
       target_id: "target-1",
       db_kind: "postgres",
@@ -51,6 +53,19 @@ describe("DriftPage", () => {
       "fetch",
       vi.fn((input: RequestInfo | URL) => {
         const url = String(input);
+        if (url.includes("/drift/runs")) {
+          return Promise.resolve(
+            jsonResponse({
+              id: "run-1",
+              target_id: "target-1",
+              patch_id: "patch-1",
+              status: "pending",
+              scripts: [],
+              started_at: "2026-06-28T12:01:00Z",
+              triggered_by: "operator"
+            })
+          );
+        }
         if (url.includes("/targets")) {
           return Promise.resolve(
             jsonResponse({
@@ -70,6 +85,9 @@ describe("DriftPage", () => {
         if (url.includes("/drift")) {
           return Promise.resolve(jsonResponse(driftPayload));
         }
+        if (url.includes("/runs")) {
+          return Promise.resolve(jsonResponse({ runs: [] }));
+        }
         return Promise.resolve(jsonResponse({}));
       })
     );
@@ -79,6 +97,7 @@ describe("DriftPage", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    setAuthToken("");
   });
 
   it("loads drift results for the selected target", async () => {
@@ -91,6 +110,43 @@ describe("DriftPage", () => {
     expect(screen.getByLabelText("Filter results")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Schema control summary" })).toBeInTheDocument();
     expect(screen.getByText("Control state")).toBeInTheDocument();
+    expect(screen.getByText("Last checked")).toBeInTheDocument();
+    expect(screen.getByText("Drift detected")).toBeInTheDocument();
+    expect(screen.getByText("1 object")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run executable drift" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run" })).toBeInTheDocument();
+  });
+
+  it("starts all executable drift from the page action", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    renderApp(<DriftPage />, { route: "/drift?target=target-1" });
+
+    await user.click(await screen.findByRole("button", { name: "Run executable drift" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/drift/runs"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ target_id: "target-1" })
+      })
+    );
+  });
+
+  it("starts drift execution for a single source file from a row", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    renderApp(<DriftPage />, { route: "/drift?target=target-1" });
+
+    await user.click(await screen.findByRole("button", { name: "Run" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/drift/runs"),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ target_id: "target-1", source_files: ["tables/001_devices.sql"] })
+      })
+    );
   });
 
   it("counts drift type chips after applying the text filter", async () => {
@@ -208,3 +264,8 @@ describe("DriftPage", () => {
     expect(screen.queryByLabelText("Filter results")).not.toBeInTheDocument();
   });
 });
+
+const testToken = (role: string): string => {
+  const encode = (value: unknown) => window.btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
+  return `${encode({ alg: "none" })}.${encode({ sub: "test-user", role })}.signature`;
+};

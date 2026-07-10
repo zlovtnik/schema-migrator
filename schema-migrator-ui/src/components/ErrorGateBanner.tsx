@@ -17,7 +17,7 @@ export const ErrorGateBanner = ({ failedRun }: ErrorGateBannerProps) => {
       <Icon source={WarningIcon} size={20} weight="bold" />
       <div>
         <strong>Apply is blocked by a failed run.</strong>
-        <span>Resolve run {failedRun.id} before applying more migrations.</span>
+        <span>Resolve run {failedRun.id} before starting another apply.</span>
       </div>
       <Link className="button button--danger button--small" to={`/runs/${failedRun.id}`}>
         View run

@@ -25,6 +25,7 @@ private[schema] object PostgresDriftCheck:
               supported = false,
               checked_at = now,
               control_summary = None,
+              control_objects = Nil,
               items = Nil,
               warnings = List(
                 "Oracle drift introspection is not implemented; use check-connection for Oracle validation."
@@ -52,6 +53,7 @@ private[schema] object PostgresDriftCheck:
       supported = true,
       checked_at = now,
       control_summary = snapshot.control.summary,
+      control_objects = snapshot.control.rows,
       items = items,
       warnings = discovery.warnings ++ snapshot.control.warnings
     )

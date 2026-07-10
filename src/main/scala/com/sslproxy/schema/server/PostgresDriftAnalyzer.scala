@@ -3,7 +3,7 @@ package com.sslproxy.schema.server
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.engine.SchemaObject
 import com.sslproxy.schema.parser.Canonicalizer
-import com.sslproxy.schema.store.{DriftItem, SchemaCatalogObject, SchemaControlSummary}
+import com.sslproxy.schema.store.{DriftItem, SchemaCatalogObject, SchemaControlObject, SchemaControlSummary}
 
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -62,7 +62,12 @@ private[schema] object PostgresDriftAnalyzer:
   )
 
   final case class ExpectedSnapshot(objects: List[ExpectedObject], warnings: List[String])
-  final case class ControlSnapshot(objects: List[ControlObject], summary: Option[SchemaControlSummary], warnings: List[String])
+  final case class ControlSnapshot(
+    objects: List[ControlObject],
+    summary: Option[SchemaControlSummary],
+    warnings: List[String],
+    rows: List[SchemaControlObject] = Nil
+  )
 
   def expectedFromManifest(item: SchemaObject): List[ExpectedObject] =
     catalogDefinitions(item.rawSql).map(definition =>
@@ -79,7 +84,8 @@ private[schema] object PostgresDriftAnalyzer:
     ControlSnapshot(
       objects = rows.flatMap(controlObjectsForRow),
       summary = Some(controlSummary(rows)),
-      warnings = Nil
+      warnings = Nil,
+      rows = rows.map(controlObject)
     )
 
   def unavailableControlSnapshot(message: String): ControlSnapshot =
@@ -328,6 +334,17 @@ private[schema] object PostgresDriftAnalyzer:
       failed_objects = rows.filter(_.applyStatus == "failed").map(row => s"${row.kind}:${row.objectName}").sorted,
       last_applied_at = rows.flatMap(_.appliedAt).maxOption,
       last_updated_at = rows.flatMap(_.updatedAt).maxOption
+    )
+
+  private def controlObject(row: ControlRow): SchemaControlObject =
+    SchemaControlObject(
+      kind = row.kind,
+      object_name = row.objectName,
+      source_file = row.sourceFile,
+      apply_status = row.applyStatus,
+      checksum = row.checksum,
+      applied_at = row.appliedAt,
+      updated_at = row.updatedAt
     )
 
   private def definitionChanged(key: ObjectKey, expectedDdl: Option[String], actualDdl: Option[String]): Boolean =

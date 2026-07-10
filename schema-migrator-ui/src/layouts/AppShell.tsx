@@ -13,7 +13,6 @@ import { PlugsConnectedIcon } from "@phosphor-icons/react/dist/csr/PlugsConnecte
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { SignOutIcon } from "@phosphor-icons/react/dist/csr/SignOut";
-import { UploadSimpleIcon } from "@phosphor-icons/react/dist/csr/UploadSimple";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
 import { logoutFromKeycloak } from "../auth/keycloak";
 import { AppBreadcrumbs } from "../components/AppBreadcrumbs";
@@ -36,8 +35,7 @@ const baseNavSections = [
       { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
       { to: "/targets", label: "Targets", icon: PlugsConnectedIcon },
       { to: "/schema", label: "Schema", icon: DatabaseIcon },
-      { to: "/sql-files", label: "SQL Files", icon: FileSqlIcon },
-      { to: "/migrations", label: "Migrations", icon: UploadSimpleIcon }
+      { to: "/sql-files", label: "SQL Files", icon: FileSqlIcon }
     ]
   },
   {
@@ -248,7 +246,7 @@ const BrandIdentity = () => (
     </div>
     <div className="brand-copy">
       <strong>Bedrock Schema Migrator</strong>
-      <span>Migration operations</span>
+      <span>Schema operations</span>
     </div>
   </>
 );

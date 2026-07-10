@@ -56,15 +56,15 @@ export const LiveRunCard = ({ run, onAbort, aborting = false }: LiveRunCardProps
       <div className="live-run__header">
         <div>
           <span className="eyebrow">Active run</span>
-          <h2>Migration {run.patch_id}</h2>
+          <h2>Run {run.patch_id}</h2>
         </div>
         <StatusBadge status={stream.runStatus} />
       </div>
       <ProgressBar
-        label="Migration run progress"
+        label="Run progress"
         liveText={
           activeScript
-            ? `Applying migration ${completedScripts + 1} of ${Math.max(totalScripts, 1)}: ${activeScript.filename}`
+            ? `Applying script ${completedScripts + 1} of ${Math.max(totalScripts, 1)}: ${activeScript.filename}`
             : `${completedScripts} of ${totalScripts} scripts complete`
         }
         max={Math.max(totalScripts, 1)}
