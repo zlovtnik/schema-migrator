@@ -60,7 +60,7 @@ object SnapshotRoutes:
               case None => RouteJson.notFound(s"target '${payload.target_id}' was not found")
               case Some(_) =>
                 for
-                  files <- sqlFileStore.list
+                  files <- sqlFileStore.list(payload.target_id)
                   snapshot <- snapshotStore.create(payload.target_id, payload.label, files, claims.subject)
                   _ <- auditStore.record(
                     claims.subject,
@@ -140,7 +140,7 @@ object SnapshotRoutes:
           TargetDatabase.dbKindFor(target.target.jdbc_url) match
             case Left(message) => RouteJson.badRequest(message)
             case Right(dbKind) =>
-              sqlFileStore.list.flatMap { currentFiles =>
+              sqlFileStore.list(payload.target_id).flatMap { currentFiles =>
                 rollbackUploads(snapshot, currentFiles, dbKind) match
                   case Left(errors) =>
                     RouteJson.unprocessableEntity(

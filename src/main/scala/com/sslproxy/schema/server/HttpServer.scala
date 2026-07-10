@@ -11,6 +11,7 @@ import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
 import com.sslproxy.schema.store.{
   AuditStore,
   PatchStore,
+  RepoSyncStore,
   RunStore,
   SnapshotStore,
   SqlFileStore,
@@ -61,6 +62,7 @@ object HttpServer:
       )
       targetStore <- TargetStore.mongo(mongoConfig, targetPasswordKey, mongoClient)
       sqlFileStore <- SqlFileStore.mongo(mongoConfig, config.server.sqlFilesCollection, mongoClient)
+      repoSyncStore <- RepoSyncStore.mongo(mongoConfig, config.server.repoSyncCollection, mongoClient)
       patchStore <- PatchStore.mongo(mongoConfig, config.server.patchesCollection, mongoClient)
       runStore <- RunStore.mongo(mongoConfig, config.server.runsCollection, mongoClient)
       validationStore <- ValidationStore.mongo(mongoConfig, config.server.validationsCollection, mongoClient)
@@ -74,6 +76,7 @@ object HttpServer:
         runStore,
         validationStore,
         sqlFileStore,
+        repoSyncStore,
         snapshotStore,
         auditStore
       )

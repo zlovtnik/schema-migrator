@@ -24,24 +24,24 @@ final case class StoredSqlFile(
 )
 
 trait SqlFileStore:
-  /** List all stored SQL files, ordered by folder then filename. */
-  def list: IO[List[StoredSqlFile]]
+  /** List all stored SQL files for a specific target, ordered by folder then filename. */
+  def list(targetId: String): IO[List[StoredSqlFile]]
 
-  /** List files for a specific folder. */
-  def listByFolder(folder: String): IO[List[StoredSqlFile]]
+  /** List files for a specific folder for a specific target. */
+  def listByFolder(targetId: String, folder: String): IO[List[StoredSqlFile]]
 
-  /** Upsert a batch of files (replaces all existing content). */
-  def replaceAll(files: List[StoredSqlFile]): IO[Unit]
+  /** Upsert a batch of files for a specific target (replaces all existing content for that target). */
+  def replaceAll(targetId: String, files: List[StoredSqlFile]): IO[Unit]
 
-  /** Delete all stored SQL files. */
-  def clear: IO[Unit]
+  /** Delete all stored SQL files for a specific target. */
+  def clear(targetId: String): IO[Unit]
 
-  /** Check if any SQL files are stored. */
-  def isEmpty: IO[Boolean]
+  /** Check if any SQL files are stored for a specific target. */
+  def isEmpty(targetId: String): IO[Boolean]
 
   /** Convert stored files to discovery SqlFile objects. */
-  def toSqlFiles: IO[List[SqlFile]] =
-    list.flatMap(_.traverse(SqlFileStore.toSqlFile))
+  def toSqlFiles(targetId: String): IO[List[SqlFile]] =
+    list(targetId).flatMap(_.traverse(SqlFileStore.toSqlFile))
 
 object SqlFileStore:
   def mongo(config: MongoConfig, collectionName: String): Resource[IO, SqlFileStore] =
@@ -74,10 +74,10 @@ object SqlFileStore:
     }
 
 private final class MongoSqlFileStore(collection: MongoCollection[Document]) extends SqlFileStore:
-  override def list: IO[List[StoredSqlFile]] =
+  override def list(targetId: String): IO[List[StoredSqlFile]] =
     IO.blocking {
       collection
-        .find()
+        .find(targetIdFilter(targetId))
         .sort(Indexes.ascending("folder", "filename"))
         .into(new java.util.ArrayList[Document]())
         .asScala
@@ -85,10 +85,10 @@ private final class MongoSqlFileStore(collection: MongoCollection[Document]) ext
         .map(fromDocument)
     }
 
-  override def listByFolder(folder: String): IO[List[StoredSqlFile]] =
+  override def listByFolder(targetId: String, folder: String): IO[List[StoredSqlFile]] =
     IO.blocking {
       collection
-        .find(new Document("folder", folder))
+        .find(new Document("target_id", targetId).append("folder", folder))
         .sort(Indexes.ascending("filename"))
         .into(new java.util.ArrayList[Document]())
         .asScala
@@ -96,31 +96,39 @@ private final class MongoSqlFileStore(collection: MongoCollection[Document]) ext
         .map(fromDocument)
     }
 
-  override def replaceAll(files: List[StoredSqlFile]): IO[Unit] =
+  override def replaceAll(targetId: String, files: List[StoredSqlFile]): IO[Unit] =
     IO.blocking {
       val upsert = ReplaceOptions().upsert(true)
       files.foreach { file =>
-        collection.replaceOne(new Document("_id", file.path), toDocument(file), upsert)
+        collection.replaceOne(
+          new Document("_id", s"$targetId:${file.path}"),
+          toDocument(targetId, file),
+          upsert
+        )
       }
-      if files.isEmpty then collection.deleteMany(new Document())
-      else collection.deleteMany(new Document("_id", new Document("$nin", files.map(_.path).asJava)))
+      if files.isEmpty then collection.deleteMany(targetIdFilter(targetId))
+      else collection.deleteMany(
+        new Document("target_id", targetId)
+          .append("_id", new Document("$nin", files.map(f => s"$targetId:${f.path}").asJava))
+      )
       ()
     }
 
-  override def clear: IO[Unit] =
-    IO.blocking(collection.deleteMany(new Document())).void
+  override def clear(targetId: String): IO[Unit] =
+    IO.blocking(collection.deleteMany(targetIdFilter(targetId))).void
 
-  override def isEmpty: IO[Boolean] =
-    IO.blocking(collection.countDocuments() == 0)
+  override def isEmpty(targetId: String): IO[Boolean] =
+    IO.blocking(collection.countDocuments(targetIdFilter(targetId)) == 0)
 
   private[store] def initialize: IO[Unit] =
     IO.blocking {
-      collection.createIndex(Indexes.ascending("folder", "filename"))
+      collection.createIndex(Indexes.ascending("target_id", "folder", "filename"))
     }.void
 
-  private def toDocument(file: StoredSqlFile): Document =
+  private def toDocument(targetId: String, file: StoredSqlFile): Document =
     new Document()
-      .append("_id", file.path)
+      .append("_id", s"$targetId:${file.path}")
+      .append("target_id", targetId)
       .append("path", file.path)
       .append("folder", file.folder)
       .append("filename", file.filename)
@@ -143,21 +151,28 @@ private final class MongoSqlFileStore(collection: MongoCollection[Document]) ext
       .filter(_.nonEmpty)
       .getOrElse(throw IllegalStateException(s"sql_file document is missing required field '$field'"))
 
+  private def targetIdFilter(targetId: String): Document =
+    new Document("target_id", targetId)
+
 private final class InMemorySqlFileStore(ref: Ref[IO, Map[String, StoredSqlFile]]) extends SqlFileStore:
-  override def list: IO[List[StoredSqlFile]] =
-    ref.get.map(_.values.toList.sortBy(f => (f.folder, f.filename)))
+  override def list(targetId: String): IO[List[StoredSqlFile]] =
+    ref.get.map(_.filter { case (key, _) => key.startsWith(s"$targetId:") }.values.toList.sortBy(f => (f.folder, f.filename)))
 
-  override def listByFolder(folder: String): IO[List[StoredSqlFile]] =
-    ref.get.map(_.values.toList.filter(_.folder == folder).sortBy(_.filename))
+  override def listByFolder(targetId: String, folder: String): IO[List[StoredSqlFile]] =
+    ref.get.map(_.filter { case (key, _) => key.startsWith(s"$targetId:") }.values.toList.filter(_.folder == folder).sortBy(_.filename))
 
-  override def replaceAll(files: List[StoredSqlFile]): IO[Unit] =
-    ref.set(files.map(f => f.path -> f).toMap)
+  override def replaceAll(targetId: String, files: List[StoredSqlFile]): IO[Unit] =
+    ref.update { current =>
+      val prefixed = files.map(f => s"$targetId:${f.path}" -> f).toMap
+      val withoutOld = current.filterNot { case (key, _) => key.startsWith(s"$targetId:") }
+      withoutOld ++ prefixed
+    }
 
-  override def clear: IO[Unit] =
-    ref.set(Map.empty)
+  override def clear(targetId: String): IO[Unit] =
+    ref.update(_.filterNot { case (key, _) => key.startsWith(s"$targetId:") })
 
-  override def isEmpty: IO[Boolean] =
-    ref.get.map(_.isEmpty)
+  override def isEmpty(targetId: String): IO[Boolean] =
+    ref.get.map(!_.keys.exists(_.startsWith(s"$targetId:")))
 
 object StoredSqlFile:
   def fromBytes(

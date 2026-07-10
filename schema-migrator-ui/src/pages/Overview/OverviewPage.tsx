@@ -8,6 +8,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { useAuditEvents } from "../../hooks/useAudit";
 import { useRuns } from "../../hooks/useRuns";
+import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useTargets } from "../../hooks/useTargets";
 
@@ -16,10 +17,13 @@ export const OverviewPage = () => {
   const { data: targets = [], isLoading: targetsLoading } = useTargets();
   const { data: runs = [], isLoading: runsLoading } = useRuns();
   const { data: auditEvents = [], isLoading: auditLoading, error: auditError } = useAuditEvents({ limit: 5 }, canViewAudit);
+  const selectedTargetId = useSelectedTargetId();
 
   const activeRuns = runs.filter((run) => run.status === "pending" || run.status === "running");
   const failedRuns = runs.filter((run) => run.status === "failed");
   const recentRuns = [...runs].sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at)).slice(0, 5);
+  const activeTarget = targets.find((target) => target.id === selectedTargetId) ?? targets[0];
+  const appliedRuns = runs.filter((run) => run.status === "completed").length;
 
   return (
     <section className="page">
@@ -34,34 +38,43 @@ export const OverviewPage = () => {
         </Link>
       </header>
 
-      <section className="metric-grid" aria-label="System health summary">
-        <div>
-          <span className="field-label">Targets</span>
-          <strong>{targetsLoading ? "..." : targets.length}</strong>
+      <section className="overview-summary" aria-label="System health summary">
+        <div className="system-health-card">
+          <div className={failedRuns.length > 0 ? "health-orb health-orb--error" : "health-orb health-orb--ok"}>
+            <Icon source={failedRuns.length > 0 ? WarningIcon : ShieldCheckIcon} size={20} weight="bold" />
+          </div>
+          <div>
+            <strong>{runsLoading ? "Checking run safety" : failedRuns.length > 0 ? "Run resolution needed" : "All systems nominal"}</strong>
+            <p>
+              {runsLoading
+                ? "Loading run state before apply operations."
+                : failedRuns.length > 0
+                  ? `${failedRuns.length} failed run${failedRuns.length === 1 ? "" : "s"} need resolution before more applies.`
+                  : "No failed runs are blocking apply operations."}
+            </p>
+          </div>
+          <dl>
+            <div>
+              <dt>Applied</dt>
+              <dd>{runsLoading ? "..." : appliedRuns}</dd>
+            </div>
+            <div>
+              <dt>Active</dt>
+              <dd>{runsLoading ? "..." : activeRuns.length}</dd>
+            </div>
+          </dl>
         </div>
-        <div>
-          <span className="field-label">Active runs</span>
-          <strong>{runsLoading ? "..." : activeRuns.length}</strong>
-        </div>
-        <div>
-          <span className="field-label">Failed runs</span>
-          <strong>{runsLoading ? "..." : failedRuns.length}</strong>
+
+        <div className="active-target-card">
+          <span className="field-label">Active target</span>
+          <strong>{targetsLoading ? "..." : activeTarget?.label ?? "No target"}</strong>
+          <p>{activeTarget ? `${activeTarget.app_name} · ${activeTarget.env}` : "Configure a target to start running migrations."}</p>
+          <div>
+            <span>Targets</span>
+            <code>{targetsLoading ? "..." : targets.length}</code>
+          </div>
         </div>
       </section>
-
-      {!runsLoading ? (
-        failedRuns.length > 0 ? (
-          <div className="status-banner status-banner--error">
-            <Icon source={WarningIcon} size={20} weight="bold" />
-            {failedRuns.length} failed run{failedRuns.length === 1 ? "" : "s"} need resolution before more applies.
-          </div>
-        ) : (
-          <div className="status-banner status-banner--ok">
-            <Icon source={ShieldCheckIcon} size={20} weight="bold" />
-            No failed runs are blocking apply operations.
-          </div>
-        )
-      ) : null}
 
       <section className="section-block">
         <h2>Recent runs</h2>

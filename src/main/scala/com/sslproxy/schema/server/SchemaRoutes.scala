@@ -65,7 +65,7 @@ object SchemaRoutes:
     for
       now <- nowString
       kind = dbKindFor(target.target.jdbc_url)
-      expected <- expectedObjects(config, kind, now, sqlFileStore)
+      expected <- expectedObjects(config, kind, now, target.target.id, sqlFileStore)
       response <- kind match
         case DbKind.Oracle =>
           IO.pure(
@@ -109,7 +109,7 @@ object SchemaRoutes:
     for
       now <- nowString
       kind = dbKindFor(target.target.jdbc_url)
-      expected <- expectedObjects(config, kind, now, sqlFileStore)
+      expected <- expectedObjects(config, kind, now, target.target.id, sqlFileStore)
       response <- kind match
         case DbKind.Oracle =>
           IO.pure(
@@ -153,14 +153,14 @@ object SchemaRoutes:
   private def targetId(request: org.http4s.Request[IO]): Option[String] =
     request.uri.query.params.get("target_id").map(_.trim).filter(_.nonEmpty)
 
-  private def expectedObjects(config: MigratorConfig, kind: DbKind, now: String, sqlFileStore: SqlFileStore): IO[ExpectedSnapshot] =
+  private def expectedObjects(config: MigratorConfig, kind: DbKind, now: String, targetId: String, sqlFileStore: SqlFileStore): IO[ExpectedSnapshot] =
     if kind != DbKind.Postgres then IO.pure(ExpectedSnapshot(Nil, Nil))
     else
       // Try store-based discovery first, fall back to filesystem
-      sqlFileStore.isEmpty.flatMap { empty =>
+      sqlFileStore.isEmpty(targetId).flatMap { empty =>
         if !empty then
           (for
-            files <- storedSqlFiles(sqlFileStore)
+            files <- storedSqlFiles(targetId, sqlFileStore)
             discovery = DiscoveryService[IO]().discoverFromFiles(files, DbKind.Postgres)
             objects <- ManifestBuilder[IO](SqlDialect.Postgres).build(discovery.files)
             expected = objects.flatMap(expectedFromManifest)
@@ -179,8 +179,8 @@ object SchemaRoutes:
           }
       }
 
-  private def storedSqlFiles(sqlFileStore: SqlFileStore): IO[List[SqlFile]] =
-    sqlFileStore.list.map(_.map(storedSqlFile))
+  private def storedSqlFiles(targetId: String, sqlFileStore: SqlFileStore): IO[List[SqlFile]] =
+    sqlFileStore.list(targetId).map(_.map(storedSqlFile))
 
   private def storedSqlFile(stored: StoredSqlFile): SqlFile =
     val bytes = Base64.getDecoder.decode(stored.contentBase64)

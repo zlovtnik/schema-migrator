@@ -33,6 +33,8 @@ class TargetStoreSuite extends FunSuite:
             storedAfterEmptyPasswordUpdate <- store.getStored(created.id)
             updatedWithPassword <- store.update(created.id, targetPayload("Gamma", Some("second")))
             storedAfterPasswordUpdate <- store.getStored(created.id)
+            syncRecorded <- store.recordRepoSync(created.id, "abc123", "2026-07-02T12:00:00Z")
+            synced <- store.get(created.id)
             missingUpdate <- store.update("missing", targetPayload("Missing", Some("secret")))
             deleted <- store.delete(created.id)
             missingDelete <- store.delete(created.id)
@@ -45,6 +47,8 @@ class TargetStoreSuite extends FunSuite:
             storedAfterEmptyPasswordUpdate,
             updatedWithPassword,
             storedAfterPasswordUpdate,
+            syncRecorded,
+            synced,
             missingUpdate,
             deleted,
             missingDelete,
@@ -61,6 +65,8 @@ class TargetStoreSuite extends FunSuite:
         storedAfterEmptyPasswordUpdate,
         updatedWithPassword,
         storedAfterPasswordUpdate,
+        syncRecorded,
+        synced,
         missingUpdate,
         deleted,
         missingDelete,
@@ -74,6 +80,8 @@ class TargetStoreSuite extends FunSuite:
       assertEquals(storedAfterEmptyPasswordUpdate.map(_.password), Some(Some("first")))
       assertEquals(updatedWithPassword.map(_.label), Some("Gamma"))
       assertEquals(storedAfterPasswordUpdate.map(_.password), Some(Some("second")))
+      assertEquals(syncRecorded, true)
+      assertEquals(synced.flatMap(_.last_synced_commit), Some("abc123"))
       assertEquals(missingUpdate, None)
       assertEquals(deleted, true)
       assertEquals(missingDelete, false)
@@ -95,5 +103,8 @@ class TargetStoreSuite extends FunSuite:
       app_name = "app",
       env = "dev",
       jdbc_url = "jdbc:postgresql://localhost:5432/app?user=app&sslmode=disable",
-      password = password
+      password = password,
+      repo_url = "https://example.com/schema-migrator.git",
+      repo_branch = "main",
+      repo_sql_path = "sql"
     )

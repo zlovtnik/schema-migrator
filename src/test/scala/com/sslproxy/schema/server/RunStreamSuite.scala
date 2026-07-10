@@ -117,7 +117,10 @@ class RunStreamSuite extends FunSuite with TestSqlSupport:
       app_name = "app",
       env = "dev",
       jdbc_url = "jdbc:postgresql://localhost:5432/app?user=app&sslmode=disable",
-      password = Some("secret")
+      password = Some("secret"),
+      repo_url = "https://example.com/schema-migrator.git",
+      repo_branch = "main",
+      repo_sql_path = "sql"
     )
 
   private def signalingRunStore(delegate: RunStore, subscribed: Deferred[IO, Unit]): RunStore =

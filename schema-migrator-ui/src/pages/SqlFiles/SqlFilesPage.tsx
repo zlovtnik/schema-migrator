@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type SyntheticEvent } from "react";
-import { zipSync } from "fflate";
+import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { BracketsCurlyIcon } from "@phosphor-icons/react/dist/csr/BracketsCurly";
 import { CopyIcon } from "@phosphor-icons/react/dist/csr/Copy";
 import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
@@ -15,10 +14,12 @@ import { TargetSelector } from "../../components/TargetSelector";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon, type IconSource } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { clearSqlFiles, getSqlFileStatus, listSqlFiles, uploadSqlZip, type SqlFileEntry, type SqlFileStatus } from "../../api/sqlFiles";
+import { getRepoSyncStatus, triggerRepoSync, type RepoSyncResult, type RepoSyncStatus } from "../../api/repoSync";
+import { clearSqlFiles, getSqlFileStatus, listSqlFiles, type SqlFileEntry, type SqlFileStatus } from "../../api/sqlFiles";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useCreateSnapshot } from "../../hooks/useSnapshots";
+import { useTarget } from "../../hooks/useTargets";
 
 const ExpandedFoldersStorageKey = "schemaMigrator.sqlFiles.expandedFolders";
 
@@ -85,36 +86,47 @@ const folderDialect = (folder: string): "Oracle" | "Postgres" =>
 
 const SqlFilesPage = () => {
   const selectedTarget = useSelectedTargetId();
+  const targetQuery = useTarget(selectedTarget ?? undefined);
   const { canMutate } = useSession();
   const createSnapshot = useCreateSnapshot();
   const [status, setStatus] = useState<SqlFileStatus | null>(null);
   const [files, setFiles] = useState<SqlFileEntry[]>([]);
+  const [repoStatus, setRepoStatus] = useState<RepoSyncStatus | null>(null);
+  const [syncResult, setSyncResult] = useState<RepoSyncResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(readExpandedFolders);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
-  const dirInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, f] = await Promise.all([getSqlFileStatus(), listSqlFiles()]);
+      const [s, f, repo] = await Promise.all([
+        getSqlFileStatus(),
+        listSqlFiles(),
+        selectedTarget ? getRepoSyncStatus(selectedTarget) : Promise.resolve(null)
+      ]);
       setStatus(s);
       setFiles(f.files);
+      setRepoStatus(repo);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load SQL files");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedTarget]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setSyncResult(null);
+  }, [selectedTarget]);
 
   useEffect(() => {
     try {
@@ -173,57 +185,35 @@ const SqlFilesPage = () => {
     }
   };
 
-  const handleDirectoryPick = async (e: ChangeEvent<HTMLInputElement>) => {
-    if (!canMutate) return;
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-
-    setUploading(true);
+  const handleSyncNow = async () => {
+    if (!canMutate || !selectedTarget) return;
+    setSyncing(true);
     setError(null);
     setSuccess(null);
     setCopyStatus(null);
+    setSyncResult(null);
 
     try {
-      // Collect all .sql files from the directory tree
-      const sqlFiles: { path: string; file: File }[] = [];
-      for (let i = 0; i < fileList.length; i++) {
-        const file = fileList.item(i);
-        if (file && (file.name.endsWith(".sql") || file.name.endsWith(".SQL"))) {
-          // webkitRelativePath gives us the full relative path like "extensions/001_pgcrypto.sql"
-          sqlFiles.push({ path: file.webkitRelativePath, file });
-        }
-      }
-
-      if (sqlFiles.length === 0) {
-        setError("No .sql files found in the selected directory");
-        setUploading(false);
-        return;
-      }
-
-      // Create a JSZip-like structure manually using a simple zip library
-      // We'll use the native CompressionStream API if available, or fall back
-      const zipBlob = await createZip(sqlFiles);
-
-      const result = await uploadSqlZip(zipBlob);
-      setSuccess(`Uploaded ${result.uploaded} SQL files across folders: ${result.folders.join(", ")}`);
+      const result = await triggerRepoSync(selectedTarget);
+      setSyncResult(result);
+      setSuccess(`Synced commit ${result.commit_sha.slice(0, 12)}`);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      setError(err instanceof Error ? err.message : "Repository sync failed");
     } finally {
-      setUploading(false);
-      // Reset the input so the same directory can be picked again
-      if (dirInputRef.current) dirInputRef.current.value = "";
+      setSyncing(false);
     }
   };
 
   const handleClear = async () => {
     if (!canMutate) return;
-    if (!window.confirm("Clear all uploaded SQL files? This will revert to filesystem-based discovery.")) return;
+    if (!window.confirm("Clear all synced SQL files? This will remove the loaded repository manifest.")) return;
     setLoading(true);
     setError(null);
     try {
       await clearSqlFiles();
       setSuccess("SQL files cleared");
+      setSyncResult(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to clear SQL files");
@@ -252,32 +242,35 @@ const SqlFilesPage = () => {
       <PageHeader
         eyebrow="SQL files"
         title="SQL manifest management"
-        description="Upload your SQL directory tree to use as the schema manifest. Files are stored in MongoDB as base64."
+        description="Sync the selected target's Git repository SQL tree into MongoDB for schema comparison and drift detection."
       />
 
       <div className="sql-files-toolbar">
         <div className="sql-files-upload-area">
-          <input
-            ref={dirInputRef}
-            type="file"
-            // @ts-expect-error webkitdirectory is a non-standard attribute
-            webkitdirectory=""
-            directory=""
-            onChange={handleDirectoryPick}
-            style={{ display: "none" }}
-            id="sql-dir-picker"
-          />
+          <div className="repo-sync-summary">
+            <span className="field-label">Repository</span>
+            <strong>{targetQuery.data?.repo_url ?? repoStatus?.repo_url ?? "No target selected"}</strong>
+            <span className="repo-sync-meta">
+              <Icon source={GitBranchIcon} size={16} />
+              {targetQuery.data?.repo_branch ?? repoStatus?.repo_branch ?? "main"} / {targetQuery.data?.repo_sql_path ?? repoStatus?.repo_sql_path ?? "sql"}
+            </span>
+          </div>
           <button
             className="button button--primary"
             type="button"
-            onClick={() => dirInputRef.current?.click()}
-            disabled={!canMutate || uploading}
-            title={canMutate ? undefined : "Viewer role cannot upload SQL files"}
+            onClick={handleSyncNow}
+            disabled={!canMutate || !selectedTarget || syncing}
+            title={
+              !canMutate
+                ? "Viewer role cannot sync SQL files"
+                : !selectedTarget
+                  ? "Select a target before syncing"
+                  : undefined
+            }
           >
-            <Icon source={FolderOpenIcon} size={16} />
-            {uploading ? "Uploading..." : "Choose SQL directory"}
+            <Icon source={GitBranchIcon} size={16} />
+            {syncing ? "Syncing" : "Sync now"}
           </button>
-          {uploading ? <span className="inline-result">Zipping and uploading...</span> : null}
         </div>
 
         <div className="row-actions">
@@ -285,8 +278,8 @@ const SqlFilesPage = () => {
           <button
             className="button button--secondary"
             type="button"
-            onClick={handleCreateSnapshot}
-            disabled={!canMutate || !selectedTarget || loading || uploading || createSnapshot.isPending}
+          onClick={handleCreateSnapshot}
+            disabled={!canMutate || !selectedTarget || loading || syncing || createSnapshot.isPending}
             title={
               !canMutate
                 ? "Viewer role cannot create snapshots"
@@ -303,7 +296,7 @@ const SqlFilesPage = () => {
               className="button button--danger"
               type="button"
               onClick={handleClear}
-              disabled={loading || uploading || !canMutate}
+              disabled={loading || syncing || !canMutate}
               title={canMutate ? undefined : "Viewer role cannot clear SQL files"}
             >
               <Icon source={TrashIcon} size={16} />
@@ -326,16 +319,14 @@ const SqlFilesPage = () => {
       ) : null}
 
       {loading ? <Skeleton rows={6} label="Loading SQL files status" /> : null}
-      {uploading ? <Skeleton rows={3} label="Preparing SQL archive" /> : null}
+      {syncing ? <Skeleton rows={3} label="Syncing repository SQL files" /> : null}
 
       {!loading && status && !status.loaded ? (
         <EmptyState
-          icon={<Icon source={FolderOpenIcon} size={24} />}
-          title="No SQL files uploaded"
+          icon={<Icon source={GitBranchIcon} size={24} />}
+          title="No SQL files synced"
         >
-          Select a directory containing your SQL migration files (extensions/, schemas/, tables/, etc.)
-          to use as the schema manifest. The files will be stored in MongoDB and used for schema
-          comparison and drift detection.
+          Select a target and sync its configured repository SQL path to load the manifest for schema comparison and drift detection.
         </EmptyState>
       ) : null}
 
@@ -348,6 +339,35 @@ const SqlFilesPage = () => {
           <div className="summary-card">
             <span className="field-label">Folders</span>
             <strong>{status.folders.length}</strong>
+          </div>
+          <div className="summary-card">
+            <span className="field-label">Last sync</span>
+            <strong>{repoStatus?.last_synced_commit ? repoStatus.last_synced_commit.slice(0, 12) : "Never"}</strong>
+          </div>
+          <div className="summary-card">
+            <span className="field-label">Remote drift</span>
+            <strong>{repoStatus?.drift ? "Yes" : "No"}</strong>
+          </div>
+        </div>
+      ) : null}
+
+      {syncResult ? (
+        <div className="sql-files-summary">
+          <div className="summary-card">
+            <span className="field-label">Added</span>
+            <strong>{syncResult.added}</strong>
+          </div>
+          <div className="summary-card">
+            <span className="field-label">Changed</span>
+            <strong>{syncResult.changed}</strong>
+          </div>
+          <div className="summary-card">
+            <span className="field-label">Removed</span>
+            <strong>{syncResult.removed}</strong>
+          </div>
+          <div className="summary-card">
+            <span className="field-label">Unchanged</span>
+            <strong>{syncResult.unchanged}</strong>
           </div>
         </div>
       ) : null}
@@ -444,7 +464,7 @@ const SqlFilesPage = () => {
             </div>
           ) : (
             <EmptyState icon={<Icon source={FileSqlIcon} size={24} />} title="No SQL files match">
-              Adjust the filter to find a file, folder, or path in the uploaded manifest.
+              Adjust the filter to find a file, folder, or path in the synced manifest.
             </EmptyState>
           )}
         </>
@@ -454,34 +474,3 @@ const SqlFilesPage = () => {
 };
 
 export default SqlFilesPage;
-
-async function createZip(files: { path: string; file: File }[]): Promise<Blob> {
-  const zipWriter = new ZipWriter();
-  for (const { path, file } of files) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    zipWriter.addFile(path, bytes);
-  }
-  return zipWriter.toBlob();
-}
-
-/**
- * Minimal wrapper around fflate for browser ZIP archive creation.
- */
-export class ZipWriter {
-  private files: Record<string, Uint8Array> = {};
-
-  addFile(path: string, bytes: Uint8Array): void {
-    this.files[path] = bytes;
-  }
-
-  toBlob(): Blob {
-    return new Blob([this.toBytes()], { type: "application/zip" });
-  }
-
-  toBytes(): Uint8Array<ArrayBuffer> {
-    const zipped = zipSync(this.files, { level: 0 });
-    const bytes = new Uint8Array(zipped.byteLength);
-    bytes.set(zipped);
-    return bytes;
-  }
-}

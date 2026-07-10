@@ -10,7 +10,12 @@ class ModelsSuite extends FunSuite:
       app_name = "app",
       env = "dev",
       jdbc_url = "jdbc:oracle:thin:user/secret@//db.example:1521/FREE",
-      created_at = "2026-06-28T12:00:00Z"
+      created_at = "2026-06-28T12:00:00Z",
+      repo_url = "https://example.com/schema-migrator.git",
+      repo_branch = "main",
+      repo_sql_path = "sql",
+      last_synced_commit = None,
+      last_synced_at = None
     )
 
     val rendered = target.toString
@@ -25,7 +30,10 @@ class ModelsSuite extends FunSuite:
       app_name = "app",
       env = "dev",
       jdbc_url = "jdbc:postgresql://app:secret@db.example/app?password=query-secret&pwd=short-secret",
-      password = Some("body-secret")
+      password = Some("body-secret"),
+      repo_url = "https://example.com/schema-migrator.git",
+      repo_branch = "main",
+      repo_sql_path = "sql"
     )
 
     val rendered = payload.toString

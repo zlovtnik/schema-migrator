@@ -5,11 +5,13 @@ import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.TestSqlSupport
 import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig}
+import com.sslproxy.schema.discovery.SqlPathNormalizer
 import com.sslproxy.schema.server.auth.{AuthContext, Claims, UserRole}
 import com.sslproxy.schema.store.{
   AuditStore,
   Models,
   PatchStore,
+  RepoSyncStore,
   RunStore,
   SnapshotStore,
   SqlFileStore,
@@ -27,14 +29,14 @@ import org.http4s.dsl.io.*
 import org.http4s.multipart.{Multipart, Part}
 import munit.FunSuite
 
-import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
-import java.util.zip.{ZipEntry, ZipOutputStream}
 import scala.concurrent.duration.*
 
 class RoutesSuite extends FunSuite with TestSqlSupport:
   import Models.given
+
+  private final case class RouteFixture(app: HttpApp[IO], sqlFileStore: SqlFileStore)
 
   test("target routes create, list, fetch, update, and delete") {
     val result = routeFixture
@@ -166,7 +168,10 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           app_name = "app",
           env = "dev",
           jdbc_url = "postgres://sync:p%40ss@localhost:5432/sync",
-          password = None
+          password = None,
+          repo_url = "https://example.com/schema-migrator.git",
+          repo_branch = "main",
+          repo_sql_path = "sql"
         )
       )
       .toOption
@@ -184,7 +189,10 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           app_name = "app",
           env = "dev",
           jdbc_url = "jdbc:postgresql://sync@192.168.1.221:5432/sync",
-          password = Some("secret")
+          password = Some("secret"),
+          repo_url = "https://example.com/schema-migrator.git",
+          repo_branch = "main",
+          repo_sql_path = "sql"
         )
       )
       .toOption
@@ -249,6 +257,26 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
       json.hcursor.get[String]("error"),
       Right("JDBC URL must not contain inline credentials; provide credentials in the password field")
     )
+    assertEquals(listedJson.hcursor.downField("targets").values.map(_.size), Some(0))
+  }
+
+  test("target routes reject non-HTTPS repository URLs") {
+    val result = routeFixture
+      .use { routes =>
+        val payload = targetPayload("Bad repo").mapObject(_.add("repo_url", Json.fromString("git@github.com:example/schema.git")))
+
+        for
+          response <- routes.run(jsonRequest(Method.POST, "/targets", payload))
+          listed <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString("/targets")))
+          json <- bodyJson(response)
+          listedJson <- bodyJson(listed)
+        yield (response.status, json, listedJson)
+      }
+      .unsafeRunSync()
+
+    val (status, json, listedJson) = result
+    assertEquals(status, Status.BadRequest)
+    assertEquals(json.hcursor.get[String]("error"), Right("Repository URL must start with https://"))
     assertEquals(listedJson.hcursor.downField("targets").values.map(_.size), Some(0))
   }
 
@@ -359,7 +387,7 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     assertEquals(json.hcursor.downField("warnings").values.exists(_.nonEmpty), true)
   }
 
-  test("schema route normalizes uploaded SQL manifest for Postgres targets") {
+  test("schema route normalizes stored SQL manifest for Postgres targets") {
     val uploadedSql =
       """-- object: public.uploaded_devices
         |-- folder: tables
@@ -368,15 +396,33 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
         |  id bigint primary key
         |);
         |""".stripMargin
-    val result = routeFixture
+    val now = "2026-07-02T12:00:00Z"
+    val storedFiles = List(
+      StoredSqlFile.fromBytes(
+        "tables/001_uploaded_devices.sql",
+        "tables",
+        "001_uploaded_devices.sql",
+        uploadedSql.getBytes(StandardCharsets.UTF_8),
+        now
+      ),
+      StoredSqlFile.fromBytes(
+        "oracle/functions/001_oracle_only.sql",
+        "oracle/functions",
+        "001_oracle_only.sql",
+        "create or replace function oracle_only return number as begin return 1; end;".getBytes(StandardCharsets.UTF_8),
+        now
+      ),
+      StoredSqlFile.fromBytes(
+        "000_baseline.sql",
+        "baseline",
+        "000_baseline.sql",
+        "select 1;".getBytes(StandardCharsets.UTF_8),
+        now
+      )
+    )
+    val result = routeFixture(Set("localhost", "127.0.0.1"), storedFiles)
       .use { routes =>
         for
-          uploadResponse <- routes.run(sqlZipUploadRequest(List(
-            "sql/tables/001_uploaded_devices.sql" -> uploadedSql,
-            "sql/oracle/functions/001_oracle_only.sql" -> "create or replace function oracle_only return number as begin return 1; end;",
-            "sql/000_baseline.sql" -> "select 1;"
-          )))
-          uploadJson <- bodyJson(uploadResponse)
           targetResponse <- routes.run(
             jsonRequest(
               Method.POST,
@@ -388,148 +434,18 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
           response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/schema?target_id=$targetId")))
           json <- bodyJson(response)
-        yield (uploadResponse.status, uploadJson, response.status, json)
+        yield (response.status, json)
       }
       .unsafeRunSync()
 
-    val (uploadStatus, uploadJson, schemaStatus, schemaJson) = result
+    val (schemaStatus, schemaJson) = result
     val warnings = schemaJson.hcursor.downField("warnings").as[List[String]].getOrElse(Nil)
 
-    assertEquals(uploadStatus, Status.Created)
-    assertEquals(uploadJson.hcursor.downField("folders").as[List[String]], Right(List("baseline", "oracle/functions", "tables")))
     assertEquals(schemaStatus, Status.Ok)
     assertEquals(schemaJson.hcursor.downField("objects").downArray.get[String]("name"), Right("uploaded_devices"))
     assertEquals(schemaJson.hcursor.downField("objects").downArray.get[String]("source_file"), Right("tables/001_uploaded_devices.sql"))
     assert(!warnings.exists(_.contains("unrecognized sql folder")))
     assert(!warnings.exists(_.contains("has no files in store")))
-  }
-
-  test("sql zip upload over compressed size limit returns payload too large") {
-    val limits = SqlFileRoutes.UploadLimits(
-      maxUploadBytes = 1024,
-      maxZipBytes = 8,
-      maxZipEntryBytes = 1024,
-      maxZipUncompressedBytes = 1024
-    )
-    val result = sqlFileRoutesWithLimits(limits)
-      .use { routes =>
-        for
-          response <- routes.run(sqlZipUploadRequestBytes(Vector.fill(9)(0.toByte)))
-          json <- bodyJson(response)
-        yield response.status -> json
-      }
-      .unsafeRunSync()
-
-    val (status, json) = result
-    assertEquals(status, Status.PayloadTooLarge)
-    assertEquals(json.hcursor.get[String]("error"), Right("uploaded zip exceeds 8 bytes limit"))
-  }
-
-  test("sql zip upload enforces uncompressed entry limit") {
-    val limits = SqlFileRoutes.UploadLimits(
-      maxUploadBytes = 1024,
-      maxZipBytes = 1024,
-      maxZipEntryBytes = 10,
-      maxZipUncompressedBytes = 1024
-    )
-    val result = sqlFileRoutesWithLimits(limits)
-      .use { routes =>
-        for
-          response <- routes.run(sqlZipUploadRequest(List("sql/tables/001_large.sql" -> "select 1;\n--x")))
-          json <- bodyJson(response)
-        yield response.status -> json
-      }
-      .unsafeRunSync()
-
-    val (status, json) = result
-    assertEquals(status, Status.PayloadTooLarge)
-    assertEquals(
-      json.hcursor.get[String]("error"),
-      Right("zip entry 'sql/tables/001_large.sql' exceeds 10 bytes uncompressed limit")
-    )
-  }
-
-  test("sql zip upload enforces total uncompressed SQL limit") {
-    val limits = SqlFileRoutes.UploadLimits(
-      maxUploadBytes = 1024,
-      maxZipBytes = 1024,
-      maxZipEntryBytes = 1024,
-      maxZipUncompressedBytes = 12
-    )
-    val result = sqlFileRoutesWithLimits(limits)
-      .use { routes =>
-        for
-          response <- routes.run(sqlZipUploadRequest(List(
-            "sql/tables/001_a.sql" -> "select;",
-            "sql/tables/002_b.sql" -> "select;"
-          )))
-          json <- bodyJson(response)
-        yield response.status -> json
-      }
-      .unsafeRunSync()
-
-    val (status, json) = result
-    assertEquals(status, Status.PayloadTooLarge)
-    assertEquals(json.hcursor.get[String]("error"), Right("zip archive exceeds 12 bytes uncompressed SQL limit"))
-  }
-
-  test("sql file upload rejects empty multipart without replacing existing files") {
-    val result =
-      (for
-        store <- SqlFileStore.inMemory
-        existing = StoredSqlFile.fromBytes(
-          path = "tables/001_existing.sql",
-          folder = "tables",
-          filename = "001_existing.sql",
-          bytes = "select 1;".getBytes(StandardCharsets.UTF_8),
-          uploadedAt = "2026-07-02T12:00:00Z"
-        )
-        _ <- store.replaceAll(List(existing))
-        routes = authedForTest(SqlFileRoutes.routes(store).orNotFound)
-        multipart = Multipart[IO](Vector(Part.formData[IO]("note", "empty")))
-        response <- routes.run(
-          Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload"))
-            .withEntity(multipart)
-            .putHeaders(multipart.headers)
-        )
-        json <- bodyJson(response)
-        stored <- store.list
-      yield (response.status, json, stored))
-        .unsafeRunSync()
-
-    val (status, json, stored) = result
-    assertEquals(status, Status.BadRequest)
-    assertEquals(json.hcursor.get[String]("error"), Right("No .sql files found in upload"))
-    assertEquals(stored.map(_.path), List("tables/001_existing.sql"))
-  }
-
-  test("sql file upload rejects non-sql multipart filenames") {
-    val result =
-      sqlFileRoutesWithLimits(SqlFileRoutes.UploadLimits.default)
-        .use { routes =>
-          val multipart = Multipart[IO](
-            Vector(
-              Part.fileData[IO](
-                "tables/files",
-                "001_readme.txt",
-                Stream.emits("not sql".getBytes(StandardCharsets.UTF_8).toVector).covary[IO]
-              )
-            )
-          )
-          for
-            response <- routes.run(
-              Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload"))
-                .withEntity(multipart)
-                .putHeaders(multipart.headers)
-            )
-            json <- bodyJson(response)
-          yield response.status -> json
-        }
-        .unsafeRunSync()
-
-    val (status, json) = result
-    assertEquals(status, Status.BadRequest)
-    assertEquals(json.hcursor.get[String]("error"), Right("Only .sql file uploads are accepted"))
   }
 
   test("drift route returns warnings instead of failing when Postgres live catalog is unavailable") {
@@ -658,12 +574,11 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
   }
 
   test("snapshot routes capture stored SQL files without returning content") {
-    val result = routeFixture
-      .use { routes =>
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        val routes = fixture.app
         for
-          _ <- routes.run(sqlZipUploadRequest(List(
-            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);"
-          )))
+          _ <- replaceSqlFiles(fixture.sqlFileStore, "target-1", List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);"))
           targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
@@ -695,23 +610,18 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
   }
 
   test("snapshot diff reports added changed and removed files") {
-    val result = routeFixture
-      .use { routes =>
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        val routes = fixture.app
         for
           targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
-          _ <- routes.run(sqlZipUploadRequest(List(
-            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
-            "sql/views/001_devices_view.sql" -> "create or replace view public.devices_view as select id from public.devices;"
-          )))
+          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);", "sql/views/001_devices_view.sql" -> "create or replace view public.devices_view as select id from public.devices;"))
           baseResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
           baseJson <- bodyJson(baseResponse)
           baseId <- IO.fromEither(baseJson.hcursor.get[String]("id"))
-          _ <- routes.run(sqlZipUploadRequest(List(
-            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key, name text);",
-            "sql/functions/001_touch.sql" -> "create or replace function public.touch() returns void language sql as $$ select 1 $$;"
-          )))
+          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key, name text);", "sql/functions/001_touch.sql" -> "create or replace function public.touch() returns void language sql as $$ select 1 $$;"))
           compareResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
           compareJson <- bodyJson(compareResponse)
           compareId <- IO.fromEither(compareJson.hcursor.get[String]("id"))
@@ -728,22 +638,18 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
   }
 
   test("rollback to snapshot rejects current-only files without rollback SQL") {
-    val result = routeFixture
-      .use { routes =>
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        val routes = fixture.app
         for
           targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
-          _ <- routes.run(sqlZipUploadRequest(List(
-            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);"
-          )))
+          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);"))
           snapshotResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
           snapshotJson <- bodyJson(snapshotResponse)
           snapshotId <- IO.fromEither(snapshotJson.hcursor.get[String]("id"))
-          _ <- routes.run(sqlZipUploadRequest(List(
-            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
-            "sql/tables/002_extra.sql" -> "create table if not exists public.extra (id bigint primary key);"
-          )))
+          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);", "sql/tables/002_extra.sql" -> "create table if not exists public.extra (id bigint primary key);"))
           rollbackResponse <- routes.run(
             jsonRequest(Method.POST, s"/snapshots/$snapshotId/rollback", Json.obj("target_id" -> Json.fromString(targetId)))
           )
@@ -758,8 +664,9 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
   }
 
   test("rollback to snapshot creates sourced patch and run in deterministic order") {
-    val result = routeFixture
-      .use { routes =>
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        val routes = fixture.app
         val rollbackSql = "drop table if exists public.extra;"
         val extraSql =
           """-- rollback: rollbacks/drop_extra.sql
@@ -769,18 +676,11 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
-          _ <- routes.run(sqlZipUploadRequest(List(
-            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
-            "sql/rollbacks/drop_extra.sql" -> rollbackSql
-          )))
+          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);", "sql/rollbacks/drop_extra.sql" -> rollbackSql))
           snapshotResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
           snapshotJson <- bodyJson(snapshotResponse)
           snapshotId <- IO.fromEither(snapshotJson.hcursor.get[String]("id"))
-          _ <- routes.run(sqlZipUploadRequest(List(
-            "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
-            "sql/rollbacks/drop_extra.sql" -> rollbackSql,
-            "sql/tables/002_extra.sql" -> extraSql
-          )))
+          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);", "sql/rollbacks/drop_extra.sql" -> rollbackSql, "sql/tables/002_extra.sql" -> extraSql))
           rollbackResponse <- routes.run(
             jsonRequest(Method.POST, s"/snapshots/$snapshotId/rollback", Json.obj("target_id" -> Json.fromString(targetId)))
           )
@@ -912,6 +812,18 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     routeFixture(Set("localhost", "127.0.0.1"))
 
   private def routeFixture(allowedHosts: Set[String]): cats.effect.Resource[IO, HttpApp[IO]] =
+    routeFixture(allowedHosts, Nil)
+
+  private def routeFixture(
+    allowedHosts: Set[String],
+    preloadedSqlFiles: List[StoredSqlFile]
+  ): cats.effect.Resource[IO, HttpApp[IO]] =
+    routeFixtureWithStore(allowedHosts, preloadedSqlFiles).map(_.app)
+
+  private def routeFixtureWithStore(
+    allowedHosts: Set[String] = Set("localhost", "127.0.0.1"),
+    preloadedSqlFiles: List[StoredSqlFile] = Nil
+  ): cats.effect.Resource[IO, RouteFixture] =
     cats.effect.Resource
       .make(IO.blocking(Files.createTempDirectory("schema-migrator-routes")))(path =>
         IO.blocking(deleteRecursively(path))
@@ -926,6 +838,8 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           runStore <- RunStore.inMemory
           validationStore <- ValidationStore.inMemory
           sqlFileStore <- SqlFileStore.inMemory
+          _ <- sqlFileStore.replaceAll("target-1", preloadedSqlFiles)
+          repoSyncStore <- RepoSyncStore.inMemory
           snapshotStore <- SnapshotStore.inMemory
           auditStore <- AuditStore.inMemory
           runExecutor = RunExecutor.simulated(patchStore, runStore, validationStore, auditStore = Some(auditStore))
@@ -938,18 +852,14 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
               runStore,
               validationStore,
               sqlFileStore,
+              repoSyncStore,
               snapshotStore,
               auditStore,
               runExecutor
             )
             .orNotFound
-          authedForTest(app)
+          RouteFixture(authedForTest(app), sqlFileStore)
       }
-
-  private def sqlFileRoutesWithLimits(limits: SqlFileRoutes.UploadLimits): cats.effect.Resource[IO, HttpApp[IO]] =
-    cats.effect.Resource.eval(
-      SqlFileStore.inMemory.map(store => authedForTest(SqlFileRoutes.routes(store, limits).orNotFound))
-    )
 
   private def migratorConfig(stageDir: Path, sqlDir: Path, allowedHosts: Set[String]): MigratorConfig =
     MigratorConfig(
@@ -990,7 +900,10 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
       "label" -> Json.fromString(label),
       "app_name" -> Json.fromString("app"),
       "env" -> Json.fromString("dev"),
-      "jdbc_url" -> Json.fromString(jdbcUrl)
+      "jdbc_url" -> Json.fromString(jdbcUrl),
+      "repo_url" -> Json.fromString("https://example.com/schema-migrator.git"),
+      "repo_branch" -> Json.fromString("main"),
+      "repo_sql_path" -> Json.fromString("sql")
     )
     val passwordField = password.map(value => "password" -> Json.fromString(value)).toList
     Json.obj((requiredFields ++ passwordField)*)
@@ -1029,28 +942,19 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     )
     Request[IO](Method.POST, Uri.unsafeFromString("/patches")).withEntity(multipart).putHeaders(multipart.headers)
 
-  private def sqlZipUploadRequest(entries: List[(String, String)]): Request[IO] =
-    sqlZipUploadRequestBytes(zipBytes(entries).toVector)
-
-  private def sqlZipUploadRequestBytes(bytes: Vector[Byte]): Request[IO] =
-    val multipart = Multipart[IO](
-      Vector(
-        Part.fileData[IO]("file", "sql.zip", Stream.emits(bytes).covary[IO])
+  private def replaceSqlFiles(store: SqlFileStore, targetId: String, entries: List[(String, String)]): IO[Unit] =
+    val now = "2026-07-02T12:00:00Z"
+    val files = entries.map { case (path, content) =>
+      val normalized = SqlPathNormalizer.normalizeUploadPath(path)
+      StoredSqlFile.fromBytes(
+        path = normalized.path,
+        folder = normalized.folder,
+        filename = normalized.filename,
+        bytes = content.getBytes(StandardCharsets.UTF_8),
+        uploadedAt = now
       )
-    )
-    Request[IO](Method.POST, Uri.unsafeFromString("/sql-files/upload-zip")).withEntity(multipart).putHeaders(multipart.headers)
-
-  private def zipBytes(entries: List[(String, String)]): Array[Byte] =
-    val bytes = new ByteArrayOutputStream()
-    val zip = new ZipOutputStream(bytes)
-    try
-      entries.foreach { case (path, content) =>
-        zip.putNextEntry(new ZipEntry(path))
-        zip.write(content.getBytes(StandardCharsets.UTF_8))
-        zip.closeEntry()
-      }
-    finally zip.close()
-    bytes.toByteArray
+    }
+    store.replaceAll(targetId, files)
 
   private def bodyJson(response: Response[IO]): IO[Json] =
     response.body.compile.toVector

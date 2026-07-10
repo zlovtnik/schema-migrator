@@ -1,0 +1,124 @@
+package com.sslproxy.schema.discovery
+
+import cats.effect.IO
+import cats.effect.unsafe.implicits.global
+import com.sslproxy.schema.store.{RepoSyncState, RepoSyncStore, SqlFileStore, StoredSqlFile, Target, TargetPayload, TargetStore}
+import munit.FunSuite
+import org.eclipse.jgit.api.Git
+
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path}
+
+class RepoSyncServiceSuite extends FunSuite:
+  test("sync loads repo files and records commit, then no-diff sync preserves counts") {
+    val repo = Files.createTempDirectory("schema-migrator-sync-repo")
+    val cache = Files.createTempDirectory("schema-migrator-sync-cache")
+    try
+      initRepo(repo, "select 1;")
+      val payload = TargetPayload(
+        label = "Target", app_name = "app", env = "dev",
+        jdbc_url = "jdbc:postgresql://localhost:5432/app?user=app",
+        password = None, repo_url = repo.toString,
+        repo_branch = "main", repo_sql_path = "sql"
+      )
+      val io = SqlFileStore.inMemory.flatMap { sqlStore =>
+        RepoSyncStore.inMemory.flatMap { syncStore =>
+          TargetStore.inMemory.flatMap { targetStore =>
+            targetStore.create(payload).flatMap { _ =>
+              val service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 30, targetStore)
+              service.sync("target-1", target(repo)).flatMap { first =>
+                service.sync("target-1", target(repo)).flatMap { second =>
+                  sqlStore.list("target-1").flatMap { files =>
+                    syncStore.getSyncState("target-1").flatMap { state =>
+                      targetStore.get("target-1").map { targetAfter =>
+                        (first, second, files, state, targetAfter)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      val (first, second, files, state, targetAfter) = io.unsafeRunSync()
+      assertEquals(first.added, 1)
+      assertEquals(first.changed, 0)
+      assertEquals(second.added, 0)
+      assertEquals(second.changed, 0)
+      assertEquals(second.unchanged, 1)
+      assertEquals[List[String], List[String]](files.map(_.path), List("tables/001_devices.sql"))
+      assertEquals[Option[String], Option[String]](state.map(_.commit_sha), Some(first.commitSha))
+      targetAfter match
+        case Some(t) =>
+          assertEquals[Option[String], Option[String]](t.last_synced_commit, Some(first.commitSha))
+          assert(t.last_synced_at.isDefined)
+        case None => fail("target should exist after sync")
+    finally
+      deleteRecursively(repo)
+      deleteRecursively(cache)
+  }
+
+  test("failed sync leaves existing SQL files untouched") {
+    val cache = Files.createTempDirectory("schema-migrator-sync-cache")
+    try
+      val existing = StoredSqlFile.fromBytes(
+        "tables/001_existing.sql",
+        "tables",
+        "001_existing.sql",
+        "select 1;".getBytes(StandardCharsets.UTF_8),
+        "2026-07-02T12:00:00Z"
+      )
+      val io = SqlFileStore.inMemory.flatMap { sqlStore =>
+        sqlStore.replaceAll("target-1", List(existing)).flatMap { _ =>
+          RepoSyncStore.inMemory.flatMap { syncStore =>
+            TargetStore.inMemory.flatMap { targetStore =>
+              val service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 1, targetStore)
+              service.sync("target-1", target(Path.of("/does/not/exist"))).attempt.flatMap { failed =>
+                sqlStore.list("target-1").flatMap { files =>
+                  syncStore.getSyncState("target-1").map { state =>
+                    (failed, files, state)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      val (failed, files, state) = io.unsafeRunSync()
+      assert(failed.isLeft)
+      assertEquals[List[String], List[String]](files.map(_.path), List("tables/001_existing.sql"))
+      assertEquals(state, None)
+    finally deleteRecursively(cache)
+  }
+
+  private def target(repo: Path): Target =
+    Target(
+      id = "target-1",
+      label = "Target",
+      app_name = "app",
+      env = "dev",
+      jdbc_url = "jdbc:postgresql://localhost:5432/app?user=app",
+      created_at = "2026-07-02T12:00:00Z",
+      repo_url = repo.toString,
+      repo_branch = "main",
+      repo_sql_path = "sql",
+      last_synced_commit = None,
+      last_synced_at = None
+    )
+
+  private def initRepo(root: Path, sql: String): Unit =
+    Files.createDirectories(root.resolve("sql").resolve("tables"))
+    Files.writeString(root.resolve("sql").resolve("tables").resolve("001_devices.sql"), sql)
+    val git = Git.init().setInitialBranch("main").setDirectory(root.toFile).call()
+    try
+      git.add().addFilepattern(".").call()
+      git.commit().setMessage("initial").setAuthor("Test", "test@example.com").call()
+    finally git.close()
+
+  private def deleteRecursively(path: Path): Unit =
+    if Files.exists(path) then
+      scala.util.Using.resource(Files.walk(path)) { stream =>
+        import scala.jdk.CollectionConverters.*
+        stream.iterator().asScala.toList.sortBy(_.toString).reverse.foreach(Files.deleteIfExists)
+      }
