@@ -689,6 +689,28 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     )
   }
 
+  test("view materialized view and index definition changes are reported as drift") {
+    val viewKey = ObjectKey("public", "sync_events_expanded", "view")
+    val materializedViewKey = ObjectKey("public", "mv_ap_risk_score", "materialized_view")
+    val indexKey = ObjectKey("public", "sync_events_status_idx", "index")
+    val expectedObjects = List(
+      expected(viewKey, sourceFile = "views/001_sync_events_expanded.sql", expectedDdl = Some("create view sync_events_expanded as select 1 as id;")),
+      expected(materializedViewKey, sourceFile = "materialized_views/001_mv_ap_risk_score.sql", expectedDdl = Some("create materialized view mv_ap_risk_score as select 1 as score;")),
+      expected(indexKey, sourceFile = "indexes/001_sync_events_indexes.sql", expectedDdl = Some("create index if not exists sync_events_status_idx on sync_events (status);"))
+    )
+    val actualObjects = List(
+      LiveObject(viewKey, Some("create view public.sync_events_expanded as select 2 as id;")),
+      LiveObject(materializedViewKey, Some("create materialized view public.mv_ap_risk_score as select 2 as score;")),
+      LiveObject(indexKey, Some("CREATE INDEX sync_events_status_idx ON public.sync_events USING btree (observed_at)"))
+    )
+
+    val drift = driftItems(now, expectedObjects, actualObjects, ControlSnapshot(Nil, None, Nil))
+    val catalog = mergeCatalog(now, expectedObjects, actualObjects, ControlSnapshot(Nil, None, Nil))
+
+    assertEquals(drift.map(item => (item.object_type, item.drift_type)), List(("index", "definition_changed"), ("materialized_view", "definition_changed"), ("view", "definition_changed")))
+    assertEquals(catalog.map(item => (item.object_type, item.status)), List(("index", "drift_detected"), ("materialized_view", "drift_detected"), ("view", "drift_detected")))
+  }
+
   test("known built-in untracked catalog objects are hidden while user objects remain visible") {
     val actualObjects = List(
       LiveObject(ObjectKey("public", "public", "schema"), Some("create schema public")),
