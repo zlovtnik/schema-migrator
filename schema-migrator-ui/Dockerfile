@@ -23,6 +23,6 @@ RUN bun install --frozen-lockfile
 COPY --chown=bun:bun . .
 RUN bun run build
 
-# output stage - hand-off to nginx
+# output stage - hand-off to a static server image
 FROM scratch AS dist
 COPY --from=builder /app/dist /dist
