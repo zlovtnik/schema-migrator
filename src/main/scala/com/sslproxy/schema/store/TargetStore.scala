@@ -51,9 +51,12 @@ private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]])
       values.get(id) match
         case None => values -> Option.empty[Target]
         case Some(existing) =>
+          val repoChanged = existing.target.repo_url != payload.repo_url ||
+            existing.target.repo_branch != payload.repo_branch ||
+            existing.target.repo_sql_path != payload.repo_sql_path
           val target = toTarget(id, existing.target.created_at, payload).copy(
-            last_synced_commit = existing.target.last_synced_commit,
-            last_synced_at = existing.target.last_synced_at
+            last_synced_commit = if repoChanged then None else existing.target.last_synced_commit,
+            last_synced_at = if repoChanged then None else existing.target.last_synced_at
           )
           val password = payload.password.filter(_.nonEmpty).orElse(existing.password)
           val stored = StoredTarget(target, password)

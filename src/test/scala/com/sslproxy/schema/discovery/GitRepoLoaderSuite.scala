@@ -47,7 +47,7 @@ class GitRepoLoaderSuite extends FunSuite:
         .unsafeRunSync()
 
       assertEquals(commit.length, 40)
-      assertEquals(Files.list(cache).count(), 0L)
+      assertEquals(scala.util.Using.resource(Files.list(cache))(_.count()), 0L)
     finally
       deleteRecursively(repo)
       deleteRecursively(cache)

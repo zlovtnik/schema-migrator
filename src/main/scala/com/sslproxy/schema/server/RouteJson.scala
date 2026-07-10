@@ -34,5 +34,11 @@ object RouteJson:
   def payloadTooLarge(message: String): IO[Response[IO]] =
     PayloadTooLarge(error(message))
 
+  def gatewayTimeout(message: String): IO[Response[IO]] =
+    GatewayTimeout(error(message))
+
+  def internalServerError(message: String): IO[Response[IO]] =
+    InternalServerError(error(message))
+
   def error(message: String): Json =
     Json.obj("error" -> Json.fromString(message))

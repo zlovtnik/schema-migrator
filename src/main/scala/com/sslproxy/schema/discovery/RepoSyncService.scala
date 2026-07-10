@@ -40,12 +40,32 @@ final class RepoSyncService(
         sqlRoot <- IO.fromEither(loader.resolveSqlRoot(repoRoot, target.repo_sql_path).leftMap(IllegalArgumentException(_)))
         newFiles <- loader.loadFiles(sqlRoot)
         commitSha <- loader.headCommit(repoRoot)
-        currentFiles <- sqlFileStore.list
+        currentFiles <- sqlFileStore.list(targetId)
         result <- diff(currentFiles.map(file => file.path -> file.sha256).toMap, newFiles.map(file => file.path -> file.sha256).toMap)
-        _ <- IO.whenA(result.added > 0 || result.removed > 0 || result.changed > 0)(sqlFileStore.replaceAll(newFiles))
         syncedAt <- Clock[IO].realTimeInstant.map(_.toString)
-        _ <- repoSyncStore.recordSync(targetId, commitSha, syncedAt)
-        _ <- targetStore.recordRepoSync(targetId, commitSha, syncedAt)
+        hasChanges = result.added > 0 || result.removed > 0 || result.changed > 0
+        _ <- if hasChanges then
+          sqlFileStore.replaceAll(targetId, newFiles) *>
+            (repoSyncStore.recordSync(targetId, commitSha, syncedAt) *>
+              targetStore.recordRepoSync(targetId, commitSha, syncedAt))
+              .flatMap {
+                case true => IO.unit
+                case false =>
+                  // targetStore.recordRepoSync returned false — compensate by restoring old files
+                  sqlFileStore.replaceAll(targetId, currentFiles) *>
+                    IO.raiseError(IllegalStateException(s"targetStore.recordRepoSync failed for target $targetId"))
+              }
+              .onError { case _ =>
+                // Compensate: restore previous files if any metadata write fails
+                sqlFileStore.replaceAll(targetId, currentFiles).void
+              }
+        else
+          repoSyncStore.recordSync(targetId, commitSha, syncedAt) *>
+            targetStore.recordRepoSync(targetId, commitSha, syncedAt).flatMap {
+              case true => IO.unit
+              case false =>
+                IO.raiseError(IllegalStateException(s"targetStore.recordRepoSync failed for target $targetId"))
+            }
       yield result.copy(commitSha = commitSha, syncedAt = syncedAt)
     }
 

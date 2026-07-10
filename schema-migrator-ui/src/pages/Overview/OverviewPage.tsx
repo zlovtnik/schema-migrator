@@ -76,14 +76,6 @@ export const OverviewPage = () => {
         </div>
       </section>
 
-      {/* Duplicate of the health-summary message above — kept as deliberate emphasis for visibility */}
-      {!runsLoading && failedRuns.length > 0 ? (
-        <div className="status-banner status-banner--error">
-          <Icon source={WarningIcon} size={20} weight="bold" />
-          {failedRuns.length} failed run{failedRuns.length === 1 ? "" : "s"} need resolution before more applies.
-        </div>
-      ) : null}
-
       <section className="section-block">
         <h2>Recent runs</h2>
         {runsLoading ? (

@@ -108,7 +108,7 @@ const SqlFilesPage = () => {
       const [s, f, repo] = await Promise.all([
         getSqlFileStatus(),
         listSqlFiles(),
-        selectedTarget ? getRepoSyncStatus(selectedTarget).catch(() => null) : Promise.resolve(null)
+        selectedTarget ? getRepoSyncStatus(selectedTarget) : Promise.resolve(null)
       ]);
       setStatus(s);
       setFiles(f.files);
@@ -123,6 +123,10 @@ const SqlFilesPage = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setSyncResult(null);
+  }, [selectedTarget]);
 
   useEffect(() => {
     try {

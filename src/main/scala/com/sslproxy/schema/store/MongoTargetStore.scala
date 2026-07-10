@@ -59,38 +59,52 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
     IO.blocking(Option(collection.find(idFilter(id)).first())).flatMap(_.traverse(storedFromDocument))
 
   override def update(id: String, payload: TargetPayload): IO[Option[Target]] =
-    for
-      document <- IO.blocking(Option(collection.find(idFilter(id)).first()))
-      updated <- document
-        .traverse { document =>
-          for
-            now <- nowString
-            update = Updates.combine(
-              Updates.set("label", payload.label),
-              Updates.set("app_name", payload.app_name),
-              Updates.set("env", payload.env),
-              Updates.set("jdbc_url", payload.jdbc_url),
-              Updates.set("repo_url", payload.repo_url),
-              Updates.set("repo_branch", payload.repo_branch),
-              Updates.set("repo_sql_path", payload.repo_sql_path),
-              Updates.set("updated_at", now)
-            )
-            password = payload.password.filter(_.nonEmpty)
-            passwordUpdate <- password match
-              case Some(value) => passwordCrypto.encrypt(value).map { encrypted =>
-                Updates.combine(
-                  update,
-                  Updates.set("password_ciphertext", encrypted.cipherTextBase64),
-                  Updates.set("password_iv", encrypted.ivBase64)
-                )
-              }
-              case None => IO.pure(update)
-            result <- IO.blocking(collection.updateOne(idFilter(id), passwordUpdate))
-            target = toTarget(id, requiredString(document, "created_at"), payload)
-          yield Option.when(result.getMatchedCount > 0)(target)
+    IO.blocking(Option(collection.find(idFilter(id)).first())).flatMap {
+      case None => IO.pure(None)
+      case Some(document) =>
+        nowString.flatMap { now =>
+          val existingRepoUrl = optionalString(document, "repo_url").getOrElse("")
+          val existingRepoBranch = optionalString(document, "repo_branch").getOrElse("main")
+          val existingRepoSqlPath = optionalString(document, "repo_sql_path").getOrElse("sql")
+          val repoChanged = existingRepoUrl != payload.repo_url ||
+            existingRepoBranch != payload.repo_branch ||
+            existingRepoSqlPath != payload.repo_sql_path
+
+          val baseUpdates = List(
+            Updates.set("label", payload.label),
+            Updates.set("app_name", payload.app_name),
+            Updates.set("env", payload.env),
+            Updates.set("jdbc_url", payload.jdbc_url),
+            Updates.set("repo_url", payload.repo_url),
+            Updates.set("repo_branch", payload.repo_branch),
+            Updates.set("repo_sql_path", payload.repo_sql_path),
+            Updates.set("updated_at", now)
+          )
+          val repoChangeUpdates =
+            if repoChanged then List(Updates.unset("last_synced_commit"), Updates.unset("last_synced_at"))
+            else Nil
+          val allUpdates = baseUpdates ++ repoChangeUpdates
+          val update = Updates.combine(allUpdates*)
+          val password = payload.password.filter(_.nonEmpty)
+
+          val passwordUpdateIO = password match
+            case Some(value) => passwordCrypto.encrypt(value).map { encrypted =>
+              Updates.combine(
+                update,
+                Updates.set("password_ciphertext", encrypted.cipherTextBase64),
+                Updates.set("password_iv", encrypted.ivBase64)
+              )
+            }
+            case None => IO.pure(update)
+
+          passwordUpdateIO.flatMap { passwordUpdate =>
+            IO.blocking(collection.updateOne(idFilter(id), passwordUpdate)).flatMap { result =>
+              IO.blocking(Option(collection.find(idFilter(id)).first()))
+                .map(_.map(targetFromDocument).filter(_ => result.getMatchedCount > 0))
+            }
+          }
         }
-        .map(_.flatten)
-    yield updated
+    }
 
   override def delete(id: String): IO[Boolean] =
     IO.blocking(collection.deleteOne(idFilter(id)).getDeletedCount > 0)

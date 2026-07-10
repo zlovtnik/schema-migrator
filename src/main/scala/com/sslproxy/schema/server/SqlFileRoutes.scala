@@ -8,8 +8,15 @@ import com.sslproxy.schema.store.{RepoSyncState, RepoSyncStore, SqlFileStore, Ta
 import io.circe.Json
 import org.http4s.HttpRoutes
 import org.http4s.dsl.io.*
+import org.typelevel.log4cats.LoggerFactory
+import org.typelevel.log4cats.slf4j.Slf4jFactory
+
+import java.util.concurrent.TimeoutException
 
 object SqlFileRoutes:
+  private given LoggerFactory[IO] = Slf4jFactory.create[IO]
+  private val log = LoggerFactory[IO].getLogger
+
   def routes(
     sqlFileStore: SqlFileStore,
     targetStore: TargetStore,
@@ -18,34 +25,49 @@ object SqlFileRoutes:
     gitRepoLoader: GitRepoLoader
   ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
-      case GET -> Root / "sql-files" =>
-        sqlFileStore.list.flatMap { files =>
-          val json = files.map { file =>
-            Json.obj(
-              "path" -> Json.fromString(file.path),
-              "folder" -> Json.fromString(file.folder),
-              "filename" -> Json.fromString(file.filename),
-              "sha256" -> Json.fromString(file.sha256),
-              "content_base64" -> Json.fromString(file.contentBase64),
-              "uploaded_at" -> Json.fromString(file.uploadedAt)
-            )
-          }
-          RouteJson.ok(Json.obj("files" -> Json.fromValues(json)))
-        }
+      case request @ GET -> Root / "sql-files" =>
+        val targetId = request.uri.query.params.get("target_id").filter(_.nonEmpty)
+        targetId match
+          case Some(id) =>
+            sqlFileStore.list(id).flatMap { files =>
+              val json = files.map { file =>
+                Json.obj(
+                  "path" -> Json.fromString(file.path),
+                  "folder" -> Json.fromString(file.folder),
+                  "filename" -> Json.fromString(file.filename),
+                  "sha256" -> Json.fromString(file.sha256),
+                  "content_base64" -> Json.fromString(file.contentBase64),
+                  "uploaded_at" -> Json.fromString(file.uploadedAt)
+                )
+              }
+              RouteJson.ok(Json.obj("files" -> Json.fromValues(json)))
+            }
+          case None => RouteJson.badRequest("target_id is required")
 
-      case GET -> Root / "sql-files" / "status" =>
-        sqlFileStore.list.flatMap { files =>
-          val folders = files.map(_.folder).distinct.sorted
-          RouteJson.ok(Json.obj(
-            "loaded" -> Json.fromBoolean(files.nonEmpty),
-            "file_count" -> Json.fromInt(files.size),
-            "folders" -> Json.fromValues(folders.map(Json.fromString))
-          ))
-        }
+      case request @ GET -> Root / "sql-files" / "status" =>
+        val targetId = request.uri.query.params.get("target_id").filter(_.nonEmpty)
+        targetId match
+          case Some(id) =>
+            sqlFileStore.list(id).flatMap { files =>
+              val folders = files.map(_.folder).distinct.sorted
+              RouteJson.ok(Json.obj(
+                "loaded" -> Json.fromBoolean(files.nonEmpty),
+                "file_count" -> Json.fromInt(files.size),
+                "folders" -> Json.fromValues(folders.map(Json.fromString))
+              ))
+            }
+          case None => RouteJson.badRequest("target_id is required")
 
       case request @ DELETE -> Root / "sql-files" =>
         AuthContext.requireRole(request, UserRole.Operator) { _ =>
-          sqlFileStore.clear *> NoContent()
+          val targetId = request.uri.query.params.get("target_id").filter(_.nonEmpty)
+          targetId match
+            case Some(id) =>
+              sqlFileStore.clear(id) *>
+                repoSyncStore.clear(id) *>
+                targetStore.recordRepoSync(id, "", "").attempt.void *>
+                NoContent()
+            case None => RouteJson.badRequest("target_id is required")
         }
 
       case request @ POST -> Root / "targets" / id / "repo-sync" =>
@@ -55,7 +77,13 @@ object SqlFileRoutes:
               repoSyncService
                 .sync(id, target)
                 .flatMap(result => RouteJson.created(syncResultJson(result)))
-                .handleErrorWith(error => RouteJson.badRequest(error.getMessage))
+                .handleErrorWith {
+                  case _: IllegalArgumentException => RouteJson.badRequest("Invalid repository configuration")
+                  case _: TimeoutException => RouteJson.gatewayTimeout("Repository sync timed out")
+                  case error =>
+                    log.warn(error)(s"Repository sync failed for target $id") *>
+                      RouteJson.internalServerError("Repository sync failed")
+                }
             case None => RouteJson.notFound(s"target '$id' was not found")
           }
         }

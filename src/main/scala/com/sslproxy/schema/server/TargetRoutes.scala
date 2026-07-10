@@ -109,9 +109,11 @@ object TargetRoutes:
             case None =>
               store.delete(id).flatMap {
                 case true =>
-                  repoSyncStore
-                    .clear(id)
-                    .flatMap(_ => auditStore.record(claims.subject, claims.role, "target.delete", "target", id, Some(id)).void) *> NoContent()
+                  (repoSyncStore.clear(id).attempt.flatMap {
+                    case Left(error) =>
+                      log.warn(error)(s"Failed to clear repoSync state for target $id")
+                    case Right(_) => IO.unit
+                  }) *> auditStore.record(claims.subject, claims.role, "target.delete", "target", id, Some(id)).void *> NoContent()
                 case false => RouteJson.notFound(s"target '$id' was not found")
               }
           }

@@ -1,7 +1,8 @@
 package com.sslproxy.schema.discovery
 
+import cats.effect.IO
 import cats.effect.unsafe.implicits.global
-import com.sslproxy.schema.store.{RepoSyncStore, SqlFileStore, StoredSqlFile, Target, TargetStore}
+import com.sslproxy.schema.store.{RepoSyncState, RepoSyncStore, SqlFileStore, StoredSqlFile, Target, TargetPayload, TargetStore}
 import munit.FunSuite
 import org.eclipse.jgit.api.Git
 
@@ -14,26 +15,45 @@ class RepoSyncServiceSuite extends FunSuite:
     val cache = Files.createTempDirectory("schema-migrator-sync-cache")
     try
       initRepo(repo, "select 1;")
-      val result =
-        (for
-          sqlStore <- SqlFileStore.inMemory
-          syncStore <- RepoSyncStore.inMemory
-          targetStore <- TargetStore.inMemory
-          service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 30, targetStore)
-          first <- service.sync("target-1", target(repo))
-          second <- service.sync("target-1", target(repo))
-          files <- sqlStore.list
-          state <- syncStore.getSyncState("target-1")
-        yield (first, second, files, state)).unsafeRunSync()
-
-      val (first, second, files, state) = result
+      val payload = TargetPayload(
+        label = "Target", app_name = "app", env = "dev",
+        jdbc_url = "jdbc:postgresql://localhost:5432/app?user=app",
+        password = None, repo_url = repo.toString,
+        repo_branch = "main", repo_sql_path = "sql"
+      )
+      val io = SqlFileStore.inMemory.flatMap { sqlStore =>
+        RepoSyncStore.inMemory.flatMap { syncStore =>
+          TargetStore.inMemory.flatMap { targetStore =>
+            targetStore.create(payload).flatMap { _ =>
+              val service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 30, targetStore)
+              service.sync("target-1", target(repo)).flatMap { first =>
+                service.sync("target-1", target(repo)).flatMap { second =>
+                  sqlStore.list("target-1").flatMap { files =>
+                    syncStore.getSyncState("target-1").flatMap { state =>
+                      targetStore.get("target-1").map { targetAfter =>
+                        (first, second, files, state, targetAfter)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      val (first, second, files, state, targetAfter) = io.unsafeRunSync()
       assertEquals(first.added, 1)
       assertEquals(first.changed, 0)
       assertEquals(second.added, 0)
       assertEquals(second.changed, 0)
       assertEquals(second.unchanged, 1)
-      assertEquals(files.map(_.path), List("tables/001_devices.sql"))
-      assertEquals(state.map(_.commit_sha), Some(first.commitSha))
+      assertEquals[List[String], List[String]](files.map(_.path), List("tables/001_devices.sql"))
+      assertEquals[Option[String], Option[String]](state.map(_.commit_sha), Some(first.commitSha))
+      targetAfter match
+        case Some(t) =>
+          assertEquals[Option[String], Option[String]](t.last_synced_commit, Some(first.commitSha))
+          assert(t.last_synced_at.isDefined)
+        case None => fail("target should exist after sync")
     finally
       deleteRecursively(repo)
       deleteRecursively(cache)
@@ -49,21 +69,25 @@ class RepoSyncServiceSuite extends FunSuite:
         "select 1;".getBytes(StandardCharsets.UTF_8),
         "2026-07-02T12:00:00Z"
       )
-      val result =
-        (for
-          sqlStore <- SqlFileStore.inMemory
-          _ <- sqlStore.replaceAll(List(existing))
-          syncStore <- RepoSyncStore.inMemory
-          targetStore <- TargetStore.inMemory
-          service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 1, targetStore)
-          failed <- service.sync("target-1", target(Path.of("/does/not/exist"))).attempt
-          files <- sqlStore.list
-          state <- syncStore.getSyncState("target-1")
-        yield (failed, files, state)).unsafeRunSync()
-
-      val (failed, files, state) = result
+      val io = SqlFileStore.inMemory.flatMap { sqlStore =>
+        sqlStore.replaceAll("target-1", List(existing)).flatMap { _ =>
+          RepoSyncStore.inMemory.flatMap { syncStore =>
+            TargetStore.inMemory.flatMap { targetStore =>
+              val service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 1, targetStore)
+              service.sync("target-1", target(Path.of("/does/not/exist"))).attempt.flatMap { failed =>
+                sqlStore.list("target-1").flatMap { files =>
+                  syncStore.getSyncState("target-1").map { state =>
+                    (failed, files, state)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      val (failed, files, state) = io.unsafeRunSync()
       assert(failed.isLeft)
-      assertEquals(files.map(_.path), List("tables/001_existing.sql"))
+      assertEquals[List[String], List[String]](files.map(_.path), List("tables/001_existing.sql"))
       assertEquals(state, None)
     finally deleteRecursively(cache)
   }

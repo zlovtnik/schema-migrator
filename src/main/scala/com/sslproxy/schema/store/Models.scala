@@ -13,6 +13,9 @@ private def redactedJdbcUrl(value: String): String =
     .replaceAll("(?i)(jdbc:oracle:thin:[^/\\s:@]+/)[^@\\s]+(@)", "$1<redacted>$2")
     .replaceAll("(?i)(//[^:/?#]+:)[^@/?#]+(@)", "$1<redacted>$2")
 
+private def redactedRepoUrl(value: String): String =
+  value.replaceAll("(?i)(https://)([^@/]+@)", "$1<redacted>@")
+
 final case class Target(
   id: String,
   label: String,
@@ -40,7 +43,7 @@ final case class TargetPayload(
   repo_sql_path: String
 ):
   override def toString: String =
-    s"TargetPayload(label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, password=${redacted(password)}, repo_url=$repo_url, repo_branch=$repo_branch, repo_sql_path=$repo_sql_path)"
+    s"TargetPayload(label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, password=${redacted(password)}, repo_url=${redactedRepoUrl(repo_url)}, repo_branch=$repo_branch, repo_sql_path=$repo_sql_path)"
 
 object TargetPayload:
   def rejectInlineCredentials(jdbcUrl: String): Either[String, Unit] =
@@ -49,12 +52,16 @@ object TargetPayload:
     else Right(())
 
   def rejectInlineRepoCredentials(repoUrl: String): Either[String, Unit] =
-    val normalized = repoUrl.trim.split("[?#]", 2)(0)
-    val authority = normalized.drop("https://".length)
-    val hasUserinfo = authority.takeWhile(_ != '/').contains('@')
-    if hasUserinfo then
-      Left("Repository URL must not contain inline credentials")
-    else Right(())
+    val trimmed = repoUrl.trim
+    if !trimmed.startsWith("https://") then
+      Left("Repository URL must start with https://")
+    else
+      val normalized = trimmed.split("[?#]", 2)(0)
+      val authority = normalized.drop("https://".length)
+      val hasUserinfo = authority.takeWhile(_ != '/').contains('@')
+      if hasUserinfo then
+        Left("Repository URL must not contain inline credentials")
+      else Right(())
 
   private def containsInlineCredentials(jdbcUrl: String): Boolean =
     List(
