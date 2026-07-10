@@ -8,12 +8,6 @@ const SchemaPage = lazy(() => import("./pages/Schema/SchemaPage").then((module) 
 const TargetListPage = lazy(() => import("./pages/Targets/TargetListPage").then((module) => ({ default: module.TargetListPage })));
 const TargetFormPage = lazy(() => import("./pages/Targets/TargetFormPage").then((module) => ({ default: module.TargetFormPage })));
 const TargetDetailPage = lazy(() => import("./pages/Targets/TargetDetailPage").then((module) => ({ default: module.TargetDetailPage })));
-const MigrationListPage = lazy(() =>
-  import("./pages/Migrations/MigrationListPage").then((module) => ({ default: module.MigrationListPage }))
-);
-const MigrationDetailPage = lazy(() =>
-  import("./pages/Migrations/MigrationDetailPage").then((module) => ({ default: module.MigrationDetailPage }))
-);
 const SnapshotListPage = lazy(() => import("./pages/Snapshots/SnapshotListPage").then((module) => ({ default: module.SnapshotListPage })));
 const SnapshotDetailPage = lazy(() =>
   import("./pages/Snapshots/SnapshotDetailPage").then((module) => ({ default: module.SnapshotDetailPage }))
@@ -33,11 +27,6 @@ const CallbackPage = lazy(() => import("./pages/Login/CallbackPage").then((modul
 
 const snapshotRouteLabel = ({ params }: { params: Record<string, string | undefined> }) =>
   params.id ? `Snapshot · ${params.id.slice(0, 8)}` : "Snapshot";
-
-const MigrationDetailRedirect = () => {
-  const { id } = useParams();
-  return <Navigate to={id ? `/migrations/${id}` : "/migrations"} replace />;
-};
 
 const SettingsTargetRedirect = () => {
   const { id } = useParams();
@@ -88,20 +77,6 @@ export const router = createBrowserRouter([
             }
           },
           {
-            path: "migrations",
-            element: routeElement(MigrationListPage),
-            handle: { breadcrumb: "Migrations", targetAware: true, title: "Migrations" }
-          },
-          {
-            path: "migrations/:id",
-            element: routeElement(MigrationDetailPage),
-            handle: {
-              breadcrumb: "Migration detail",
-              parents: [{ breadcrumb: "Migrations", breadcrumbTo: "/migrations", targetAware: true }],
-              title: "Migration"
-            }
-          },
-          {
             path: "snapshots",
             element: routeElement(SnapshotListPage),
             handle: { breadcrumb: "Snapshots", targetAware: true, title: "Snapshots" }
@@ -124,8 +99,8 @@ export const router = createBrowserRouter([
               title: "Snapshot diff"
             }
           },
-          { path: "patches", element: <Navigate to="/migrations" replace /> },
-          { path: "patches/:id", element: <MigrationDetailRedirect /> },
+          { path: "patches", element: <Navigate to="/drift" replace /> },
+          { path: "patches/:id", element: <Navigate to="/drift" replace /> },
           {
             path: "runs",
             element: routeElement(RunListPage),

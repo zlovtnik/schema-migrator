@@ -50,7 +50,7 @@ const statusLabels: Record<string, string> = {
   defined: "Defined",
   in_sync: "In sync",
   drift_detected: "Drift detected",
-  pending_migration: "Pending migration",
+  pending_migration: "Pending apply",
   unknown: "Unknown",
   missing_actual: "Missing actual",
   untracked_actual: "Untracked actual",

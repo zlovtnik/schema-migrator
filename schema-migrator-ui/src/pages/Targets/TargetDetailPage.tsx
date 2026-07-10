@@ -8,18 +8,16 @@ import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { useMigrations } from "../../hooks/useMigrations";
 import { useRuns } from "../../hooks/useRuns";
 import { useSession } from "../../hooks/useSession";
 import { useSnapshots } from "../../hooks/useSnapshots";
 import { useTarget } from "../../hooks/useTargets";
-import type { Patch, Run, Snapshot } from "../../types";
+import type { Run, Snapshot } from "../../types";
 
-type TargetTab = "overview" | "migrations" | "runs" | "validation" | "snapshots";
+type TargetTab = "overview" | "runs" | "validation" | "snapshots";
 
 const tabs: Array<{ id: TargetTab; label: string }> = [
   { id: "overview", label: "Overview" },
-  { id: "migrations", label: "Migrations" },
   { id: "runs", label: "Runs" },
   { id: "validation", label: "Validation" },
   { id: "snapshots", label: "Snapshots" }
@@ -30,14 +28,9 @@ export const TargetDetailPage = () => {
   const { canManageTargets } = useSession();
   const [activeTab, setActiveTab] = useState<TargetTab>("overview");
   const { data: target, isLoading: targetLoading, error: targetError } = useTarget(id);
-  const { data: migrations = [], isLoading: migrationsLoading } = useMigrations(id);
   const { data: runs = [], isLoading: runsLoading } = useRuns(id);
   const { data: snapshots = [], isLoading: snapshotsLoading } = useSnapshots(id);
 
-  const sortedMigrations = useMemo(
-    () => [...migrations].sort((a, b) => b.version.localeCompare(a.version)),
-    [migrations]
-  );
   const sortedRuns = useMemo(
     () => [...runs].sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at)),
     [runs]
@@ -94,17 +87,14 @@ export const TargetDetailPage = () => {
 
       {activeTab === "overview" ? (
         <TargetOverviewTab
-          migrationCount={migrations.length}
           runCount={runs.length}
           snapshotCount={snapshots.length}
           latestCompletedRun={latestCompletedRun}
-          loading={migrationsLoading || runsLoading || snapshotsLoading}
-          recentMigrations={sortedMigrations.slice(0, 5)}
+          loading={runsLoading || snapshotsLoading}
           recentRuns={sortedRuns.slice(0, 5)}
           recentSnapshots={sortedSnapshots.slice(0, 5)}
         />
       ) : null}
-      {activeTab === "migrations" ? <MigrationTable migrations={sortedMigrations} loading={migrationsLoading} /> : null}
       {activeTab === "runs" ? <RunTable runs={sortedRuns} loading={runsLoading} /> : null}
       {activeTab === "validation" ? <ValidationTab runs={sortedRuns} loading={runsLoading} /> : null}
       {activeTab === "snapshots" ? <SnapshotTable snapshots={sortedSnapshots} loading={snapshotsLoading} /> : null}
@@ -115,8 +105,6 @@ export const TargetDetailPage = () => {
 const TargetOverviewTab = ({
   latestCompletedRun,
   loading,
-  migrationCount,
-  recentMigrations,
   recentRuns,
   recentSnapshots,
   runCount,
@@ -124,8 +112,6 @@ const TargetOverviewTab = ({
 }: {
   latestCompletedRun: Run | undefined;
   loading: boolean;
-  migrationCount: number;
-  recentMigrations: Patch[];
   recentRuns: Run[];
   recentSnapshots: Snapshot[];
   runCount: number;
@@ -133,10 +119,6 @@ const TargetOverviewTab = ({
 }) => (
   <div className="target-overview">
     <section className="metric-grid" aria-label="Target summary">
-      <div>
-        <span className="field-label">Migrations</span>
-        <strong>{loading ? "..." : migrationCount}</strong>
-      </div>
       <div>
         <span className="field-label">Runs</span>
         <strong>{loading ? "..." : runCount}</strong>
@@ -168,10 +150,6 @@ const TargetOverviewTab = ({
 
     <div className="target-overview-grid">
       <section className="section-block">
-        <h2>Recent migrations</h2>
-        <MigrationTable migrations={recentMigrations} loading={loading} compact />
-      </section>
-      <section className="section-block">
         <h2>Recent runs</h2>
         <RunTable runs={recentRuns} loading={loading} compact />
       </section>
@@ -179,50 +157,10 @@ const TargetOverviewTab = ({
   </div>
 );
 
-const migrationColumns: DataTableColumn<Patch>[] = [
-  {
-    id: "version",
-    header: "Version",
-    sortValue: (patch) => patch.version,
-    cell: (patch) => <Link to={`/migrations/${patch.id}`}>{patch.version}</Link>
-  },
-  {
-    id: "label",
-    header: "Label",
-    sortValue: (patch) => patch.label,
-    cell: (patch) => patch.label
-  },
-  {
-    id: "scripts",
-    header: "Scripts",
-    sortValue: (patch) => patch.scripts.length,
-    cell: (patch) => patch.scripts.length
-  },
-  {
-    id: "status",
-    header: "Status",
-    sortValue: (patch) => patch.status,
-    cell: (patch) => <StatusBadge status={patch.status} />
-  }
-];
-
-const MigrationTable = ({ compact = false, loading, migrations }: { compact?: boolean; loading: boolean; migrations: Patch[] }) => {
-  if (loading) return <Skeleton rows={compact ? 3 : 6} label="Loading migrations" />;
-  return (
-    <DataTable
-      caption="Target migrations"
-      columns={migrationColumns}
-      rows={migrations}
-      rowKey={(patch) => patch.id}
-      empty="No migrations registered for this target."
-    />
-  );
-};
-
 const runColumns: DataTableColumn<Run>[] = [
   {
     id: "patch",
-    header: "Migration",
+    header: "Run source",
     sortValue: (run) => run.patch_id,
     cell: (run) => <Link to={`/runs/${run.id}`}>{run.patch_id}</Link>
   },

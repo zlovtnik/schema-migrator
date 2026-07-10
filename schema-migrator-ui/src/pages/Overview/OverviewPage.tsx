@@ -33,8 +33,8 @@ export const OverviewPage = () => {
           <h1>Schema control</h1>
           <p>Targets, run safety, and validation state.</p>
         </div>
-        <Link className="button button--primary" to="/migrations">
-          Open migrations
+        <Link className="button button--primary" to="/drift">
+          Open drift
         </Link>
       </header>
 
@@ -68,7 +68,7 @@ export const OverviewPage = () => {
         <div className="active-target-card">
           <span className="field-label">Active target</span>
           <strong>{targetsLoading ? "..." : activeTarget?.label ?? "No target"}</strong>
-          <p>{activeTarget ? `${activeTarget.app_name} · ${activeTarget.env}` : "Configure a target to start running migrations."}</p>
+          <p>{activeTarget ? `${activeTarget.app_name} · ${activeTarget.env}` : "Configure a target to start drift runs."}</p>
           <div>
             <span>Targets</span>
             <code>{targetsLoading ? "..." : targets.length}</code>
@@ -81,15 +81,15 @@ export const OverviewPage = () => {
         {runsLoading ? (
           <div className="empty-state">Loading run history...</div>
         ) : recentRuns.length === 0 ? (
-          <EmptyState icon={<Icon source={DatabaseIcon} size={24} />} title="No migration runs yet">
-            Run history will appear here after a migration is started.
+          <EmptyState icon={<Icon source={DatabaseIcon} size={24} />} title="No runs yet">
+            Run history will appear here after drift execution starts.
           </EmptyState>
         ) : (
           <div className="table-panel">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th scope="col">Migration</th>
+                  <th scope="col">Run source</th>
                   <th scope="col">Target</th>
                   <th scope="col">Started</th>
                   <th scope="col">Status</th>

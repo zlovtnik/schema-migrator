@@ -42,7 +42,7 @@ export const AuditLogPage = () => {
       <PageHeader
         eyebrow="Admin"
         title="Audit log"
-        description="Actor, action, and entity history across the migration service."
+        description="Actor, action, and entity history across the schema service."
       />
 
       <div className="audit-filter-bar">
@@ -61,7 +61,7 @@ export const AuditLogPage = () => {
           <select value={entityType} onChange={(event) => setEntityType(event.target.value)}>
             <option value="">All entity types</option>
             <option value="target">Targets</option>
-            <option value="patch">Migrations</option>
+            <option value="patch">Patches</option>
             <option value="run">Runs</option>
             <option value="snapshot">Snapshots</option>
             <option value="validation">Validation</option>

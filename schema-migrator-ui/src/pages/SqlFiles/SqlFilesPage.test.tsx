@@ -101,6 +101,18 @@ describe("SqlFilesPage", () => {
             })
           );
         }
+        if (url.endsWith("/snapshots") && method === "POST") {
+          return Promise.resolve(
+            jsonResponse({
+              id: "snapshot-1",
+              target_id: "target-1",
+              label: "before",
+              created_at: "2026-06-28T12:01:00Z",
+              created_by: "operator",
+              file_count: 3
+            })
+          );
+        }
         if (url.includes("/sql-files/status")) {
           return Promise.resolve(
             jsonResponse({
@@ -182,5 +194,24 @@ describe("SqlFilesPage", () => {
       expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/targets/target-1/repo-sync"), expect.objectContaining({ method: "POST" }))
     );
     expect(await screen.findByText(/synced commit abc123def456/i)).toBeInTheDocument();
+  });
+
+  it("creates a snapshot for the selected target", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    renderApp(<SqlFilesPage />, { route: "/sql-files?target=target-1" });
+
+    await user.click(await screen.findByRole("button", { name: /create snapshot/i }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/snapshots"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ target_id: "target-1" })
+        })
+      )
+    );
+    expect(await screen.findByText("Created snapshot before")).toBeInTheDocument();
   });
 });

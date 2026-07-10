@@ -64,7 +64,7 @@ export const LoginPage = () => {
 
         <div className="auth-copy">
           <h2>Sign in</h2>
-          <p>Access migration operations with your Bedrock identity.</p>
+          <p>Access schema operations with your Bedrock identity.</p>
         </div>
 
         {!configured ? (

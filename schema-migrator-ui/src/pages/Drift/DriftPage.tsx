@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
+import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
+import { PlayIcon } from "@phosphor-icons/react/dist/csr/Play";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { PageHeader } from "../../components/PageHeader";
 import { SqlPreviewPane } from "../../components/SqlPreviewPane";
@@ -8,8 +10,11 @@ import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
-import { useDrift } from "../../hooks/useSchema";
+import { useErrorGate } from "../../hooks/useErrorGate";
+import { useRuns } from "../../hooks/useRuns";
+import { useDrift, useTriggerDriftRun } from "../../hooks/useSchema";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
+import { useSession } from "../../hooks/useSession";
 import type { DriftItem, DriftType, SchemaControlSummary } from "../../types";
 
 type DriftFilter = DriftType | "all";
@@ -17,9 +22,14 @@ type DriftFilter = DriftType | "all";
 export const DriftPage = () => {
   const selectedTarget = useSelectedTargetId();
   const { data, isLoading, error } = useDrift(selectedTarget);
+  const { data: runs = [] } = useRuns(selectedTarget);
+  const { isGateBlocked, failedRun } = useErrorGate();
+  const { canMutate } = useSession();
+  const triggerDriftRun = useTriggerDriftRun();
   const [textFilter, setTextFilter] = useState("");
   const [driftFilter, setDriftFilter] = useState<DriftFilter>("all");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [startingSource, setStartingSource] = useState<string | "all" | null>(null);
 
   const textFilteredItems = useMemo(() => {
     const query = textFilter.trim().toLowerCase();
@@ -39,9 +49,34 @@ export const DriftPage = () => {
   }, [driftFilter, textFilteredItems]);
 
   const driftCounts = useMemo(() => countByDriftType(textFilteredItems), [textFilteredItems]);
+  const executableSourceFiles = useMemo(() => uniqueSourceFiles(data?.items ?? []), [data?.items]);
   const selectedItem = useMemo(
     () => items.find((item) => driftItemKey(item) === openKey) ?? null,
     [items, openKey]
+  );
+  const isRunning = runs.some((run) => run.status === "running" || run.status === "pending");
+  const runDisabledReason = !canMutate
+    ? "Viewer role cannot start drift runs"
+    : isGateBlocked
+      ? `Resolve failed run ${failedRun?.id ?? ""} before starting another run`
+      : isRunning
+        ? "This target already has an active run"
+        : triggerDriftRun.isPending
+          ? "A drift run is already starting"
+          : undefined;
+
+  const startDriftRun = useCallback(
+    (sourceFiles?: string[]) => {
+      if (!selectedTarget || runDisabledReason || (sourceFiles && sourceFiles.length === 0)) {
+        return;
+      }
+      setStartingSource(sourceFiles?.[0] ?? "all");
+      triggerDriftRun.mutate(
+        { target_id: selectedTarget, ...(sourceFiles ? { source_files: sourceFiles } : {}) },
+        { onSettled: () => setStartingSource(null) }
+      );
+    },
+    [runDisabledReason, selectedTarget, triggerDriftRun]
   );
 
   const openDriftDetail = useCallback((item: DriftItem) => {
@@ -81,7 +116,12 @@ export const DriftPage = () => {
         header: "Type",
         className: "drift-table__type",
         sortValue: (item) => item.object_type,
-        cell: (item) => <span className="object-type-chip">{formatLabel(item.object_type)}</span>
+        cell: (item) => (
+          <span className="object-type-chip">
+            <Icon className="object-type-chip__icon" source={DatabaseIcon} size={16} />
+            {formatLabel(item.object_type)}
+          </span>
+        )
       },
       {
         id: "schema",
@@ -110,9 +150,31 @@ export const DriftPage = () => {
         className: "drift-table__detected",
         sortValue: (item) => item.detected_at,
         cell: (item) => <time dateTime={item.detected_at}>{new Date(item.detected_at).toLocaleString()}</time>
+      },
+      {
+        id: "action",
+        header: "Action",
+        className: "drift-table__action",
+        cell: (item) => {
+          const sourceFile = item.source_file?.trim();
+          const disabled = Boolean(runDisabledReason) || !sourceFile;
+          const pending = sourceFile ? startingSource === sourceFile && triggerDriftRun.isPending : false;
+          return (
+            <button
+              className="button button--secondary button--small drift-run-button"
+              type="button"
+              disabled={disabled}
+              title={sourceFile ? runDisabledReason : "This drift item has no source SQL file to execute"}
+              onClick={() => sourceFile && startDriftRun([sourceFile])}
+            >
+              <Icon source={PlayIcon} size={16} weight="fill" />
+              {pending ? "Starting" : "Run"}
+            </button>
+          );
+        }
       }
     ],
-    [openDriftDetail, openKey]
+    [openDriftDetail, openKey, runDisabledReason, startDriftRun, startingSource, triggerDriftRun.isPending]
   );
 
   return (
@@ -121,8 +183,36 @@ export const DriftPage = () => {
         eyebrow="Observe"
         title="Schema drift"
         description="Compare manifest-defined objects with the selected target catalog."
-        actions={<TargetSelector />}
+        actions={
+          <>
+            <button
+              className="button button--primary"
+              type="button"
+              disabled={Boolean(runDisabledReason) || executableSourceFiles.length === 0}
+              title={runDisabledReason ?? (executableSourceFiles.length === 0 ? "No executable drift items are available" : undefined)}
+              onClick={() => startDriftRun()}
+            >
+              <Icon source={PlayIcon} size={16} weight="fill" />
+              {startingSource === "all" && triggerDriftRun.isPending ? "Starting" : "Run executable drift"}
+            </button>
+            <TargetSelector />
+          </>
+        }
       />
+
+      {triggerDriftRun.error ? (
+        <div className="status-banner status-banner--error" role="alert">
+          Drift run could not be started.
+        </div>
+      ) : null}
+
+      {isGateBlocked ? (
+        <div className="status-banner status-banner--error">
+          Drift execution is disabled by failed run {failedRun?.id}. Resolve it before starting another run.
+        </div>
+      ) : null}
+      {isRunning ? <div className="status-banner">Drift execution is disabled while this target has an active run.</div> : null}
+      {!canMutate ? <div className="status-banner">Viewer role cannot start drift runs.</div> : null}
 
       {!selectedTarget ? (
         <EmptyState icon={<Icon source={ShieldCheckIcon} size={24} />} title="Select a target">
@@ -154,7 +244,7 @@ export const DriftPage = () => {
 
       {data?.supported ? (
         <div className="drift-page-stack">
-          <ControlSummaryPanel summary={data.control_summary} />
+          <ControlSummaryPanel checkedAt={data.checked_at} driftCount={data.items.length} summary={data.control_summary} />
           {data.items.length === 0 ? (
             <EmptyState icon={<Icon source={ShieldCheckIcon} size={24} />} title="No drift detected">
               All returned objects match the available manifest and schema-control state.
@@ -196,12 +286,18 @@ export const DriftPage = () => {
                   ))}
                 </div>
               </div>
+              <div className="drift-section-header">
+                <div>
+                  <h2 className="drift-section-header__title">Object Drift Status</h2>
+                  <p className="drift-section-header__description">Detailed view of all database objects and their drift status</p>
+                </div>
+              </div>
               <DataTable
                 caption="Drift results"
                 columns={columns}
                 rows={items}
                 rowKey={driftItemKey}
-                getRowState={(item) => ({ selected: driftItemKey(item) === openKey })}
+                getRowState={(item) => ({ className: driftRowClass(item), selected: driftItemKey(item) === openKey })}
                 empty={textFilter ? `No drift results match "${textFilter}".` : "No drift detected."}
               />
               {selectedItem ? <DriftDetail item={selectedItem} /> : null}
@@ -236,17 +332,25 @@ const DriftDetail = ({ item }: { item: DriftItem }) => (
   </section>
 );
 
-const ControlSummaryPanel = ({ summary }: { summary: SchemaControlSummary | null | undefined }) => {
+const ControlSummaryPanel = ({
+  checkedAt,
+  driftCount,
+  summary
+}: {
+  checkedAt: string;
+  driftCount: number;
+  summary: SchemaControlSummary | null | undefined;
+}) => {
   if (!summary) {
     return null;
   }
 
   const counts = [
-    ["Total", summary.total_count],
-    ["Applied", summary.applied_count],
-    ["Skipped", summary.skipped_count],
-    ["Pending", summary.pending_count],
-    ["Failed", summary.failed_count]
+    ["Total", summary.total_count, "default"],
+    ["Applied", summary.applied_count, "success"],
+    ["Skipped", summary.skipped_count, "default"],
+    ["Pending", summary.pending_count, "warning"],
+    ["Failed", summary.failed_count, "error"]
   ] as const;
 
   return (
@@ -259,8 +363,8 @@ const ControlSummaryPanel = ({ summary }: { summary: SchemaControlSummary | null
         <StatusBadge status={summary.ready ? "clean" : "warnings"} />
       </header>
       <div className="control-summary__grid">
-        {counts.map(([label, value]) => (
-          <div className="control-summary__metric" key={label}>
+        {counts.map(([label, value, variant]) => (
+          <div className={`control-summary__metric control-summary__metric--${variant}`} key={label}>
             <span>{label}</span>
             <strong>{value}</strong>
           </div>
@@ -274,6 +378,14 @@ const ControlSummaryPanel = ({ summary }: { summary: SchemaControlSummary | null
         <div>
           <dt>Last updated</dt>
           <dd>{formatOptionalDate(summary.last_updated_at)}</dd>
+        </div>
+        <div>
+          <dt>Last checked</dt>
+          <dd>{formatOptionalDate(checkedAt)}</dd>
+        </div>
+        <div>
+          <dt>Drift detected</dt>
+          <dd>{driftCount} {driftCount === 1 ? "object" : "objects"}</dd>
         </div>
       </dl>
       {summary.failed_objects.length ? (
@@ -321,5 +433,10 @@ const countByDriftType = (items: DriftItem[]): Map<DriftType, number> => {
   items.forEach((item) => counts.set(item.drift_type, (counts.get(item.drift_type) ?? 0) + 1));
   return new Map(Array.from(counts.entries()).sort((a, b) => a[0].localeCompare(b[0])));
 };
+
+const uniqueSourceFiles = (items: DriftItem[]): string[] =>
+  Array.from(new Set(items.flatMap((item) => item.source_file?.trim() ? [item.source_file.trim()] : [])));
+
+const driftRowClass = (item: DriftItem): string => `row--drift row--drift-${item.drift_type}`;
 
 const formatOptionalDate = (value?: string | null): string => (value ? new Date(value).toLocaleString() : "Not recorded");

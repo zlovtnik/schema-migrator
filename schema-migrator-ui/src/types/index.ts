@@ -191,12 +191,23 @@ export interface SchemaControlSummary {
   last_updated_at?: Rfc3339Timestamp | null;
 }
 
+export interface SchemaControlObject {
+  kind: string;
+  object_name: string;
+  source_file: string;
+  apply_status: string;
+  checksum: string;
+  applied_at?: Rfc3339Timestamp | null;
+  updated_at?: Rfc3339Timestamp | null;
+}
+
 export interface DriftResponse {
   target_id: string;
   db_kind: DbKind;
   supported: boolean;
   checked_at: Rfc3339Timestamp;
   control_summary?: SchemaControlSummary | null;
+  control_objects: SchemaControlObject[];
   items: DriftItem[];
   warnings: string[];
 }
@@ -391,12 +402,23 @@ export const schemaControlSummarySchema = z.object({
   last_updated_at: rfc3339TimestampSchema.nullish()
 });
 
+export const schemaControlObjectSchema = z.object({
+  kind: z.string(),
+  object_name: z.string(),
+  source_file: z.string(),
+  apply_status: z.string(),
+  checksum: z.string(),
+  applied_at: rfc3339TimestampSchema.nullish(),
+  updated_at: rfc3339TimestampSchema.nullish()
+});
+
 export const driftResponseSchema = z.object({
   target_id: z.string().min(1),
   db_kind: dbKindSchema,
   supported: z.boolean(),
   checked_at: rfc3339TimestampSchema,
   control_summary: schemaControlSummarySchema.nullish(),
+  control_objects: z.array(schemaControlObjectSchema).default([]),
   items: z.array(driftItemSchema),
   warnings: z.array(z.string())
 });
@@ -555,6 +577,11 @@ export const normalizeTargetPayload = (values: TargetFormValues): TargetPayload 
 export interface TriggerRunPayload {
   patch_id: string;
   target_id: string;
+}
+
+export interface DriftRunPayload {
+  target_id: string;
+  source_files?: string[];
 }
 
 export interface UploadPatchPayload {

@@ -23,9 +23,9 @@ RUN bun install --frozen-lockfile
 COPY --chown=bun:bun schema-migrator-ui/ .
 RUN bun run build
 
-# --- nginx with static files baked in ---
+# --- static nginx with SPA assets baked in ---
 FROM nginx:1.27-alpine
 
 RUN rm /etc/nginx/conf.d/default.conf
-COPY nginx/nginx.conf.template /etc/nginx/templates/app.conf.template
+COPY frontend/spa.conf.template /etc/nginx/templates/app.conf.template
 COPY --from=ui-builder /ui/dist /usr/share/nginx/html

@@ -201,6 +201,8 @@ If no command is given, `apply` is used as the default.
 | `BEDROCK_VALIDATIONS_COLLECTION` | MongoDB collection for validation results. Defaults to `validations`. |
 | `BEDROCK_SNAPSHOTS_COLLECTION` | MongoDB collection for SQL manifest snapshots. Defaults to `snapshots`. |
 | `BEDROCK_AUDIT_COLLECTION` | MongoDB collection for audit events. Defaults to `audit_events`. |
+| `DOCKER_SOCKET` | Docker socket bind source for the Traefik Docker provider in `docker-compose.yml`. Defaults to `/var/run/docker.sock`; Docker Desktop users may need `${HOME}/.docker/run/docker.sock`. |
+| `DOCKER_API_VERSION` | Optional Docker API version used by Traefik's Docker client. Defaults to `1.40` for compatibility with newer Docker engines. |
 
 Oracle schema catalog and drift endpoints currently return `supported = false`; Oracle targets are limited to connection-level checks and JDBC migration execution until Oracle catalog introspection is added.
 

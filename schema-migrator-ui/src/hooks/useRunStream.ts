@@ -46,9 +46,28 @@ const terminalStatuses: RunStatus[] = ["completed", "failed", "aborted"];
 
 const toInitialState = (run?: Run): RunStreamState => ({
   scriptEvents: new Map(run?.scripts.map((script) => [script.script_id, script]) ?? []),
-  logLines: [],
+  logLines: initialLogLines(run),
   runStatus: run?.status ?? "pending"
 });
+
+const initialLogLines = (run?: Run): string[] => {
+  if (!run) {
+    return [];
+  }
+
+  const lines = [`Run ${run.id} is ${run.status}.`];
+  run.scripts.forEach((script) => {
+    const duration = script.duration_ms === undefined ? "" : ` (${script.duration_ms} ms)`;
+    const message = script.error ? `: ${script.error.message}` : "";
+    lines.push(`${script.status.toUpperCase()} ${script.filename}${duration}${message}`);
+  });
+
+  if (run.status === "failed" && !run.scripts.some((script) => script.error)) {
+    lines.push("Run failed before a script error was recorded. Check backend logs for the run id and target id.");
+  }
+
+  return lines;
+};
 
 const parseEventData = <T>(data: string): T => JSON.parse(data) as T;
 
@@ -108,6 +127,7 @@ export const useRunStream = (runId?: string, initialRun?: Run, options: UseRunSt
       return {
         ...previous,
         scriptEvents,
+        logLines: previous.logLines.length === 0 ? initialLogLines(initialRun) : previous.logLines,
         runStatus: initialRun.status
       };
     });

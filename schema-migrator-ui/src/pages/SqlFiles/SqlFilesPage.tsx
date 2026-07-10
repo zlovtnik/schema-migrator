@@ -100,6 +100,7 @@ const SqlFilesPage = () => {
   const [query, setQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(readExpandedFolders);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const effectiveTargetId = selectedTarget ?? targetQuery.data?.id ?? repoStatus?.target_id ?? null;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,7 +187,7 @@ const SqlFilesPage = () => {
   };
 
   const handleSyncNow = async () => {
-    if (!canMutate || !selectedTarget) return;
+    if (!canMutate || !effectiveTargetId) return;
     setSyncing(true);
     setError(null);
     setSuccess(null);
@@ -194,7 +195,7 @@ const SqlFilesPage = () => {
     setSyncResult(null);
 
     try {
-      const result = await triggerRepoSync(selectedTarget);
+      const result = await triggerRepoSync(effectiveTargetId);
       setSyncResult(result);
       setSuccess(`Synced commit ${result.commit_sha.slice(0, 12)}`);
       await load();
@@ -223,13 +224,13 @@ const SqlFilesPage = () => {
   };
 
   const handleCreateSnapshot = () => {
-    if (!canMutate || !selectedTarget) {
+    if (!canMutate || !effectiveTargetId) {
       return;
     }
     setError(null);
     setSuccess(null);
     createSnapshot.mutate(
-      { target_id: selectedTarget },
+      { target_id: effectiveTargetId },
       {
         onSuccess: (snapshot) => setSuccess(`Created snapshot ${snapshot.label}`),
         onError: (err) => setError(err instanceof Error ? err.message : "Failed to create snapshot")
@@ -259,11 +260,11 @@ const SqlFilesPage = () => {
             className="button button--primary"
             type="button"
             onClick={handleSyncNow}
-            disabled={!canMutate || !selectedTarget || syncing}
+            disabled={!canMutate || !effectiveTargetId || syncing}
             title={
               !canMutate
                 ? "Viewer role cannot sync SQL files"
-                : !selectedTarget
+                : !effectiveTargetId
                   ? "Select a target before syncing"
                   : undefined
             }
@@ -278,12 +279,12 @@ const SqlFilesPage = () => {
           <button
             className="button button--secondary"
             type="button"
-          onClick={handleCreateSnapshot}
-            disabled={!canMutate || !selectedTarget || loading || syncing || createSnapshot.isPending}
+            onClick={handleCreateSnapshot}
+            disabled={!canMutate || !effectiveTargetId || loading || syncing || createSnapshot.isPending}
             title={
               !canMutate
                 ? "Viewer role cannot create snapshots"
-                : !selectedTarget
+                : !effectiveTargetId
                   ? "Select a target before creating a snapshot"
                   : undefined
             }
