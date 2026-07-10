@@ -711,6 +711,22 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     assertEquals(catalog.map(item => (item.object_type, item.status)), List(("index", "drift_detected"), ("materialized_view", "drift_detected"), ("view", "drift_detected")))
   }
 
+  test("matching idempotent btree index definitions do not report definition drift") {
+    val indexKey = ObjectKey("public", "sync_events_status_idx", "index")
+    val expectedObjects = List(
+      expected(indexKey, sourceFile = "indexes/001_sync_events_indexes.sql", expectedDdl = Some("create index if not exists sync_events_status_idx on sync_events (status);"))
+    )
+    val actualObjects = List(
+      LiveObject(indexKey, Some("CREATE INDEX sync_events_status_idx ON public.sync_events USING btree (status)"))
+    )
+
+    val drift = driftItems(now, expectedObjects, actualObjects, ControlSnapshot(Nil, None, Nil))
+    val catalog = mergeCatalog(now, expectedObjects, actualObjects, ControlSnapshot(Nil, None, Nil))
+
+    assertEquals(drift, Nil)
+    assertEquals(catalog.map(item => (item.object_type, item.status)), List(("index", "in_sync")))
+  }
+
   test("known built-in untracked catalog objects are hidden while user objects remain visible") {
     val actualObjects = List(
       LiveObject(ObjectKey("public", "public", "schema"), Some("create schema public")),

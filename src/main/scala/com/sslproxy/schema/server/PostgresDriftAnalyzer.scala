@@ -362,7 +362,17 @@ private[schema] object PostgresDriftAnalyzer:
   private def comparableDefinition(key: ObjectKey, value: String): String =
     if isRoutineType(key.objectType) then routineComparableDdl(key, value).getOrElse(comparableDdl(key, value))
     else if isViewType(key.objectType) then viewComparableDdl(key, value)
+    else if key.objectType == "index" then indexComparableDdl(key, value)
     else comparableDdl(key, value)
+
+  private def indexComparableDdl(key: ObjectKey, value: String): String =
+    compactSqlSurface(
+      transformUnquotedSql(comparableDdl(key, value)) { text =>
+        text
+          .replaceAll("\\bcreate\\s+(unique\\s+)?index\\s+if\\s+not\\s+exists\\b", "create $1index")
+          .replaceAll("\\s+using\\s+btree\\s+(?=\\()", " ")
+      }
+    )
 
   private def routineComparableDdl(key: ObjectKey, value: String): Option[String] =
     routineDefinitions(value)
