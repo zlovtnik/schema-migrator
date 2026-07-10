@@ -12,8 +12,8 @@ This file governs this `schema-migrator` repository checkout.
   checks unless an Oracle test target is explicitly available.
 - A small bundled web UI lives in `schema-migrator-ui/` (Vite + React). CI and
   local development may use the provided `docker-compose.yml` which builds
-  the `backend` and `nginx` services and an accompanying `mongo` service used
-  by the UI/API for persisted migration targets.
+  the `backend`, `frontend`, and `traefik` services and an accompanying `mongo`
+  service used by the UI/API for persisted migration targets.
 
 ## Guardrails
 - Preserve deterministic ordering. Postgres order is extensions, schemas,
