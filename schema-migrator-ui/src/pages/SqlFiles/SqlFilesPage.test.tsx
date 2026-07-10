@@ -3,6 +3,7 @@ import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import SqlFilesPage from "./SqlFilesPage";
 import { setAuthToken } from "../../api/client";
+import { tokenWithRole } from "../../test/authToken";
 import { renderApp } from "../../test/render";
 import type { SqlFileEntry } from "../../api/sqlFiles";
 
@@ -54,12 +55,6 @@ const target = {
   last_synced_commit: null,
   last_synced_at: null
 };
-
-const base64Url = (value: string): string =>
-  window.btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
-
-const tokenWithRole = (role: string): string =>
-  `${base64Url("{}")}.${base64Url(JSON.stringify({ role }))}.signature`;
 
 describe("SqlFilesPage", () => {
   beforeEach(() => {

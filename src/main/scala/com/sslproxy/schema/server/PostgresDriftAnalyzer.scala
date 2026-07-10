@@ -947,7 +947,7 @@ private[schema] object PostgresDriftAnalyzer:
       .mkString
 
   private val comparableDefinitionTypes: Set[String] =
-    Set("function", "procedure", "trigger")
+    Set("function", "procedure", "trigger", "view", "materialized_view", "index")
 
   private def isRoutineType(objectType: String): Boolean =
     objectType == "function" || objectType == "procedure"

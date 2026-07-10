@@ -16,6 +16,7 @@ import { useDrift, useTriggerDriftRun } from "../../hooks/useSchema";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import type { DriftItem, DriftType, SchemaControlSummary } from "../../types";
+import { formatOptionalDate } from "../../utils/format";
 
 type DriftFilter = DriftType | "all";
 
@@ -54,16 +55,23 @@ export const DriftPage = () => {
     () => items.find((item) => driftItemKey(item) === openKey) ?? null,
     [items, openKey]
   );
-  const isRunning = runs.some((run) => run.status === "running" || run.status === "pending");
-  const runDisabledReason = !canMutate
-    ? "Viewer role cannot start drift runs"
-    : isGateBlocked
-      ? `Resolve failed run ${failedRun?.id ?? ""} before starting another run`
-      : isRunning
-        ? "This target already has an active run"
-        : triggerDriftRun.isPending
-          ? "A drift run is already starting"
-          : undefined;
+  const hasSelectedTarget = Boolean(selectedTarget);
+  const isRunning = hasSelectedTarget && runs.some((run) => run.status === "running" || run.status === "pending");
+  const runDisabledReason = (() => {
+    if (!hasSelectedTarget) {
+      return undefined;
+    }
+    if (!canMutate) {
+      return "Viewer role cannot start drift runs";
+    }
+    if (isGateBlocked) {
+      return `Resolve failed run ${failedRun?.id ?? ""} before starting another run`;
+    }
+    if (isRunning) {
+      return "This target already has an active run";
+    }
+    return triggerDriftRun.isPending ? "A drift run is already starting" : undefined;
+  })();
 
   const startDriftRun = useCallback(
     (sourceFiles?: string[]) => {
@@ -206,13 +214,13 @@ export const DriftPage = () => {
         </div>
       ) : null}
 
-      {isGateBlocked ? (
+      {hasSelectedTarget && isGateBlocked ? (
         <div className="status-banner status-banner--error">
           Drift execution is disabled by failed run {failedRun?.id}. Resolve it before starting another run.
         </div>
       ) : null}
       {isRunning ? <div className="status-banner">Drift execution is disabled while this target has an active run.</div> : null}
-      {!canMutate ? <div className="status-banner">Viewer role cannot start drift runs.</div> : null}
+      {hasSelectedTarget && !canMutate ? <div className="status-banner">Viewer role cannot start drift runs.</div> : null}
 
       {!selectedTarget ? (
         <EmptyState icon={<Icon source={ShieldCheckIcon} size={24} />} title="Select a target">
@@ -373,15 +381,15 @@ const ControlSummaryPanel = ({
       <dl className="control-summary__timestamps">
         <div>
           <dt>Last applied</dt>
-          <dd>{formatOptionalDate(summary.last_applied_at)}</dd>
+          <dd>{formatOptionalDate(summary.last_applied_at, { emptyLabel: "Not recorded", invalidLabel: "Invalid Date" })}</dd>
         </div>
         <div>
           <dt>Last updated</dt>
-          <dd>{formatOptionalDate(summary.last_updated_at)}</dd>
+          <dd>{formatOptionalDate(summary.last_updated_at, { emptyLabel: "Not recorded", invalidLabel: "Invalid Date" })}</dd>
         </div>
         <div>
           <dt>Last checked</dt>
-          <dd>{formatOptionalDate(checkedAt)}</dd>
+          <dd>{formatOptionalDate(checkedAt, { emptyLabel: "Not recorded", invalidLabel: "Invalid Date" })}</dd>
         </div>
         <div>
           <dt>Drift detected</dt>
@@ -438,5 +446,3 @@ const uniqueSourceFiles = (items: DriftItem[]): string[] =>
   Array.from(new Set(items.flatMap((item) => item.source_file?.trim() ? [item.source_file.trim()] : [])));
 
 const driftRowClass = (item: DriftItem): string => `row--drift row--drift-${item.drift_type}`;
-
-const formatOptionalDate = (value?: string | null): string => (value ? new Date(value).toLocaleString() : "Not recorded");
