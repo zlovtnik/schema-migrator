@@ -145,6 +145,9 @@ class RunStreamSuite extends FunSuite with TestSqlSupport:
       override def abort(id: String): IO[Option[Run]] =
         delegate.abort(id)
 
+      override def resolveFailed(id: String): IO[Option[Run]] =
+        delegate.resolveFailed(id)
+
       override def startRun(id: String): IO[Boolean] =
         delegate.startRun(id)
 

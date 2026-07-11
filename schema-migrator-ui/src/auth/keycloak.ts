@@ -210,6 +210,7 @@ export const loginWithKeycloak = async (): Promise<void> => {
   }
   passwordRefreshToken = "";
   passwordTokenExpiresAt = 0;
+  await initKeycloak();
   await keycloak.login({ redirectUri: keycloakRedirectUri() });
 };
 

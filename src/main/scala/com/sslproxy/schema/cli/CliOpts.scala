@@ -195,7 +195,8 @@ object CliOpts:
     runs: String,
     validations: String,
     snapshots: String,
-    audit: String
+    audit: String,
+    keycloakConfig: String
   )
 
   private def collectionOpt(name: String, help: String, envKey: String, defaultValue: String): Opts[String] =
@@ -250,6 +251,14 @@ object CliOpts:
   private val auditCollectionOpt: Opts[String] =
     collectionOpt("audit-collection", "MongoDB collection for audit events", "BEDROCK_AUDIT_COLLECTION", "audit_events")
 
+  private val keycloakConfigCollectionOpt: Opts[String] =
+    collectionOpt(
+      "keycloak-config-collection",
+      "MongoDB collection for persisted Keycloak configuration",
+      "BEDROCK_KEYCLOAK_CONFIG_COLLECTION",
+      "keycloak_config"
+    )
+
   private val collectionOpts: Opts[CollectionOptions] =
     (
       sqlFilesCollectionOpt,
@@ -258,7 +267,8 @@ object CliOpts:
       runsCollectionOpt,
       validationsCollectionOpt,
       snapshotsCollectionOpt,
-      auditCollectionOpt
+      auditCollectionOpt,
+      keycloakConfigCollectionOpt
     ).mapN(CollectionOptions.apply)
 
   private val serverOpts: Opts[ServerConfig] =
@@ -335,6 +345,7 @@ object CliOpts:
           validationsCollection = collections.validations,
           snapshotsCollection = collections.snapshots,
           auditCollection = collections.audit,
+          keycloakConfigCollection = collections.keycloakConfig,
           mongoConfigError = mongoResult.swap.toOption
         )
     }

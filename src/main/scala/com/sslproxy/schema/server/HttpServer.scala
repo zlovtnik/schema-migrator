@@ -10,6 +10,7 @@ import com.sslproxy.schema.server.compress.Bzip2Middleware
 import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
 import com.sslproxy.schema.store.{
   AuditStore,
+  KeycloakConfigStore,
   PatchStore,
   RepoSyncStore,
   RunStore,
@@ -73,6 +74,14 @@ object HttpServer:
       validationStore <- ValidationStore.mongo(mongoConfig, config.server.validationsCollection, mongoClient)
       snapshotStore <- SnapshotStore.mongo(mongoConfig, config.server.snapshotsCollection, mongoClient)
       auditStore <- AuditStore.mongo(mongoConfig, config.server.auditCollection, mongoClient)
+      _ <- Resource.eval(
+        KeycloakConfigStore.persist(
+          config.server,
+          mongoConfig,
+          config.server.keycloakConfigCollection,
+          mongoClient
+        )
+      )
       keycloakVerifier <- keycloakVerifierResource(config)
       apiRoutes = Routes.all(
         config,

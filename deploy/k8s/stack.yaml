@@ -25,6 +25,7 @@ data:
   BEDROCK_VALIDATIONS_COLLECTION: "validations"
   BEDROCK_SNAPSHOTS_COLLECTION: "snapshots"
   BEDROCK_AUDIT_COLLECTION: "audit_events"
+  BEDROCK_KEYCLOAK_CONFIG_COLLECTION: "keycloak_config"
   BEDROCK_DB_TEST_ALLOWED_HOSTS: "localhost,127.0.0.1,192.168.1.221"
 ---
 apiVersion: v1
@@ -170,6 +171,19 @@ data:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: keycloak-data
+  namespace: schema-migrator
+  labels:
+    app.kubernetes.io/name: keycloak
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: mongo-data
   namespace: schema-migrator
   labels:
@@ -305,11 +319,12 @@ spec:
             initialDelaySeconds: 60
             periodSeconds: 20
           volumeMounts:
-            - name: keycloak-realm
-              mountPath: /opt/keycloak/data/import
-              readOnly: true
             - name: keycloak-data
               mountPath: /opt/keycloak/data
+            - name: keycloak-realm
+              mountPath: /opt/keycloak/data/import/middleware-realm.json
+              subPath: middleware-realm.json
+              readOnly: true
             - name: keycloak-tmp
               mountPath: /tmp
       volumes:
@@ -317,7 +332,8 @@ spec:
           configMap:
             name: keycloak-realm
         - name: keycloak-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: keycloak-data
         - name: keycloak-tmp
           emptyDir: {}
 ---

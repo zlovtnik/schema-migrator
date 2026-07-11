@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { abortRun, getRun, listRuns } from "../api/runs";
+import { abortRun, getRun, listRuns, resolveRun } from "../api/runs";
 
 export const runKeys = {
   all: ["runs"] as const,
@@ -24,6 +24,17 @@ export const useAbortRun = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: abortRun,
+    onSuccess: (run) => {
+      void queryClient.invalidateQueries({ queryKey: runKeys.all });
+      void queryClient.invalidateQueries({ queryKey: runKeys.detail(run.id) });
+    }
+  });
+};
+
+export const useResolveRun = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: resolveRun,
     onSuccess: (run) => {
       void queryClient.invalidateQueries({ queryKey: runKeys.all });
       void queryClient.invalidateQueries({ queryKey: runKeys.detail(run.id) });

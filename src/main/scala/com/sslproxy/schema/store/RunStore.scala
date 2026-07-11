@@ -20,6 +20,7 @@ trait RunStore:
   def create(payload: TriggerRunPayload, patch: Patch, triggeredBy: String): IO[Run]
   def get(id: String): IO[Option[Run]]
   def abort(id: String): IO[Option[Run]]
+  def resolveFailed(id: String): IO[Option[Run]]
   def startRun(id: String): IO[Boolean]
   def completeRun(id: String, endedAt: String, validationTriggered: Boolean): IO[Option[Run]]
   def failRun(id: String, endedAt: String, failedScriptId: String, reason: String): IO[Option[Run]]
@@ -94,6 +95,9 @@ private object RunState:
       }
       run.copy(status = "aborted", scripts = scripts, ended_at = Some(endedAt))
     }
+
+  def resolveFailed(run: Run): Option[Run] =
+    Option.when(run.status == "failed")(run.copy(status = "aborted"))
 
   def updateScript(run: Run, scriptId: String)(f: ScriptRun => ScriptRun): Option[Run] =
     Option.when(!isTerminal(run.status)) {
@@ -253,6 +257,12 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
       _ <- result.traverse_(_ => publishRunFailed(id, "", "aborted"))
     yield result
 
+  override def resolveFailed(id: String): IO[Option[Run]] =
+    for
+      result <- updateRun(id)(RunState.resolveFailed)
+      _ <- result.traverse_(_ => publishRunFailed(id, "", "resolved"))
+    yield result
+
   override def startRun(id: String): IO[Boolean] =
     updateRun(id)(RunState.start).map(_.nonEmpty)
 
@@ -370,6 +380,12 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
       ended <- nowString
       result <- updateRun(id)(RunState.abort(_, ended))
       _ <- result.traverse_(_ => publishRunFailed(id, "", "aborted"))
+    yield result
+
+  override def resolveFailed(id: String): IO[Option[Run]] =
+    for
+      result <- updateRun(id)(RunState.resolveFailed)
+      _ <- result.traverse_(_ => publishRunFailed(id, "", "resolved"))
     yield result
 
   override def startRun(id: String): IO[Boolean] =

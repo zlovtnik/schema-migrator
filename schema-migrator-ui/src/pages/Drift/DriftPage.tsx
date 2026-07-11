@@ -11,7 +11,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useErrorGate } from "../../hooks/useErrorGate";
-import { useRuns } from "../../hooks/useRuns";
+import { useResolveRun, useRuns } from "../../hooks/useRuns";
 import { useDrift, useTriggerDriftRun } from "../../hooks/useSchema";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
@@ -24,9 +24,10 @@ export const DriftPage = () => {
   const selectedTarget = useSelectedTargetId();
   const { data, isLoading, error } = useDrift(selectedTarget);
   const { data: runs = [] } = useRuns(selectedTarget);
-  const { isGateBlocked, failedRun } = useErrorGate();
+  const { isGateBlocked, failedRun } = useErrorGate(selectedTarget);
   const { canMutate } = useSession();
   const triggerDriftRun = useTriggerDriftRun();
+  const resolveRun = useResolveRun();
   const [textFilter, setTextFilter] = useState("");
   const [driftFilter, setDriftFilter] = useState<DriftFilter>("all");
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -219,7 +220,18 @@ export const DriftPage = () => {
 
       {hasSelectedTarget && isGateBlocked ? (
         <div className="status-banner status-banner--error">
-          Drift execution is disabled by failed run {failedRun?.id}. Resolve it before starting another run.
+          <span>Drift execution is disabled by failed run {failedRun?.id}. Resolve it before starting another run.</span>
+          {failedRun ? (
+            <button
+              className="button button--secondary button--small"
+              type="button"
+              disabled={!canMutate || resolveRun.isPending}
+              title={canMutate ? undefined : "Viewer role cannot resolve runs"}
+              onClick={() => resolveRun.mutate(failedRun.id)}
+            >
+              {resolveRun.isPending ? "Resolving" : "Resolve run"}
+            </button>
+          ) : null}
         </div>
       ) : null}
       {isRunning ? (

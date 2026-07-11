@@ -23,7 +23,7 @@ services:
       - BEDROCK_ENCRYPT_KEY=${BEDROCK_ENCRYPT_KEY:?BEDROCK_ENCRYPT_KEY is required}
       - BEDROCK_HTTP_HOST=0.0.0.0
       - BEDROCK_HTTP_PORT=8080
-      - BEDROCK_CORS_ORIGINS=http://localhost,http://localhost:4174,http://127.0.0.1:4174
+      - BEDROCK_CORS_ORIGINS=${BEDROCK_CORS_ORIGINS:?BEDROCK_CORS_ORIGINS is required}
       - BEDROCK_JWT_SECRET=${BEDROCK_JWT_SECRET:?BEDROCK_JWT_SECRET is required}
       - BEDROCK_DEV_AUTH_ENABLED=${BEDROCK_DEV_AUTH_ENABLED:-false}
       - BEDROCK_DEV_AUTH_SECRET=${BEDROCK_DEV_AUTH_SECRET:-}
@@ -42,6 +42,7 @@ services:
       - BEDROCK_VALIDATIONS_COLLECTION=${BEDROCK_VALIDATIONS_COLLECTION:-validations}
       - BEDROCK_SNAPSHOTS_COLLECTION=${BEDROCK_SNAPSHOTS_COLLECTION:-snapshots}
       - BEDROCK_AUDIT_COLLECTION=${BEDROCK_AUDIT_COLLECTION:-audit_events}
+      - BEDROCK_KEYCLOAK_CONFIG_COLLECTION=${BEDROCK_KEYCLOAK_CONFIG_COLLECTION:-keycloak_config}
       - BEDROCK_DB_TEST_ALLOWED_HOSTS=${BEDROCK_DB_TEST_ALLOWED_HOSTS:-localhost,127.0.0.1,192.168.1.221}
       - BEDROCK_DB_URL=${BEDROCK_DB_URL:?BEDROCK_DB_URL is required}
       - BEDROCK_DB_USER=${BEDROCK_DB_USER:?BEDROCK_DB_USER is required}
@@ -55,7 +56,7 @@ services:
       - traefik.http.routers.backend.rule=Host(`${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME is required}`) && PathPrefix(`/api`)
       - traefik.http.routers.backend.entrypoints=websecure
       - traefik.http.routers.backend.priority=10
-      - traefik.http.routers.backend.tls.certresolver=letsencrypt
+      - traefik.http.routers.backend.tls=true
       - traefik.http.services.backend.loadbalancer.server.port=8080
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
@@ -81,12 +82,13 @@ services:
       - --hostname-strict=true
       - --http-enabled=true
     environment:
-      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
-      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
       - KC_PROXY_HEADERS=xforwarded
     expose:
       - "8080"
     volumes:
+      - keycloak-data:/opt/keycloak/data
       - ./deploy/keycloak/middleware-realm.json:/opt/keycloak/data/import/middleware-realm.json:ro
     healthcheck:
       test: ["CMD-SHELL", "bash -ec \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/middleware/.well-known/openid-configuration HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3\""]
@@ -97,10 +99,10 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=internal
-      - traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME is required}`) && (PathPrefix(`/realms`) || PathPrefix(`/resources`))
+      - traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME is required}`) && (PathPrefix(`/realms`) || PathPrefix(`/resources`) || PathPrefix(`/admin`))
       - traefik.http.routers.keycloak.entrypoints=websecure
       - traefik.http.routers.keycloak.priority=20
-      - traefik.http.routers.keycloak.tls.certresolver=letsencrypt
+      - traefik.http.routers.keycloak.tls=true
       - traefik.http.services.keycloak.loadbalancer.server.port=8080
     networks:
       - internal
@@ -124,7 +126,7 @@ services:
       - traefik.http.routers.frontend.rule=Host(`${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME is required}`) && PathPrefix(`/`)
       - traefik.http.routers.frontend.entrypoints=websecure
       - traefik.http.routers.frontend.priority=1
-      - traefik.http.routers.frontend.tls.certresolver=letsencrypt
+      - traefik.http.routers.frontend.tls=true
       - traefik.http.services.frontend.loadbalancer.server.port=8080
     networks:
       - internal
@@ -170,4 +172,5 @@ networks:
 
 volumes:
   mongo-data:
+  keycloak-data:
   traefik-letsencrypt:

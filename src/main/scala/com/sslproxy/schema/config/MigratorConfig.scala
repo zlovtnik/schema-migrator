@@ -106,6 +106,7 @@ final case class ServerConfig(
   validationsCollection: String = "validations",
   snapshotsCollection: String = "snapshots",
   auditCollection: String = "audit_events",
+  keycloakConfigCollection: String = "keycloak_config",
   mongoConfigError: Option[String] = None
 ):
   def validate: Either[String, Unit] =
@@ -128,6 +129,7 @@ final case class ServerConfig(
     else if validationsCollection.trim.isEmpty then Left("BEDROCK_VALIDATIONS_COLLECTION must not be empty")
     else if snapshotsCollection.trim.isEmpty then Left("BEDROCK_SNAPSHOTS_COLLECTION must not be empty")
     else if auditCollection.trim.isEmpty then Left("BEDROCK_AUDIT_COLLECTION must not be empty")
+    else if keycloakConfigCollection.trim.isEmpty then Left("BEDROCK_KEYCLOAK_CONFIG_COLLECTION must not be empty")
     else
       validateEncryptKeyBase64()
         .flatMap(_ => validateMongo())

@@ -197,6 +197,75 @@ describe("DriftPage", () => {
     );
   });
 
+  it("resolves a failed run gate from the drift page", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
+      if (url.includes("/runs/run-failed/resolve")) {
+        return Promise.resolve(
+          jsonResponse({
+            id: "run-failed",
+            target_id: "target-1",
+            patch_id: "patch-1",
+            status: "aborted",
+            scripts: [],
+            started_at: "2026-06-28T12:01:00Z",
+            ended_at: "2026-06-28T12:02:00Z",
+            triggered_by: "operator"
+          })
+        );
+      }
+      if (url.includes("/targets")) {
+        return Promise.resolve(
+          jsonResponse({
+            targets: [
+              {
+                id: "target-1",
+                label: "Local",
+                app_name: "app",
+                env: "dev",
+                jdbc_url: "jdbc:postgresql://localhost/app",
+                created_at: "2026-06-28T12:00:00Z"
+              }
+            ]
+          })
+        );
+      }
+      if (url.includes("/drift")) {
+        return Promise.resolve(jsonResponse(driftPayload));
+      }
+      if (url.includes("/runs")) {
+        return Promise.resolve(
+          jsonResponse({
+            runs: [
+              {
+                id: "run-failed",
+                target_id: "target-1",
+                patch_id: "patch-1",
+                status: "failed",
+                scripts: [],
+                started_at: "2026-06-28T12:01:00Z",
+                ended_at: "2026-06-28T12:02:00Z",
+                triggered_by: "operator"
+              }
+            ]
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+
+    renderApp(<DriftPage />, { route: "/drift?target=target-1" });
+
+    await user.click(await screen.findByRole("button", { name: "Resolve run" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/runs/run-failed/resolve"),
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
   it("counts drift type chips after applying the text filter", async () => {
     const user = userEvent.setup();
     driftPayload = {

@@ -5,9 +5,19 @@ import { Icon } from "./ui/Icon";
 
 interface ErrorGateBannerProps {
   failedRun?: Run | undefined;
+  canResolve?: boolean;
+  resolving?: boolean;
+  resolveTitle?: string | undefined;
+  onResolve?: (runId: string) => void;
 }
 
-export const ErrorGateBanner = ({ failedRun }: ErrorGateBannerProps) => {
+export const ErrorGateBanner = ({
+  failedRun,
+  canResolve = true,
+  resolving = false,
+  resolveTitle,
+  onResolve
+}: ErrorGateBannerProps) => {
   if (!failedRun) {
     return null;
   }
@@ -22,6 +32,17 @@ export const ErrorGateBanner = ({ failedRun }: ErrorGateBannerProps) => {
       <Link className="button button--danger button--small" to={`/runs/${failedRun.id}`}>
         View run
       </Link>
+      {onResolve ? (
+        <button
+          className="button button--secondary button--small"
+          type="button"
+          disabled={!canResolve || resolving}
+          title={resolveTitle}
+          onClick={() => onResolve(failedRun.id)}
+        >
+          {resolving ? "Resolving" : "Resolve"}
+        </button>
+      ) : null}
     </div>
   );
 };

@@ -20,13 +20,13 @@
   },
   "users": [
     {
-      "username": "${KEYCLOAK_DEV_USERNAME}",
+      "username": "admin",
       "enabled": true,
       "emailVerified": true,
       "credentials": [
         {
           "type": "password",
-          "value": "${KEYCLOAK_DEV_PASSWORD}",
+          "value": "admin123",
           "temporary": false
         }
       ],
@@ -50,12 +50,12 @@
       "redirectUris": [
         "http://localhost/callback",
         "http://localhost:5173/callback",
-        "${PUBLIC_ORIGIN}/callback"
+        "https://localhost/callback"
       ],
       "webOrigins": [
         "http://localhost",
         "http://localhost:5173",
-        "${PUBLIC_ORIGIN}"
+        "https://localhost"
       ],
       "defaultClientScopes": [
         "web-origins",

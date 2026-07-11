@@ -896,6 +896,26 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     assertEquals(catalog.head.status, "drift_detected")
   }
 
+  test("clean control definition is the drift baseline when the manifest changed later") {
+    val appliedSql = "create or replace function demo_fn() returns integer language sql as $$ select 1 $$;"
+    val manifestSql = "create or replace function demo_fn() returns integer language sql as $$ select 2 $$;"
+    val actualSql = "create or replace function public.demo_fn() returns integer language sql as $$ select 1 $$;"
+    val key = ObjectKey("public", "demo_fn()", "function")
+    val sourceFile = "functions/001_demo_fn.sql"
+    val expectedObjects = List(expected(key, sourceFile = sourceFile, expectedDdl = Some(manifestSql)))
+    val actualObjects = List(LiveObject(key, Some(actualSql)))
+    val control = controlSnapshot(
+      List(controlRow("function", "demo_fn", sourceFile, "applied", Some(appliedSql)))
+    )
+
+    val items = driftItems(now, expectedObjects, actualObjects, control)
+    val catalog = mergeCatalog(now, expectedObjects, actualObjects, control)
+
+    assertEquals(items, Nil)
+    assertEquals(catalog.head.status, "in_sync")
+    assertEquals(catalog.head.expected_ddl, Some(appliedSql))
+  }
+
   test("control summary counts applied skipped pending and failed rows") {
     val snapshot = controlSnapshot(
       List(

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { CheckCircleIcon } from "@phosphor-icons/react/dist/csr/CheckCircle";
 import { DownloadIcon } from "@phosphor-icons/react/dist/csr/Download";
 import { SquareIcon } from "@phosphor-icons/react/dist/csr/Square";
 import { ActivitySection } from "../../components/ActivitySection";
@@ -11,7 +12,7 @@ import { Icon } from "../../components/ui/Icon";
 import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { useAuditEvents } from "../../hooks/useAudit";
 import { useRunStream } from "../../hooks/useRunStream";
-import { runKeys, useAbortRun, useRun } from "../../hooks/useRuns";
+import { runKeys, useAbortRun, useResolveRun, useRun } from "../../hooks/useRuns";
 import { useDrift } from "../../hooks/useSchema";
 import { useSession } from "../../hooks/useSession";
 import type { Run, SchemaControlObject } from "../../types";
@@ -29,6 +30,7 @@ export const RunDetailPage = () => {
     canViewAudit && Boolean(id)
   );
   const abortRun = useAbortRun();
+  const resolveRun = useResolveRun();
 
   const stream = useRunStream(id, run, {
     enabled: run?.status === "running" || run?.status === "pending",
@@ -81,6 +83,7 @@ export const RunDetailPage = () => {
       ? `${Math.round((Date.parse(run.ended_at) - Date.parse(run.started_at)) / 1000)} s`
       : "-";
   const canAbort = stream.runStatus === "running" || stream.runStatus === "pending";
+  const canResolve = stream.runStatus === "failed";
 
   return (
     <section className="page">
@@ -104,6 +107,18 @@ export const RunDetailPage = () => {
             >
               <Icon source={SquareIcon} size={16} weight="fill" />
               Abort
+            </button>
+          ) : null}
+          {canResolve ? (
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() => resolveRun.mutate(run.id)}
+              disabled={!canMutate || resolveRun.isPending}
+              title={canMutate ? undefined : "Viewer role cannot resolve runs"}
+            >
+              <Icon source={CheckCircleIcon} size={16} weight="fill" />
+              {resolveRun.isPending ? "Resolving" : "Resolve"}
             </button>
           ) : null}
           <button

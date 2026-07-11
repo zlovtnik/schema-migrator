@@ -27,6 +27,7 @@ RUN bun run build
 FROM nginx:1.27-alpine
 
 RUN rm /etc/nginx/conf.d/default.conf \
+  && sed -i 's#^pid .*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \
   && chown -R nginx:nginx /var/cache/nginx /var/run /usr/share/nginx/html /etc/nginx/conf.d
 COPY frontend/spa.conf.template /etc/nginx/conf.d/app.conf
 COPY --from=ui-builder /ui/dist /usr/share/nginx/html

@@ -128,6 +128,40 @@ object RunRoutes:
                 RouteJson.notFound(s"run '$id' was not found")
           }
         }
+
+      case request @ POST -> Root / "runs" / id / "resolve" =>
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          runStore.get(id).flatMap {
+            case None => RouteJson.notFound(s"run '$id' was not found")
+            case Some(run) if run.status != "failed" =>
+              RouteJson.conflict(s"run '$id' is not failed")
+            case Some(run) =>
+              runStore.resolveFailed(id).flatMap {
+                case Some(resolved) =>
+                  auditStore.record(
+                    claims.subject,
+                    claims.role,
+                    "run.resolve",
+                    "run",
+                    resolved.id,
+                    Some(resolved.target_id),
+                    Some(Json.obj("patch_id" -> Json.fromString(resolved.patch_id)))
+                  ) *>
+                    log.info(
+                      Json
+                        .obj(
+                          "event" -> Json.fromString("run_resolved"),
+                          "run_id" -> Json.fromString(id),
+                          "target_id" -> Json.fromString(resolved.target_id)
+                        )
+                        .noSpaces
+                    ) *>
+                    RouteJson.ok(resolved.asJson)
+                case None =>
+                  RouteJson.conflict(s"run '$id' is no longer failed")
+              }
+          }
+        }
     }
 
   private def eventStream(id: String, store: RunStore): Stream[IO, ServerSentEvent] =

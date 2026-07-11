@@ -47,7 +47,7 @@ private[schema] object PostgresDriftDdlParser:
     val expectedComparable = comparableDefinition(key, expected)
     val actualComparable = comparableDefinition(key, actual)
     expectedComparable == actualComparable ||
-    (isViewType(key.objectType) && starExpansionEquivalent(expectedComparable, actualComparable))
+      (isViewType(key.objectType) && starExpansionEquivalent(expectedComparable, actualComparable))
 
   private def comparableDefinition(key: ObjectKey, value: String): String =
     if isRoutineType(key.objectType) then routineComparableDdl(key, value).getOrElse(comparableDdl(key, value))

@@ -109,13 +109,20 @@ const SqlFilesPage = () => {
   const effectiveTargetId = selectedTarget ?? targetQuery.data?.id ?? repoStatus?.target_id ?? null;
 
   const load = useCallback(async () => {
+    if (!selectedTarget) {
+      setStatus(null);
+      setFiles([]);
+      setRepoStatus(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const [s, f, repo] = await Promise.all([
-        getSqlFileStatus(),
-        listSqlFiles(),
-        selectedTarget ? getRepoSyncStatus(selectedTarget) : Promise.resolve(null)
+        getSqlFileStatus(selectedTarget),
+        listSqlFiles(selectedTarget),
+        getRepoSyncStatus(selectedTarget)
       ]);
       setStatus(s);
       setFiles(f.files);
@@ -214,12 +221,12 @@ const SqlFilesPage = () => {
   };
 
   const handleClear = async () => {
-    if (!canMutate) return;
+    if (!canMutate || !effectiveTargetId) return;
     if (!window.confirm("Clear all synced SQL files? This will remove the loaded repository manifest.")) return;
     setLoading(true);
     setError(null);
     try {
-      await clearSqlFiles();
+      await clearSqlFiles(effectiveTargetId);
       setSuccess("SQL files cleared");
       setSyncResult(null);
       await load();

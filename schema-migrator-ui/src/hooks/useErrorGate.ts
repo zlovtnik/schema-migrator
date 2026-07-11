@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { useRuns } from "./useRuns";
 
-export const useErrorGate = () => {
-  const runsQuery = useRuns();
+export const useErrorGate = (targetId?: string | null) => {
+  const runsQuery = useRuns(targetId);
 
   const latestRun = useMemo(
     () => runsQuery.data?.slice().sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))[0],

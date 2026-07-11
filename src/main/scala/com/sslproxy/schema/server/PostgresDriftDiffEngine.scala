@@ -47,13 +47,14 @@ private[schema] object PostgresDriftDiffEngine:
       val actualItem = actualByKey.get(key)
       val controlItem = state.controlForKey(key)
       val applyStatus = controlItem.map(_.applyStatus).orElse(expectedItem.flatMap(_.applyStatus))
+      val expectedDdl = expectedItem.flatMap(item => comparisonDdl(item, controlItem))
       val status =
         applyStatus match
           case Some("pending" | "failed") => "pending_migration"
           case _
               if PostgresDriftDdlParser.definitionChanged(
                 key,
-                expectedItem.flatMap(_.expectedDdl).orElse(controlItem.flatMap(_.expectedDdl)),
+                expectedDdl,
                 actualItem.flatMap(_.actualDdl)
               ) =>
             "drift_detected"
@@ -69,7 +70,7 @@ private[schema] object PostgresDriftDiffEngine:
         checksum = controlItem.map(_.checksum).orElse(expectedItem.map(_.checksum)),
         apply_status = applyStatus,
         actual_ddl = actualItem.flatMap(_.actualDdl),
-        expected_ddl = expectedItem.flatMap(_.expectedDdl).orElse(controlItem.flatMap(_.expectedDdl)),
+        expected_ddl = expectedDdl,
         last_checked = now
       )
     }
@@ -144,12 +145,13 @@ private[schema] object PostgresDriftDiffEngine:
     val changedDefinitions =
       state.trackedByKey.values.toList.flatMap { expectedItem =>
         val controlItem = state.controlForKey(expectedItem.key)
+        val expectedDdl = comparisonDdl(expectedItem, controlItem)
         if pendingOrFailedKeys.contains(expectedItem.key) then None
         else
           actualByKey.get(expectedItem.key).flatMap { actualItem =>
             actualItem.actualDdl
               .filter(actualDdl =>
-                PostgresDriftDdlParser.definitionChanged(expectedItem.key, expectedItem.expectedDdl, Some(actualDdl))
+                PostgresDriftDdlParser.definitionChanged(expectedItem.key, expectedDdl, Some(actualDdl))
               )
               .map { actualDdl =>
                 DriftItem(
@@ -157,7 +159,7 @@ private[schema] object PostgresDriftDiffEngine:
                   name = expectedItem.key.name,
                   object_type = expectedItem.key.objectType,
                   drift_type = "definition_changed",
-                  expected = expectedItem.expectedDdl.getOrElse(expectedItem.sourceFile),
+                  expected = expectedDdl.getOrElse(expectedItem.sourceFile),
                   actual = actualDdl,
                   source_file = Some(expectedItem.sourceFile),
                   checksum = Some(expectedItem.checksum),
@@ -179,6 +181,15 @@ private[schema] object PostgresDriftDiffEngine:
         normalizedKey -> item.copy(key = normalizedKey)
       )
       .toMap
+
+  private val cleanControlStatuses: Set[String] =
+    Set("applied", "skipped")
+
+  private def comparisonDdl(expectedItem: ExpectedObject, controlItem: Option[ControlObject]): Option[String] =
+    controlItem
+      .filter(item => cleanControlStatuses.contains(item.applyStatus))
+      .flatMap(_.expectedDdl)
+      .orElse(expectedItem.expectedDdl)
 
   private final case class PreparedState(
     trackedByKey: Map[ObjectKey, ExpectedObject],
