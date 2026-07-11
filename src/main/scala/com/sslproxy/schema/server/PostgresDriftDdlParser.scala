@@ -17,9 +17,7 @@ private[schema] object PostgresDriftDdlParser:
 
   def definitionChanged(key: ObjectKey, expectedDdl: Option[String], actualDdl: Option[String]): Boolean =
     comparableDefinitionTypes.contains(key.objectType) &&
-      expectedDdl.exists(expected =>
-        actualDdl.exists(actual => !definitionsEquivalent(key, expected, actual))
-      )
+      expectedDdl.exists(expected => actualDdl.exists(actual => !definitionsEquivalent(key, expected, actual)))
 
   def routineDefinitions(sql: String): List[RoutineDefinition] =
     val tokens = tokenize(sql)
@@ -49,7 +47,7 @@ private[schema] object PostgresDriftDdlParser:
     val expectedComparable = comparableDefinition(key, expected)
     val actualComparable = comparableDefinition(key, actual)
     expectedComparable == actualComparable ||
-      (isViewType(key.objectType) && starExpansionEquivalent(expectedComparable, actualComparable))
+    (isViewType(key.objectType) && starExpansionEquivalent(expectedComparable, actualComparable))
 
   private def comparableDefinition(key: ObjectKey, value: String): String =
     if isRoutineType(key.objectType) then routineComparableDdl(key, value).getOrElse(comparableDdl(key, value))
@@ -179,7 +177,10 @@ private[schema] object PostgresDriftDdlParser:
     parseIdentifier(tokens, skipIfNotExists(tokens, nameStart)).map { case (name, afterName) =>
       val statementEndOffset = statementEnd(sql, createStart)
       val schema = extensionSchema(tokens, afterName, statementEndOffset).getOrElse("public")
-      DdlDefinition(ObjectKey(schema, name, "extension"), sql.substring(createStart, statementEnd(sql, createStart)).trim)
+      DdlDefinition(
+        ObjectKey(schema, name, "extension"),
+        sql.substring(createStart, statementEnd(sql, createStart)).trim
+      )
     }
 
   private def parseNamedDefinition(
@@ -234,15 +235,21 @@ private[schema] object PostgresDriftDdlParser:
     index
 
   private def skipIfNotExists(tokens: List[Token], start: Int): Int =
-    if tokenValue(tokens, start) == "if" && tokenValue(tokens, start + 1) == "not" && tokenValue(tokens, start + 2) == "exists" then
-      start + 3
+    if tokenValue(tokens, start) == "if" && tokenValue(tokens, start + 1) == "not" && tokenValue(
+        tokens,
+        start + 2
+      ) == "exists"
+    then start + 3
     else start
 
   private def extensionSchema(tokens: List[Token], start: Int, statementEndOffset: Int): Option[String] =
-    (start until tokens.length).takeWhile(index => tokens(index).start < statementEndOffset).collectFirst {
-      case index if tokenValue(tokens, index) == "schema" =>
-        parseIdentifier(tokens, index + 1).map(_._1)
-    }.flatten
+    (start until tokens.length)
+      .takeWhile(index => tokens(index).start < statementEndOffset)
+      .collectFirst {
+        case index if tokenValue(tokens, index) == "schema" =>
+          parseIdentifier(tokens, index + 1).map(_._1)
+      }
+      .flatten
 
   private final case class ParsedName(schema: String, name: String)
 
@@ -383,13 +390,18 @@ private[schema] object PostgresDriftDdlParser:
   private def parseRoutineKey(sql: String, tokens: List[Token], start: Int, objectType: String): Option[ObjectKey] =
     tokens.lift(start).filter(token => isIdentifierToken(token.value)).flatMap { first =>
       if tokens.lift(start + 1).exists(_.value == ".") then
-        tokens.lift(start + 2)
+        tokens
+          .lift(start + 2)
           .filter(token => isIdentifierToken(token.value))
           .filter(_ => tokens.lift(start + 3).exists(_.value == "("))
           .flatMap { second =>
-          routineSignature(sql, tokens(start + 3).start).map { signature =>
-            ObjectKey(normalizeIdentifier(first.value), s"${normalizeIdentifier(second.value)}($signature)", objectType)
-          }
+            routineSignature(sql, tokens(start + 3).start).map { signature =>
+              ObjectKey(
+                normalizeIdentifier(first.value),
+                s"${normalizeIdentifier(second.value)}($signature)",
+                objectType
+              )
+            }
           }
       else
         Option.when(tokens.lift(start + 1).exists(_.value == "("))(tokens(start + 1).start).flatMap { openParen =>
@@ -656,11 +668,6 @@ private[schema] object PostgresDriftDdlParser:
 
   private def isViewType(objectType: String): Boolean =
     objectType == "view" || objectType == "materialized_view"
-
-  private def ignoredUntrackedActual(key: ObjectKey): Boolean =
-    (key.objectType == "schema" && key.schema == "public" && key.name == "public") ||
-      (key.objectType == "extension" && key.schema == "public" && key.name == "pg_stat_statements") ||
-      (key.objectType == "trigger" && key.schema == "cron" && key.name.startsWith("job.cron_"))
 
   private val parameterModes: Set[String] =
     Set("in", "out", "inout", "variadic")

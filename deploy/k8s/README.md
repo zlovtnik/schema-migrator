@@ -24,12 +24,15 @@ Once `EXTERNAL-IP` is assigned, update these values and roll the affected deploy
 - `VITE_KEYCLOAK_URL`
 - `VITE_KEYCLOAK_REDIRECT_URI`
 
-For an OCI load balancer IP of `203.0.113.10`, use:
+The deployment requires an HTTPS hostname backed by a valid load-balancer or
+Traefik certificate. Replace the plaintext IP example below with your assigned
+`https://` origin (e.g. `https://schema.example.com`) and reuse that single
+origin for the issuer, UI URL, and redirect URI:
 
 ```text
-BEDROCK_KEYCLOAK_ISSUER=http://203.0.113.10:8080/realms/middleware
-VITE_KEYCLOAK_URL=http://203.0.113.10:8080
-VITE_KEYCLOAK_REDIRECT_URI=http://203.0.113.10/callback
+BEDROCK_KEYCLOAK_ISSUER=https://schema.example.com/realms/middleware
+VITE_KEYCLOAK_URL=https://schema.example.com
+VITE_KEYCLOAK_REDIRECT_URI=https://schema.example.com/callback
 ```
 
 The backend reads Keycloak keys through the internal `BEDROCK_KEYCLOAK_JWKS_URI`, so only the issuer

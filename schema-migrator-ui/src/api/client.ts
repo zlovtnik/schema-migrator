@@ -91,6 +91,7 @@ const readErrorBody = async (response: Response): Promise<unknown> => {
 type EncryptedEnvelope = {
   data: string;
   iv: string;
+  key_version?: string;
 };
 
 const base64ToBytes = (value: string): Uint8Array => {

@@ -14,5 +14,5 @@ runcmd:
   - systemctl enable --now docker
   - usermod -aG docker opc
   - firewall-cmd --permanent --add-service=http || true
-  - firewall-cmd --permanent --add-port=8080/tcp || true
+  - firewall-cmd --permanent --add-service=https || true
   - firewall-cmd --reload || true

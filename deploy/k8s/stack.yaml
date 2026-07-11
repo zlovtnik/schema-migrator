@@ -123,14 +123,14 @@ data:
   traefik.yaml: |
     entryPoints:
       web:
-        address: ":80"
+        address: ":8080"
         transport:
           respondingTimeouts:
             readTimeout: 300s
             writeTimeout: 0s
             idleTimeout: 3600s
       keycloak:
-        address: ":8080"
+        address: ":8081"
     providers:
       file:
         filename: /etc/traefik/dynamic/dynamic.yaml
@@ -161,7 +161,7 @@ data:
         frontend:
           loadBalancer:
             servers:
-              - url: "http://frontend:80"
+              - url: "http://frontend:8080"
         keycloak:
           loadBalancer:
             servers:
@@ -200,6 +200,12 @@ spec:
       containers:
         - name: mongo
           image: mongo:7
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 27017
           readinessProbe:
@@ -215,10 +221,18 @@ spec:
           volumeMounts:
             - name: mongo-data
               mountPath: /data/db
+            - name: mongo-config
+              mountPath: /data/configdb
+            - name: mongo-tmp
+              mountPath: /tmp
       volumes:
         - name: mongo-data
           persistentVolumeClaim:
             claimName: mongo-data
+        - name: mongo-config
+          emptyDir: {}
+        - name: mongo-tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -256,6 +270,12 @@ spec:
       containers:
         - name: keycloak
           image: quay.io/keycloak/keycloak:26.2
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           args: ["start-dev", "--import-realm", "--hostname-strict=false", "--http-enabled=true"]
           env:
             - name: KEYCLOAK_ADMIN
@@ -288,10 +308,18 @@ spec:
             - name: keycloak-realm
               mountPath: /opt/keycloak/data/import
               readOnly: true
+            - name: keycloak-data
+              mountPath: /opt/keycloak/data
+            - name: keycloak-tmp
+              mountPath: /tmp
       volumes:
         - name: keycloak-realm
           configMap:
             name: keycloak-realm
+        - name: keycloak-data
+          emptyDir: {}
+        - name: keycloak-tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -330,6 +358,12 @@ spec:
         - name: backend
           image: REPLACE_WITH_BACKEND_IMAGE
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           envFrom:
             - configMapRef:
                 name: schema-migrator-config
@@ -355,6 +389,12 @@ spec:
               port: 8080
             initialDelaySeconds: 60
             periodSeconds: 20
+          volumeMounts:
+            - name: backend-tmp
+              mountPath: /tmp
+      volumes:
+        - name: backend-tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -393,18 +433,24 @@ spec:
         - name: frontend
           image: REPLACE_WITH_FRONTEND_IMAGE
           imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
-            - containerPort: 80
+            - containerPort: 8080
           readinessProbe:
             httpGet:
               path: /
-              port: 80
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /
-              port: 80
+              port: 8080
             initialDelaySeconds: 20
             periodSeconds: 20
           volumeMounts:
@@ -412,10 +458,22 @@ spec:
               mountPath: /usr/share/nginx/html/runtime-config.js
               subPath: runtime-config.js
               readOnly: true
+            - name: frontend-tmp
+              mountPath: /tmp
+            - name: frontend-cache
+              mountPath: /var/cache/nginx
+            - name: frontend-run
+              mountPath: /var/run
       volumes:
         - name: frontend-config
           configMap:
             name: frontend-config
+        - name: frontend-tmp
+          emptyDir: {}
+        - name: frontend-cache
+          emptyDir: {}
+        - name: frontend-run
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -431,7 +489,7 @@ spec:
   ports:
     - name: http
       port: 80
-      targetPort: 80
+      targetPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -453,20 +511,26 @@ spec:
       containers:
         - name: traefik
           image: traefik:v3.6
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           args: ["--configFile=/etc/traefik/traefik.yaml"]
           ports:
             - name: web
-              containerPort: 80
-            - name: keycloak
               containerPort: 8080
+            - name: keycloak
+              containerPort: 8081
           readinessProbe:
             tcpSocket:
-              port: 80
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             tcpSocket:
-              port: 80
+              port: 8080
             initialDelaySeconds: 20
             periodSeconds: 20
           volumeMounts:
@@ -478,10 +542,22 @@ spec:
               mountPath: /etc/traefik/dynamic/dynamic.yaml
               subPath: dynamic.yaml
               readOnly: true
+            - name: traefik-data
+              mountPath: /data
+            - name: traefik-tmp
+              mountPath: /tmp
+            - name: traefik-run
+              mountPath: /var/run
       volumes:
         - name: traefik-config
           configMap:
             name: traefik-config
+        - name: traefik-data
+          emptyDir: {}
+        - name: traefik-tmp
+          emptyDir: {}
+        - name: traefik-run
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -499,7 +575,7 @@ spec:
   ports:
     - name: web
       port: 80
-      targetPort: 80
+      targetPort: 8080
     - name: keycloak
       port: 8080
-      targetPort: 8080
+      targetPort: 8081

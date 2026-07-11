@@ -6,16 +6,14 @@ import io.circe.Json
 import org.http4s.*
 import org.typelevel.ci.CIString
 
-import javax.crypto.spec.SecretKeySpec
-
 object AesGcmMiddleware:
-  def apply(key: Option[SecretKeySpec])(routes: HttpRoutes[IO]): HttpRoutes[IO] =
-    key match
+  def apply(keyRing: Option[AesGcm.KeyRing])(routes: HttpRoutes[IO]): HttpRoutes[IO] =
+    keyRing match
       case None => routes
-      case Some(secretKey) =>
+      case Some(ring) =>
         HttpRoutes { request =>
           routes(request).semiflatMap { response =>
-            if shouldEncrypt(request, response) then encryptResponse(secretKey, response)
+            if shouldEncrypt(request, response) then encryptResponse(ring, response)
             else IO.pure(response)
           }
         }
@@ -28,10 +26,10 @@ object AesGcmMiddleware:
     val alreadyEncrypted = response.headers.headers.exists(_.name == CIString("X-Bedrock-Encrypted"))
     isJson && !isHealth && !isEmpty && !alreadyEncrypted
 
-  private def encryptResponse(key: SecretKeySpec, response: Response[IO]): IO[Response[IO]] =
+  private def encryptResponse(keyRing: AesGcm.KeyRing, response: Response[IO]): IO[Response[IO]] =
     for
       plain <- response.body.compile.toVector.map(_.toArray)
-      encrypted <- AesGcm.encryptEnvelope(AesGcm.KeyRing("current", key, Map.empty), plain)
+      encrypted <- AesGcm.encryptEnvelope(keyRing, plain)
       envelope = Json.obj(
         "data" -> Json.fromString(encrypted.dataBase64),
         "iv" -> Json.fromString(encrypted.ivBase64),

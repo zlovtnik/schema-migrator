@@ -53,6 +53,7 @@ object HttpServer:
             .leftMap(message => new IllegalArgumentException(message))
         )
       )
+      encryptKeyRing = encryptKey.map(key => AesGcm.KeyRing("current", key, Map.empty))
       mongoConfig <- Resource.eval(
         IO.fromEither(config.server.mongoConfig.leftMap(message => new IllegalArgumentException(message)))
       )
@@ -86,7 +87,7 @@ object HttpServer:
       )
       routed = Router("/api" -> apiRoutes)
       authed = JwtMiddleware(config.server, keycloakVerifier)(routed)
-      encrypted = AesGcmMiddleware(encryptKey)(authed)
+      encrypted = AesGcmMiddleware(encryptKeyRing)(authed)
       compressed = Bzip2Middleware(encrypted)
       withCors = CorsMiddleware(config.server)(compressed)
       logged = LoggingMiddleware(withCors.orNotFound)

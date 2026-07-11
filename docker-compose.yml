@@ -52,9 +52,10 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=internal
-      - traefik.http.routers.backend.rule=PathPrefix(`/api`)
-      - traefik.http.routers.backend.entrypoints=web
+      - traefik.http.routers.backend.rule=Host(`${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME is required}`) && PathPrefix(`/api`)
+      - traefik.http.routers.backend.entrypoints=websecure
       - traefik.http.routers.backend.priority=10
+      - traefik.http.routers.backend.tls.certresolver=letsencrypt
       - traefik.http.services.backend.loadbalancer.server.port=8080
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/health"]
@@ -74,16 +75,17 @@ services:
     image: quay.io/keycloak/keycloak:26.2
     restart: unless-stopped
     command:
-      - start-dev
+      - start
       - --import-realm
-      - --hostname-strict=false
+      - --hostname=https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME is required}
+      - --hostname-strict=true
       - --http-enabled=true
     environment:
       - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
       - KC_PROXY_HEADERS=xforwarded
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     volumes:
       - ./deploy/keycloak/middleware-realm.json:/opt/keycloak/data/import/middleware-realm.json:ro
     healthcheck:
@@ -92,6 +94,14 @@ services:
       timeout: 5s
       retries: 30
       start_period: 45s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=internal
+      - traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME is required}`) && (PathPrefix(`/realms`) || PathPrefix(`/resources`))
+      - traefik.http.routers.keycloak.entrypoints=websecure
+      - traefik.http.routers.keycloak.priority=20
+      - traefik.http.routers.keycloak.tls.certresolver=letsencrypt
+      - traefik.http.services.keycloak.loadbalancer.server.port=8080
     networks:
       - internal
 
@@ -111,10 +121,11 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=internal
-      - traefik.http.routers.frontend.rule=PathPrefix(`/`)
-      - traefik.http.routers.frontend.entrypoints=web
+      - traefik.http.routers.frontend.rule=Host(`${PUBLIC_HOSTNAME:?PUBLIC_HOSTNAME is required}`) && PathPrefix(`/`)
+      - traefik.http.routers.frontend.entrypoints=websecure
       - traefik.http.routers.frontend.priority=1
-      - traefik.http.services.frontend.loadbalancer.server.port=80
+      - traefik.http.routers.frontend.tls.certresolver=letsencrypt
+      - traefik.http.services.frontend.loadbalancer.server.port=8080
     networks:
       - internal
 
@@ -129,13 +140,21 @@ services:
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=internal
       - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
       - --entrypoints.web.transport.respondingTimeouts.readTimeout=300s
       - --entrypoints.web.transport.respondingTimeouts.writeTimeout=0
       - --entrypoints.web.transport.respondingTimeouts.idleTimeout=3600s
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
+      - traefik-letsencrypt:/letsencrypt
     depends_on:
       backend:
         condition: service_healthy
@@ -151,3 +170,4 @@ networks:
 
 volumes:
   mongo-data:
+  traefik-letsencrypt:

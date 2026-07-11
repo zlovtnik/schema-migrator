@@ -7,15 +7,17 @@ private[schema] object PostgresDriftDiffEngine:
   import PostgresDriftModel.*
 
   def expectedFromManifest(item: SchemaObject): List[ExpectedObject] =
-    PostgresDriftDdlParser.catalogDefinitions(item.rawSql).map(definition =>
-      ExpectedObject(
-        key = definition.key,
-        sourceFile = item.sourceFile,
-        checksum = item.sha256,
-        expectedDdl = Some(definition.ddl),
-        applyStatus = None
+    PostgresDriftDdlParser
+      .catalogDefinitions(item.rawSql)
+      .map(definition =>
+        ExpectedObject(
+          key = definition.key,
+          sourceFile = item.sourceFile,
+          checksum = item.sha256,
+          expectedDdl = Some(definition.ddl),
+          applyStatus = None
+        )
       )
-    )
 
   def controlSnapshot(rows: List[ControlRow]): ControlSnapshot =
     ControlSnapshot(
@@ -146,7 +148,9 @@ private[schema] object PostgresDriftDiffEngine:
         else
           actualByKey.get(expectedItem.key).flatMap { actualItem =>
             actualItem.actualDdl
-              .filter(actualDdl => PostgresDriftDdlParser.definitionChanged(expectedItem.key, expectedItem.expectedDdl, Some(actualDdl)))
+              .filter(actualDdl =>
+                PostgresDriftDdlParser.definitionChanged(expectedItem.key, expectedItem.expectedDdl, Some(actualDdl))
+              )
               .map { actualDdl =>
                 DriftItem(
                   schema = expectedItem.key.schema,
@@ -220,16 +224,18 @@ private[schema] object PostgresDriftDiffEngine:
       )
 
   private def controlObjectsForRow(row: ControlRow): List[ControlObject] =
-    row.expectedDdl.toList.flatMap(PostgresDriftDdlParser.catalogDefinitions).map(definition =>
-      ControlObject(
-        key = definition.key,
-        applyStatus = row.applyStatus,
-        sourceFile = row.sourceFile,
-        checksum = row.checksum,
-        expectedDdl = Some(definition.ddl),
-        objectName = row.objectName
+    row.expectedDdl.toList
+      .flatMap(PostgresDriftDdlParser.catalogDefinitions)
+      .map(definition =>
+        ControlObject(
+          key = definition.key,
+          applyStatus = row.applyStatus,
+          sourceFile = row.sourceFile,
+          checksum = row.checksum,
+          expectedDdl = Some(definition.ddl),
+          objectName = row.objectName
+        )
       )
-    )
 
   private def controlSummary(rows: List[ControlRow]): SchemaControlSummary =
     val applied = rows.count(_.applyStatus == "applied").toLong
@@ -258,7 +264,6 @@ private[schema] object PostgresDriftDiffEngine:
       applied_at = row.appliedAt,
       updated_at = row.updatedAt
     )
-
 
   private def ignoredUntrackedActual(key: ObjectKey): Boolean =
     (key.objectType == "schema" && key.schema == "public" && key.name == "public") ||

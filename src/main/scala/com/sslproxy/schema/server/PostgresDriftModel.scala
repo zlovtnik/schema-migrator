@@ -5,7 +5,9 @@ import com.sslproxy.schema.store.{SchemaCatalogObject, SchemaControlObject, Sche
 private[schema] object PostgresDriftModel:
   final case class ObjectKey(schema: String, name: String, objectType: String) extends Ordered[ObjectKey]:
     override def compare(that: ObjectKey): Int =
-      Ordering.Tuple3[String, String, String].compare((schema, objectType, name), (that.schema, that.objectType, that.name))
+      Ordering
+        .Tuple3[String, String, String]
+        .compare((schema, objectType, name), (that.schema, that.objectType, that.name))
 
   final case class RoutineDefinition(key: ObjectKey, ddl: String)
   final case class DdlDefinition(key: ObjectKey, ddl: String)

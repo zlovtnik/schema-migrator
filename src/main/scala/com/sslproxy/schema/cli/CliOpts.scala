@@ -461,12 +461,7 @@ object CliOpts:
         Option.when(mongoTargetsCollection.isEmpty)("BEDROCK_MONGO_TARGETS_COLLECTION")
       ).flatten
       if missing.nonEmpty then Left(s"Mongo configuration is incomplete; missing ${missing.mkString(", ")}")
-      else
-        for
-          uri <- mongoUri.toRight("BEDROCK_MONGO_URI is required")
-          database <- mongoDatabase.toRight("BEDROCK_MONGO_DATABASE is required")
-          targetsCollection <- mongoTargetsCollection.toRight("BEDROCK_MONGO_TARGETS_COLLECTION is required")
-        yield Some(MongoConfig(uri, database, targetsCollection))
+      else Right(Some(MongoConfig(mongoUri.get, mongoDatabase.get, mongoTargetsCollection.get)))
 
   private def envInt(name: String, defaultValue: Int): Int =
     env
