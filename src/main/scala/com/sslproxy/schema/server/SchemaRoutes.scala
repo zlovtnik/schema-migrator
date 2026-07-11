@@ -94,14 +94,29 @@ object SchemaRoutes:
                   target.target.jdbc_url,
                   "database drift execution is not allowed for this target"
                 ) {
-                  triggerDriftRun(config, target, payload, claims.subject, claims.role, sqlFileStore, patchStore, runStore, auditStore, runExecutor)
+                  triggerDriftRun(
+                    config,
+                    target,
+                    payload,
+                    claims.subject,
+                    claims.role,
+                    sqlFileStore,
+                    patchStore,
+                    runStore,
+                    auditStore,
+                    runExecutor
+                  )
                 }
             }
           }
         }
     }
 
-  private def catalog(config: MigratorConfig, target: StoredTarget, sqlFileStore: SqlFileStore): IO[SchemaCatalogResponse] =
+  private def catalog(
+    config: MigratorConfig,
+    target: StoredTarget,
+    sqlFileStore: SqlFileStore
+  ): IO[SchemaCatalogResponse] =
     for
       now <- nowString
       kind = dbKindFor(target.target.jdbc_url)
@@ -142,7 +157,17 @@ object SchemaRoutes:
                 warnings = expected.warnings :+ s"live Postgres introspection failed: ${error.getMessage}"
               )
           }
-      _ <- log.info(Json.obj("event" -> Json.fromString("schema_catalog"), "target_id" -> Json.fromString(target.target.id), "db_kind" -> Json.fromString(response.db_kind), "object_count" -> Json.fromInt(response.objects.size), "supported" -> Json.fromBoolean(response.supported)).noSpaces)
+      _ <- log.info(
+        Json
+          .obj(
+            "event" -> Json.fromString("schema_catalog"),
+            "target_id" -> Json.fromString(target.target.id),
+            "db_kind" -> Json.fromString(response.db_kind),
+            "object_count" -> Json.fromInt(response.objects.size),
+            "supported" -> Json.fromBoolean(response.supported)
+          )
+          .noSpaces
+      )
     yield response
 
   private def drift(config: MigratorConfig, target: StoredTarget, sqlFileStore: SqlFileStore): IO[DriftResponse] =
@@ -190,7 +215,17 @@ object SchemaRoutes:
                 warnings = expected.warnings :+ s"live Postgres drift introspection failed: ${error.getMessage}"
               )
           }
-      _ <- log.info(Json.obj("event" -> Json.fromString("schema_drift"), "target_id" -> Json.fromString(target.target.id), "db_kind" -> Json.fromString(response.db_kind), "drift_item_count" -> Json.fromInt(response.items.size), "supported" -> Json.fromBoolean(response.supported)).noSpaces)
+      _ <- log.info(
+        Json
+          .obj(
+            "event" -> Json.fromString("schema_drift"),
+            "target_id" -> Json.fromString(target.target.id),
+            "db_kind" -> Json.fromString(response.db_kind),
+            "drift_item_count" -> Json.fromInt(response.items.size),
+            "supported" -> Json.fromBoolean(response.supported)
+          )
+          .noSpaces
+      )
     yield response
 
   private def triggerDriftRun(
@@ -222,55 +257,73 @@ object SchemaRoutes:
               selectedSourceFiles = selectedRunnableSources(payload.source_files, runnableSourceFiles)
               result <-
                 if runnableSourceFiles.isEmpty then RouteJson.badRequest("no executable drift items were found")
-                else selectedSourceFiles match
-                  case Left(message) => RouteJson.badRequest(message)
-                  case Right(Nil) => RouteJson.badRequest("at least one executable drift source file is required")
-                  case Right(sourceFiles) =>
-                    driftUploads(config, targetId, sqlFileStore, sourceFiles).flatMap {
-                      case Left(message) => RouteJson.badRequest(message)
-                      case Right(uploads) =>
-                        (for
-                          patch <- patchStore.create(targetId, uploads)
-                          run <- runStore.create(com.sslproxy.schema.store.TriggerRunPayload(patch.id, targetId), patch, actor)
-                          _ <- auditStore
-                            .record(
-                              actor,
-                              role,
-                              "drift.run",
-                              "run",
-                              run.id,
-                              Some(targetId),
-                              Some(Json.obj("patch_id" -> Json.fromString(patch.id), "script_count" -> Json.fromInt(uploads.length)))
+                else
+                  selectedSourceFiles match
+                    case Left(message) => RouteJson.badRequest(message)
+                    case Right(Nil) => RouteJson.badRequest("at least one executable drift source file is required")
+                    case Right(sourceFiles) =>
+                      driftUploads(config, targetId, sqlFileStore, sourceFiles).flatMap {
+                        case Left(message) => RouteJson.badRequest(message)
+                        case Right(uploads) =>
+                          (for
+                            patch <- patchStore.create(targetId, uploads)
+                            run <- runStore.create(
+                              com.sslproxy.schema.store.TriggerRunPayload(patch.id, targetId),
+                              patch,
+                              actor
                             )
-                            .handleErrorWith(error => log.warn(error)(s"failed to record audit event for drift run ${run.id}"))
-                          _ <- log.info(
-                            Json
-                              .obj(
-                                "event" -> Json.fromString("drift_run_triggered"),
-                                "run_id" -> Json.fromString(run.id),
-                                "target_id" -> Json.fromString(targetId),
-                                "patch_id" -> Json.fromString(patch.id),
-                                "script_count" -> Json.fromInt(uploads.length)
+                            _ <- auditStore
+                              .record(
+                                actor,
+                                role,
+                                "drift.run",
+                                "run",
+                                run.id,
+                                Some(targetId),
+                                Some(
+                                  Json.obj(
+                                    "patch_id" -> Json.fromString(patch.id),
+                                    "script_count" -> Json.fromInt(uploads.length)
+                                  )
+                                )
                               )
-                              .noSpaces
-                          )
-                          _ <- runExecutor.run(target, run, patch).start.void
-                          created <- RouteJson.created(run.asJson)
-                        yield created).recoverWith { case _: RunStore.ConcurrentRun =>
-                          RouteJson.conflict(s"target '$targetId' already has an active run")
-                        }
-                    }
+                              .handleErrorWith(error =>
+                                log.warn(error)(s"failed to record audit event for drift run ${run.id}")
+                              )
+                            _ <- log.info(
+                              Json
+                                .obj(
+                                  "event" -> Json.fromString("drift_run_triggered"),
+                                  "run_id" -> Json.fromString(run.id),
+                                  "target_id" -> Json.fromString(targetId),
+                                  "patch_id" -> Json.fromString(patch.id),
+                                  "script_count" -> Json.fromInt(uploads.length)
+                                )
+                                .noSpaces
+                            )
+                            _ <- runExecutor.run(target, run, patch).start.void
+                            created <- RouteJson.created(run.asJson)
+                          yield created).recoverWith { case _: RunStore.ConcurrentRun =>
+                            RouteJson.conflict(s"target '$targetId' already has an active run")
+                          }
+                      }
             yield result).handleErrorWith { case NonFatal(error) =>
               log.error(error)(s"failed to prepare drift run for target $targetId") *>
                 RouteJson.internalServerError("drift run could not be prepared")
             }
     yield response
 
-  private def orderedRunnableSources(expected: List[ExpectedObject], drift: List[com.sslproxy.schema.store.DriftItem]): List[String] =
+  private def orderedRunnableSources(
+    expected: List[ExpectedObject],
+    drift: List[com.sslproxy.schema.store.DriftItem]
+  ): List[String] =
     val driftSources = drift.flatMap(_.source_file).toSet
     expected.map(_.sourceFile).distinct.filter(driftSources.contains)
 
-  private def selectedRunnableSources(requested: Option[List[String]], runnable: List[String]): Either[String, List[String]] =
+  private def selectedRunnableSources(
+    requested: Option[List[String]],
+    runnable: List[String]
+  ): Either[String, List[String]] =
     requested match
       case None => Right(runnable)
       case Some(values) =>
@@ -291,15 +344,22 @@ object SchemaRoutes:
         sqlFileStore.list(targetId).map { storedFiles =>
           val byPath = storedFiles.map(file => file.path -> file).toMap
           sourceFiles.traverse { sourceFile =>
-            byPath.get(sourceFile).toRight(s"source file '$sourceFile' is not available in the SQL file store").map { file =>
-              PatchUpload(sourceFile, Base64.getDecoder.decode(file.contentBase64), sourceFiles.indexOf(sourceFile) + 1)
+            byPath.get(sourceFile).toRight(s"source file '$sourceFile' is not available in the SQL file store").map {
+              file =>
+                PatchUpload(
+                  sourceFile,
+                  Base64.getDecoder.decode(file.contentBase64),
+                  sourceFiles.indexOf(sourceFile) + 1
+                )
             }
           }
         }
       else
-        sourceFiles.zipWithIndex.traverse { case (sourceFile, index) =>
-          readSourceFile(config.sqlDir, sourceFile).map(_.map(bytes => PatchUpload(sourceFile, bytes, index + 1)))
-        }.map(_.sequence)
+        sourceFiles.zipWithIndex
+          .traverse { case (sourceFile, index) =>
+            readSourceFile(config.sqlDir, sourceFile).map(_.map(bytes => PatchUpload(sourceFile, bytes, index + 1)))
+          }
+          .map(_.sequence)
     }
 
   private def readSourceFile(sqlDir: Path, sourceFile: String): IO[Either[String, Array[Byte]]] =
@@ -314,7 +374,13 @@ object SchemaRoutes:
   private def targetId(request: org.http4s.Request[IO]): Option[String] =
     request.uri.query.params.get("target_id").map(_.trim).filter(_.nonEmpty)
 
-  private def expectedObjects(config: MigratorConfig, kind: DbKind, now: String, targetId: String, sqlFileStore: SqlFileStore): IO[ExpectedSnapshot] =
+  private def expectedObjects(
+    config: MigratorConfig,
+    kind: DbKind,
+    now: String,
+    targetId: String,
+    sqlFileStore: SqlFileStore
+  ): IO[ExpectedSnapshot] =
     if kind != DbKind.Postgres then IO.pure(ExpectedSnapshot(Nil, Nil))
     else
       // Try store-based discovery first, fall back to filesystem
@@ -326,10 +392,15 @@ object SchemaRoutes:
             objects <- ManifestBuilder[IO](SqlDialect.Postgres).build(discovery.files)
             expected = objects.flatMap(expectedFromManifest)
           yield ExpectedSnapshot(expected, discovery.warnings)).handleError { case NonFatal(error) =>
-            ExpectedSnapshot(Nil, List(s"SQL manifest from store could not be loaded: ${error.getClass.getName}: ${error.getMessage}"))
+            ExpectedSnapshot(
+              Nil,
+              List(s"SQL manifest from store could not be loaded: ${error.getClass.getName}: ${error.getMessage}")
+            )
           }
         else if Files.notExists(config.sqlDir) || !Files.isDirectory(config.sqlDir) then
-          IO.pure(ExpectedSnapshot(Nil, List(s"sql directory '${config.sqlDir}' is unavailable; no files in store either")))
+          IO.pure(
+            ExpectedSnapshot(Nil, List(s"sql directory '${config.sqlDir}' is unavailable; no files in store either"))
+          )
         else
           (for
             discovery <- DiscoveryService[IO]().discover(config.sqlDir, DbKind.Postgres, config.customer)

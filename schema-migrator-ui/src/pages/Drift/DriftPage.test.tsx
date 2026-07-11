@@ -53,7 +53,7 @@ describe("DriftPage", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((input: RequestInfo | URL) => {
-        const url = String(input);
+        const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
         if (url.includes("/drift/runs")) {
           return Promise.resolve(
             jsonResponse({
@@ -120,7 +120,7 @@ describe("DriftPage", () => {
 
   it("keeps run gating banners hidden until a target is selected", async () => {
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
-      const url = String(input);
+      const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
       if (url.includes("/targets")) {
         return Promise.resolve(
           jsonResponse({
@@ -160,7 +160,9 @@ describe("DriftPage", () => {
     renderApp(<DriftPage />, { route: "/drift" });
 
     expect(await screen.findByText("Select a target")).toBeInTheDocument();
-    expect(screen.queryByText("Drift execution is disabled while this target has an active run.")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Drift execution is disabled while this target has an active run.")
+    ).not.toBeInTheDocument();
   });
 
   it("starts all executable drift from the page action", async () => {
@@ -249,7 +251,8 @@ describe("DriftPage", () => {
           name: longName,
           object_type: "function",
           drift_type: "definition_changed",
-          expected: "create function coordinator.process_ingest_ledger() returns integer language sql as $$ select 1 $$;",
+          expected:
+            "create function coordinator.process_ingest_ledger() returns integer language sql as $$ select 1 $$;",
           actual: "create function coordinator.process_ingest_ledger() returns integer language sql as $$ select 2 $$;",
           source_file: "functions/023_coordinator_process_ingest_ledger.sql",
           checksum: "long",

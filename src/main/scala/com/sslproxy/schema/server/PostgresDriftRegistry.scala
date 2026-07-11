@@ -3,6 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import com.sslproxy.schema.db.{JdbcConnectionConfig, JdbcSupport}
 import com.sslproxy.schema.db.postgres.PostgresStatements
+import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.store.{DriftItem, SchemaCatalogObject}
 
 import java.sql.{Connection, PreparedStatement, Timestamp}
@@ -39,7 +40,7 @@ private[schema] object PostgresDriftRegistry:
     catch
       case NonFatal(error) =>
         connection.rollback()
-        throw error
+        throw MigratorError.Apply(s"failed to record Postgres drift registry for customer '$customer'", error)
     finally connection.setAutoCommit(oldAutoCommit)
 
   private def deleteCustomerRows(connection: Connection, customer: String): Unit =

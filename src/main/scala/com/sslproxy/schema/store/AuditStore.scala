@@ -150,9 +150,7 @@ private final class MongoAuditStore(collection: MongoCollection[Document]) exten
     )
 
   private def requiredString(document: Document, field: String): String =
-    optionalString(document, field)
-      .filter(_.nonEmpty)
-      .getOrElse(throw IllegalStateException(s"audit document is missing required field '$field'"))
+    MongoDocument.requiredString(document, field, "audit")
 
   private def optionalString(document: Document, field: String): Option[String] =
-    Option(document.getString(field)).filter(_.nonEmpty)
+    MongoDocument.optionalString(document, field)

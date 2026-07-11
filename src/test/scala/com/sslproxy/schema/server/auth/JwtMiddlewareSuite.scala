@@ -84,9 +84,11 @@ class JwtMiddlewareSuite extends FunSuite:
   }
 
   test("auth context fails closed when middleware did not attach claims") {
-    val route = HttpRoutes.of[IO] { case request @ GET -> Root / "protected" =>
-      AuthContext.requireRole(request, UserRole.Viewer)(_ => Ok("ok"))
-    }.orNotFound
+    val route = HttpRoutes
+      .of[IO] { case request @ GET -> Root / "protected" =>
+        AuthContext.requireRole(request, UserRole.Viewer)(_ => Ok("ok"))
+      }
+      .orNotFound
 
     val response = route.run(Request[IO](Method.GET, Uri.unsafeFromString("/protected"))).unsafeRunSync()
 
@@ -146,7 +148,8 @@ class JwtMiddlewareSuite extends FunSuite:
     val wrongKey = rsaFixture()
     val config = keycloakConfig()
     val verifier = keycloakVerifier(config, fixture)
-    val routes = JwtMiddleware(config, Some(verifier))(HttpRoutes.of[IO] { case GET -> Root / "protected" => Ok("ok") }).orNotFound
+    val routes =
+      JwtMiddleware(config, Some(verifier))(HttpRoutes.of[IO] { case GET -> Root / "protected" => Ok("ok") }).orNotFound
     val badIssuer = keycloakToken(config, fixture, issuer = "https://keycloak.example.com/realms/other")
     val expired = keycloakToken(config, fixture, expiresAt = Instant.now.minusSeconds(60))
     val badSignature = keycloakToken(config, wrongKey.copy(kid = fixture.kid))

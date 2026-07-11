@@ -42,7 +42,11 @@ export const TargetDetailPage = () => {
   const latestCompletedRun = sortedRuns.find((run) => run.status === "completed");
 
   if (targetLoading) {
-    return <div className="page"><Skeleton rows={6} label="Loading target" /></div>;
+    return (
+      <div className="page">
+        <Skeleton rows={6} label="Loading target" />
+      </div>
+    );
   }
 
   if (targetError || !target || !id) {

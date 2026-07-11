@@ -16,7 +16,11 @@ export const OverviewPage = () => {
   const { canViewAudit } = useSession();
   const { data: targets = [], isLoading: targetsLoading } = useTargets();
   const { data: runs = [], isLoading: runsLoading } = useRuns();
-  const { data: auditEvents = [], isLoading: auditLoading, error: auditError } = useAuditEvents({ limit: 5 }, canViewAudit);
+  const {
+    data: auditEvents = [],
+    isLoading: auditLoading,
+    error: auditError
+  } = useAuditEvents({ limit: 5 }, canViewAudit);
   const selectedTargetId = useSelectedTargetId();
 
   const activeRuns = runs.filter((run) => run.status === "pending" || run.status === "running");
@@ -44,7 +48,13 @@ export const OverviewPage = () => {
             <Icon source={failedRuns.length > 0 ? WarningIcon : ShieldCheckIcon} size={20} weight="bold" />
           </div>
           <div>
-            <strong>{runsLoading ? "Checking run safety" : failedRuns.length > 0 ? "Run resolution needed" : "All systems nominal"}</strong>
+            <strong>
+              {runsLoading
+                ? "Checking run safety"
+                : failedRuns.length > 0
+                  ? "Run resolution needed"
+                  : "All systems nominal"}
+            </strong>
             <p>
               {runsLoading
                 ? "Loading run state before apply operations."
@@ -67,8 +77,12 @@ export const OverviewPage = () => {
 
         <div className="active-target-card">
           <span className="field-label">Active target</span>
-          <strong>{targetsLoading ? "..." : activeTarget?.label ?? "No target"}</strong>
-          <p>{activeTarget ? `${activeTarget.app_name} · ${activeTarget.env}` : "Configure a target to start drift runs."}</p>
+          <strong>{targetsLoading ? "..." : (activeTarget?.label ?? "No target")}</strong>
+          <p>
+            {activeTarget
+              ? `${activeTarget.app_name} · ${activeTarget.env}`
+              : "Configure a target to start drift runs."}
+          </p>
           <div>
             <span>Targets</span>
             <code>{targetsLoading ? "..." : targets.length}</code>

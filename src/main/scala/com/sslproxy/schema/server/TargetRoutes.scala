@@ -5,7 +5,16 @@ import cats.syntax.all.*
 import com.sslproxy.schema.config.ServerConfig
 import com.sslproxy.schema.db.postgres.PostgresProvider
 import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
-import com.sslproxy.schema.store.{AuditStore, Models, PatchStore, RepoSyncStore, RunStore, TargetPayload, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{
+  AuditStore,
+  Models,
+  PatchStore,
+  RepoSyncStore,
+  RunStore,
+  TargetPayload,
+  TargetStore,
+  ValidationStore
+}
 import io.circe.Json
 import io.circe.syntax.*
 import org.http4s.{HttpRoutes, Request, Response}
@@ -69,7 +78,7 @@ object TargetRoutes:
                       "host" -> Json.fromString(jdbcHost(payload.jdbc_url).getOrElse("unknown"))
                     )
                     .noSpaces
-                  )
+                )
                 result <- DbPing.test(payload)
                 response <- RouteJson.ok(result.asJson)
               yield response
@@ -78,10 +87,11 @@ object TargetRoutes:
         }
 
       case GET -> Root / "targets" / id =>
-        store.get(id).flatMap {
-          case Some(target) => RouteJson.ok(target.asJson)
-          case None => RouteJson.notFound(s"target '$id' was not found")
-        }
+        store
+          .get(id)
+          .flatMap(target =>
+            RouteJson.fromOption(target, s"target '$id' was not found")(target => RouteJson.ok(target.asJson))
+          )
 
       case request @ PUT -> Root / "targets" / id =>
         AuthContext.requireRole(request, UserRole.Admin) { claims =>
@@ -113,7 +123,9 @@ object TargetRoutes:
                     case Left(error) =>
                       log.warn(error)(s"Failed to clear repoSync state for target $id")
                     case Right(_) => IO.unit
-                  }) *> auditStore.record(claims.subject, claims.role, "target.delete", "target", id, Some(id)).void *> NoContent()
+                  }) *> auditStore
+                    .record(claims.subject, claims.role, "target.delete", "target", id, Some(id))
+                    .void *> NoContent()
                 case false => RouteJson.notFound(s"target '$id' was not found")
               }
           }
@@ -132,7 +144,7 @@ object TargetRoutes:
                         "target_id" -> Json.fromString(id)
                       )
                       .noSpaces
-                    )
+                  )
                   result <- DbPing.test(target)
                   response <- RouteJson.ok(result.asJson)
                 yield response
@@ -146,7 +158,7 @@ object TargetRoutes:
                       "target_id" -> Json.fromString(id)
                     )
                     .noSpaces
-                  )
+                )
                 response <- RouteJson.notFound(s"target '$id' was not found")
               yield response
           }
@@ -154,10 +166,8 @@ object TargetRoutes:
     }
 
   private def withTargetPayload(request: Request[IO])(use: TargetPayload => IO[Response[IO]]): IO[Response[IO]] =
-    request.as[TargetPayload].attempt.flatMap {
-      case Right(payload) =>
-        validateTargetPayload(payload).fold(RouteJson.badRequest, use)
-      case Left(_) => RouteJson.badRequest(invalidPayloadMessage)
+    RouteJson.withJson[TargetPayload](request, invalidPayloadMessage) { payload =>
+      validateTargetPayload(payload).fold(RouteJson.badRequest, use)
     }
 
   private[server] def validateTargetPayload(payload: TargetPayload): Either[String, TargetPayload] =
@@ -187,7 +197,9 @@ object TargetRoutes:
             )
           else if isSupportedJdbcUrl(jdbcUrl) then TargetPayload.rejectInlineCredentials(jdbcUrl).as(trimmedPayload)
           else
-            Left("unsupported database URL: expected postgres://..., postgresql://..., jdbc:postgresql://..., or jdbc:oracle:thin:...")
+            Left(
+              "unsupported database URL: expected postgres://..., postgresql://..., jdbc:postgresql://..., or jdbc:oracle:thin:..."
+            )
       yield validated
 
   private def normalizePostgresPayload(payload: TargetPayload, rawUrl: String): Either[String, TargetPayload] =
@@ -201,7 +213,10 @@ object TargetRoutes:
       password <- mergedPassword(payload.password, config.password)
     yield payload.copy(jdbc_url = jdbcUrl, password = password)
 
-  private def mergedPassword(formPassword: Option[String], urlPassword: Option[String]): Either[String, Option[String]] =
+  private def mergedPassword(
+    formPassword: Option[String],
+    urlPassword: Option[String]
+  ): Either[String, Option[String]] =
     val provided = formPassword.filter(_.nonEmpty)
     (provided, urlPassword) match
       case (Some(value), Some(parsed)) if value != parsed =>

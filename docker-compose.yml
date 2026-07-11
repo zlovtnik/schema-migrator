@@ -65,6 +65,33 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    networks:
+      - internal
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --import-realm
+      - --hostname-strict=false
+      - --http-enabled=true
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      - KC_PROXY_HEADERS=xforwarded
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./deploy/keycloak/middleware-realm.json:/opt/keycloak/data/import/middleware-realm.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/middleware/.well-known/openid-configuration HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 45s
     networks:
       - internal
 
@@ -79,6 +106,8 @@ services:
         VITE_KEYCLOAK_REDIRECT_URI: ${VITE_KEYCLOAK_REDIRECT_URI:-}
         VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS: ${VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS:-false}
     restart: unless-stopped
+    volumes:
+      - ./deploy/instance/runtime-config.js:/usr/share/nginx/html/runtime-config.js:ro
     labels:
       - traefik.enable=true
       - traefik.docker.network=internal

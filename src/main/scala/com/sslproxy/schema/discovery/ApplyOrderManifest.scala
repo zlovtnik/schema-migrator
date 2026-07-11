@@ -67,7 +67,8 @@ object ApplyOrderManifest:
     val expectedEngine = SqlLayout.engineName(dbKind)
     val engineWarnings =
       if manifest.engine == expectedEngine then Nil
-      else List(s"${manifest.path}: manifest engine '${manifest.engine}' does not match selected engine '$expectedEngine'")
+      else
+        List(s"${manifest.path}: manifest engine '${manifest.engine}' does not match selected engine '$expectedEngine'")
     val layerWarnings =
       if manifest.layer == expectedLayer then Nil
       else List(s"${manifest.path}: manifest layer '${manifest.layer}' does not match expected layer '$expectedLayer'")

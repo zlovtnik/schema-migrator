@@ -25,11 +25,13 @@ export const RequireAuth = () => {
     if (!isKeycloakConfigured()) {
       setStatus("authenticated");
     } else {
-      initKeycloak().then(refresh).catch(() => {
-        if (active) {
-          setStatus("anonymous");
-        }
-      });
+      initKeycloak()
+        .then(refresh)
+        .catch(() => {
+          if (active) {
+            setStatus("anonymous");
+          }
+        });
     }
 
     window.addEventListener(AUTH_TOKEN_CHANGED_EVENT, refresh);
@@ -40,7 +42,11 @@ export const RequireAuth = () => {
   }, []);
 
   if (status === "checking") {
-    return <div className="page empty-state" role="status">Checking session...</div>;
+    return (
+      <div className="page empty-state" role="status">
+        Checking session...
+      </div>
+    );
   }
 
   if (status !== "authenticated") {

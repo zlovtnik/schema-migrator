@@ -31,11 +31,11 @@ object AesGcmMiddleware:
   private def encryptResponse(key: SecretKeySpec, response: Response[IO]): IO[Response[IO]] =
     for
       plain <- response.body.compile.toVector.map(_.toArray)
-      encrypted <- AesGcm.encrypt(key, plain)
-      (cipherText, iv) = encrypted
+      encrypted <- AesGcm.encryptEnvelope(AesGcm.KeyRing("current", key, Map.empty), plain)
       envelope = Json.obj(
-        "data" -> Json.fromString(AesGcm.base64(cipherText)),
-        "iv" -> Json.fromString(AesGcm.base64(iv))
+        "data" -> Json.fromString(encrypted.dataBase64),
+        "iv" -> Json.fromString(encrypted.ivBase64),
+        "key_version" -> Json.fromString(encrypted.keyVersion)
       )
     yield response
       .withEntity(envelope.noSpaces)

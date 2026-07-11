@@ -15,7 +15,13 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon, type IconSource } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { getRepoSyncStatus, triggerRepoSync, type RepoSyncResult, type RepoSyncStatus } from "../../api/repoSync";
-import { clearSqlFiles, getSqlFileStatus, listSqlFiles, type SqlFileEntry, type SqlFileStatus } from "../../api/sqlFiles";
+import {
+  clearSqlFiles,
+  getSqlFileStatus,
+  listSqlFiles,
+  type SqlFileEntry,
+  type SqlFileStatus
+} from "../../api/sqlFiles";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useCreateSnapshot } from "../../hooks/useSnapshots";
@@ -122,7 +128,7 @@ const SqlFilesPage = () => {
   }, [selectedTarget]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   useEffect(() => {
@@ -145,7 +151,8 @@ const SqlFilesPage = () => {
   );
   const visibleFolders = useMemo(() => filteredGroups.map((group) => group.folder), [filteredGroups]);
   const hasQuery = query.trim().length > 0;
-  const allVisibleExpanded = visibleFolders.length > 0 && visibleFolders.every((folder) => expandedFolders[folder] ?? false);
+  const allVisibleExpanded =
+    visibleFolders.length > 0 && visibleFolders.every((folder) => expandedFolders[folder] ?? false);
 
   useEffect(() => {
     if (!hasQuery) return;
@@ -253,7 +260,8 @@ const SqlFilesPage = () => {
             <strong>{targetQuery.data?.repo_url ?? repoStatus?.repo_url ?? "No target selected"}</strong>
             <span className="repo-sync-meta">
               <Icon source={GitBranchIcon} size={16} />
-              {targetQuery.data?.repo_branch ?? repoStatus?.repo_branch ?? "main"} / {targetQuery.data?.repo_sql_path ?? repoStatus?.repo_sql_path ?? "sql"}
+              {targetQuery.data?.repo_branch ?? repoStatus?.repo_branch ?? "main"} /{" "}
+              {targetQuery.data?.repo_sql_path ?? repoStatus?.repo_sql_path ?? "sql"}
             </span>
           </div>
           <button
@@ -323,11 +331,9 @@ const SqlFilesPage = () => {
       {syncing ? <Skeleton rows={3} label="Syncing repository SQL files" /> : null}
 
       {!loading && status && !status.loaded ? (
-        <EmptyState
-          icon={<Icon source={GitBranchIcon} size={24} />}
-          title="No SQL files synced"
-        >
-          Select a target and sync its configured repository SQL path to load the manifest for schema comparison and drift detection.
+        <EmptyState icon={<Icon source={GitBranchIcon} size={24} />} title="No SQL files synced">
+          Select a target and sync its configured repository SQL path to load the manifest for schema comparison and
+          drift detection.
         </EmptyState>
       ) : null}
 
@@ -429,7 +435,9 @@ const SqlFilesPage = () => {
                         <strong>{group.folder}</strong>
                         <span className={`folder-dialect folder-dialect--${dialect.toLowerCase()}`}>{dialect}</span>
                       </span>
-                      <span className="file-count">{group.files.length} file{group.files.length !== 1 ? "s" : ""}</span>
+                      <span className="file-count">
+                        {group.files.length} file{group.files.length !== 1 ? "s" : ""}
+                      </span>
                     </summary>
                     {isExpanded ? (
                       <ul className="sql-file-list">

@@ -88,7 +88,12 @@ private final class RealRunExecutor(
                 .flatMap {
                   case Right(report) if report.failedFiles > 0 =>
                     failedScript.get.flatMap { failed =>
-                      failRun(run, patch, failed.map(_._1).getOrElse(""), s"${report.failedFiles} migration script(s) failed")
+                      failRun(
+                        run,
+                        patch,
+                        failed.map(_._1).getOrElse(""),
+                        s"${report.failedFiles} migration script(s) failed"
+                      )
                     }
                   case Right(_) =>
                     completeRun(run, patch)
@@ -109,35 +114,35 @@ private final class RealRunExecutor(
     val scriptsBySource = patchFiles.map(file => file.sqlFile.relativePath -> file.script).toMap
     val total = run.scripts.length
 
-    ApplyCallbacks.silent[IO].copy(
-      runStarted = context =>
-        runStore.log(
-          run.id,
-          "info",
-          s"starting ${context.dbKind} migration for target ${context.targetId.getOrElse(run.target_id)}"
-        ),
-      warnings = warnings => warnings.traverse_(warning => runStore.log(run.id, "warn", warning)),
-      scriptStarted = (prepared, _, _) =>
-        scriptFor(prepared, scriptsBySource).traverse_(script =>
-          runStore.scriptStarted(run.id, script.id, script.filename, script.order, total)
-        ),
-      scriptSkipped = (prepared, _, _, elapsed) =>
-        scriptFor(prepared, scriptsBySource).traverse_(script =>
-          runStore.scriptCompleted(run.id, script.id, script.filename, elapsed) *>
-            runStore.log(run.id, "info", s"skipped ${script.filename}")
-        ),
-      scriptCompleted = (prepared, _, _, elapsed) =>
-        scriptFor(prepared, scriptsBySource).traverse_(script =>
-          runStore.scriptCompleted(run.id, script.id, script.filename, elapsed)
-        ),
-      scriptFailed = (prepared, _, _, error, elapsed) =>
-        scriptFor(prepared, scriptsBySource).traverse_ { script =>
-          val scriptError = scriptErrorFor(error)
-          failedScript.set(Some(script.id -> error)) *>
-            runStore.scriptFailed(run.id, script.id, script.filename, scriptError, elapsed)
-        },
-      shouldContinue = runStore.currentStatus(run.id).map(_.forall(status => !RunStore.isTerminalStatus(status)))
-    )
+    ApplyCallbacks
+      .silent[IO]
+      .copy(
+        runStarted = context =>
+          runStore.log(
+            run.id,
+            "info",
+            s"starting ${context.dbKind} migration for target ${context.targetId.getOrElse(run.target_id)}"
+          ),
+        warnings = warnings => warnings.traverse_(warning => runStore.log(run.id, "warn", warning)),
+        scriptStarted = (prepared, _, _) =>
+          scriptFor(prepared, scriptsBySource)
+            .traverse_(script => runStore.scriptStarted(run.id, script.id, script.filename, script.order, total)),
+        scriptSkipped = (prepared, _, _, elapsed) =>
+          scriptFor(prepared, scriptsBySource).traverse_(script =>
+            runStore.scriptCompleted(run.id, script.id, script.filename, elapsed) *>
+              runStore.log(run.id, "info", s"skipped ${script.filename}")
+          ),
+        scriptCompleted = (prepared, _, _, elapsed) =>
+          scriptFor(prepared, scriptsBySource)
+            .traverse_(script => runStore.scriptCompleted(run.id, script.id, script.filename, elapsed)),
+        scriptFailed = (prepared, _, _, error, elapsed) =>
+          scriptFor(prepared, scriptsBySource).traverse_ { script =>
+            val scriptError = scriptErrorFor(error)
+            failedScript.set(Some(script.id -> error)) *>
+              runStore.scriptFailed(run.id, script.id, script.filename, scriptError, elapsed)
+          },
+        shouldContinue = runStore.currentStatus(run.id).map(_.forall(status => !RunStore.isTerminalStatus(status)))
+      )
 
   private def scriptFor(prepared: PreparedObject, scriptsBySource: Map[String, Script]): Option[Script] =
     scriptsBySource.get(prepared.objectDef.sourceFile)
@@ -241,7 +246,9 @@ private final class SimulatedRunExecutor(
                 startedAt <- Clock[IO].monotonic
                 _ <- if started then Temporal[IO].sleep(delay) else IO.unit
                 elapsed <- Clock[IO].monotonic.map(duration => (duration - startedAt).toMillis.max(1L))
-                _ <- if started then runStore.scriptCompleted(run.id, script.script_id, script.filename, elapsed) else IO.unit
+                _ <-
+                  if started then runStore.scriptCompleted(run.id, script.script_id, script.filename, elapsed)
+                  else IO.unit
               yield ()
           }
         }

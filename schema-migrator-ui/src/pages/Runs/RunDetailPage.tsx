@@ -50,7 +50,10 @@ export const RunDetailPage = () => {
   });
 
   const scripts = useMemo(() => stream.orderedScripts, [stream.orderedScripts]);
-  const controlRows = useMemo(() => controlRowsForRun(run, drift?.control_objects ?? []), [drift?.control_objects, run]);
+  const controlRows = useMemo(
+    () => controlRowsForRun(run, drift?.control_objects ?? []),
+    [drift?.control_objects, run]
+  );
 
   const downloadLog = () => {
     if (!id) {
@@ -74,7 +77,9 @@ export const RunDetailPage = () => {
   }
 
   const duration =
-    run.ended_at && run.started_at ? `${Math.round((Date.parse(run.ended_at) - Date.parse(run.started_at)) / 1000)} s` : "-";
+    run.ended_at && run.started_at
+      ? `${Math.round((Date.parse(run.ended_at) - Date.parse(run.started_at)) / 1000)} s`
+      : "-";
   const canAbort = stream.runStatus === "running" || stream.runStatus === "pending";
 
   return (
@@ -83,7 +88,9 @@ export const RunDetailPage = () => {
         <div>
           <span className="eyebrow">Run detail</span>
           <h1>{run.patch_id}</h1>
-          <p>Target {run.target_id} · duration {duration}</p>
+          <p>
+            Target {run.target_id} · duration {duration}
+          </p>
         </div>
         <div className="row-actions">
           <StatusBadge status={stream.runStatus} />
@@ -99,7 +106,12 @@ export const RunDetailPage = () => {
               Abort
             </button>
           ) : null}
-          <button className="button button--secondary" type="button" onClick={downloadLog} disabled={stream.logLines.length === 0}>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={downloadLog}
+            disabled={stream.logLines.length === 0}
+          >
             <Icon source={DownloadIcon} size={16} />
             Download log
           </button>
@@ -126,7 +138,9 @@ export const RunDetailPage = () => {
         <LogViewer lines={stream.logLines} />
       </section>
 
-      {canViewAudit ? <ActivitySection events={activity} isLoading={activityLoading} empty="No audit events recorded for this run." /> : null}
+      {canViewAudit ? (
+        <ActivitySection events={activity} isLoading={activityLoading} empty="No audit events recorded for this run." />
+      ) : null}
     </section>
   );
 };

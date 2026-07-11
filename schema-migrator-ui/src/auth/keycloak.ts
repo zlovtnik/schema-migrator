@@ -1,13 +1,19 @@
 import Keycloak from "keycloak-js";
 import { getAuthToken, setAuthToken, setAuthTokenProvider } from "../api/client";
+import { runtimeConfig } from "../runtimeConfig";
 
 const trim = (value: string | undefined): string => value?.trim() || "";
 
-const keycloakUrl = trim(import.meta.env.VITE_KEYCLOAK_URL);
-const keycloakRealm = trim(import.meta.env.VITE_KEYCLOAK_REALM);
-const keycloakClientId = trim(import.meta.env.VITE_KEYCLOAK_CLIENT_ID);
-const configuredRedirectUri = trim(import.meta.env.VITE_KEYCLOAK_REDIRECT_URI);
-const directAccessGrantsEnabled = trim(import.meta.env.VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS) === "true";
+const env = (key: string): string | undefined => {
+  const viteEnv = import.meta.env as Record<string, string | undefined>;
+  return runtimeConfig(key) || viteEnv[key];
+};
+
+const keycloakUrl = trim(env("VITE_KEYCLOAK_URL"));
+const keycloakRealm = trim(env("VITE_KEYCLOAK_REALM"));
+const keycloakClientId = trim(env("VITE_KEYCLOAK_CLIENT_ID"));
+const configuredRedirectUri = trim(env("VITE_KEYCLOAK_REDIRECT_URI"));
+const directAccessGrantsEnabled = trim(env("VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS")) === "true";
 const PasswordTokenRefreshSkewMs = 30_000;
 
 export const isKeycloakConfigured = (): boolean => Boolean(keycloakUrl && keycloakRealm && keycloakClientId);
@@ -16,8 +22,9 @@ export const keycloakRedirectUri = (): string => configuredRedirectUri || `${win
 
 export const keycloakLoginUri = (): string => `${window.location.origin}/login`;
 
-export const keycloak =
-  isKeycloakConfigured() ? new Keycloak({ url: keycloakUrl, realm: keycloakRealm, clientId: keycloakClientId }) : undefined;
+export const keycloak = isKeycloakConfigured()
+  ? new Keycloak({ url: keycloakUrl, realm: keycloakRealm, clientId: keycloakClientId })
+  : undefined;
 
 let initPromise: Promise<boolean> | undefined;
 let refreshPromise: Promise<string> | undefined;
@@ -30,7 +37,8 @@ const syncToken = (): string => {
   return token;
 };
 
-const tokenEndpoint = (): string => `${keycloakUrl}/realms/${encodeURIComponent(keycloakRealm)}/protocol/openid-connect/token`;
+const tokenEndpoint = (): string =>
+  `${keycloakUrl}/realms/${encodeURIComponent(keycloakRealm)}/protocol/openid-connect/token`;
 
 type TokenResponse = {
   access_token?: string;
@@ -139,7 +147,9 @@ export const loginWithCredentials = async (username: string, password: string): 
     throw new Error("Keycloak is not configured");
   }
   if (!directAccessGrantsEnabled) {
-    throw new Error("Username/password sign-in requires VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS=true and Keycloak direct access grants enabled");
+    throw new Error(
+      "Username/password sign-in requires VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS=true and Keycloak direct access grants enabled"
+    );
   }
 
   const body = new URLSearchParams({

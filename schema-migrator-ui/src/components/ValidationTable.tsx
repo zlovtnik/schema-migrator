@@ -11,7 +11,7 @@ interface ValidationTableProps {
 type ValidationRow = InvalidObject & { key: string };
 
 const csvNeutralize = (value: string) => (/^[=+\-@]/.test(value) ? `'${value}` : value);
-const csvEscape = (value: string) => `"${csvNeutralize(value).replace(/"/g, "\"\"")}"`;
+const csvEscape = (value: string) => `"${csvNeutralize(value).replace(/"/g, '""')}"`;
 
 export const ValidationTable = ({ result }: ValidationTableProps) => {
   const [filter, setFilter] = useState<ObjectType | "all">("all");
@@ -71,17 +71,25 @@ export const ValidationTable = ({ result }: ValidationTableProps) => {
           <thead>
             <tr>
               <th aria-sort={sortKey === "object_type" ? "ascending" : undefined} scope="col">
-                <button type="button" onClick={() => setSortKey("object_type")}>Object type</button>
+                <button type="button" onClick={() => setSortKey("object_type")}>
+                  Object type
+                </button>
               </th>
               <th aria-sort={sortKey === "schema" ? "ascending" : undefined} scope="col">
-                <button type="button" onClick={() => setSortKey("schema")}>Schema</button>
+                <button type="button" onClick={() => setSortKey("schema")}>
+                  Schema
+                </button>
               </th>
               <th aria-sort={sortKey === "name" ? "ascending" : undefined} scope="col">
-                <button type="button" onClick={() => setSortKey("name")}>Name</button>
+                <button type="button" onClick={() => setSortKey("name")}>
+                  Name
+                </button>
               </th>
               <th scope="col">Error</th>
               <th aria-sort={sortKey === "severity" ? "ascending" : undefined} scope="col">
-                <button type="button" onClick={() => setSortKey("severity")}>Severity</button>
+                <button type="button" onClick={() => setSortKey("severity")}>
+                  Severity
+                </button>
               </th>
             </tr>
           </thead>

@@ -43,7 +43,8 @@ export const TargetListPage = () => {
   const inSettings = location.pathname.startsWith("/settings");
 
   const activeRunTargetIds = useMemo(
-    () => new Set(runs.filter((run) => run.status === "running" || run.status === "pending").map((run) => run.target_id)),
+    () =>
+      new Set(runs.filter((run) => run.status === "running" || run.status === "pending").map((run) => run.target_id)),
     [runs]
   );
 
@@ -121,7 +122,14 @@ export const TargetListPage = () => {
   };
 
   const confirmDelete = () => {
-    if (!canManageTargets || !targetToDelete || runsError || !runsLoaded || runsLoading || activeRunTargetIds.has(targetToDelete.id)) {
+    if (
+      !canManageTargets ||
+      !targetToDelete ||
+      runsError ||
+      !runsLoaded ||
+      runsLoading ||
+      activeRunTargetIds.has(targetToDelete.id)
+    ) {
       return;
     }
     deleteTarget.mutate(targetToDelete.id, {
@@ -229,12 +237,12 @@ export const TargetListPage = () => {
                             !canManageTargets
                               ? "Admin role required to delete targets"
                               : runsError
-                              ? "Delete disabled until run state reloads"
-                              : runsUnavailable
-                              ? "Delete disabled until run state loads"
-                              : hasActiveRuns
-                                ? "Delete disabled while active runs exist"
-                                : undefined
+                                ? "Delete disabled until run state reloads"
+                                : runsUnavailable
+                                  ? "Delete disabled until run state loads"
+                                  : hasActiveRuns
+                                    ? "Delete disabled while active runs exist"
+                                    : undefined
                           }
                         >
                           <Icon source={TrashIcon} size={16} label={`Delete ${target.label}`} />

@@ -44,7 +44,7 @@ object RunRoutes:
     HttpRoutes.of[IO] {
       case request @ POST -> Root / "runs" =>
         AuthContext.requireRole(request, UserRole.Operator) { claims =>
-          request.as[TriggerRunPayload].flatMap { payload =>
+          RouteJson.withJson[TriggerRunPayload](request, "invalid run payload") { payload =>
             (targetStore.getStored(payload.target_id), patchStore.get(payload.patch_id)).tupled.flatMap {
               case (None, _) => RouteJson.notFound(s"target '${payload.target_id}' was not found")
               case (_, None) => RouteJson.notFound(s"patch '${payload.patch_id}' was not found")
@@ -100,10 +100,9 @@ object RunRoutes:
         }
 
       case GET -> Root / "runs" / id =>
-        runStore.get(id).flatMap {
-          case Some(run) => RouteJson.ok(run.asJson)
-          case None => RouteJson.notFound(s"run '$id' was not found")
-        }
+        runStore
+          .get(id)
+          .flatMap(run => RouteJson.fromOption(run, s"run '$id' was not found")(run => RouteJson.ok(run.asJson)))
 
       case request @ POST -> Root / "runs" / id / "abort" =>
         AuthContext.requireRole(request, UserRole.Operator) { claims =>

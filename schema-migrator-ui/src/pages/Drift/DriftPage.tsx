@@ -30,7 +30,7 @@ export const DriftPage = () => {
   const [textFilter, setTextFilter] = useState("");
   const [driftFilter, setDriftFilter] = useState<DriftFilter>("all");
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const [startingSource, setStartingSource] = useState<string | "all" | null>(null);
+  const [startingSource, setStartingSource] = useState<string | null>(null);
 
   const textFilteredItems = useMemo(() => {
     const query = textFilter.trim().toLowerCase();
@@ -51,10 +51,7 @@ export const DriftPage = () => {
 
   const driftCounts = useMemo(() => countByDriftType(textFilteredItems), [textFilteredItems]);
   const executableSourceFiles = useMemo(() => uniqueSourceFiles(data?.items ?? []), [data?.items]);
-  const selectedItem = useMemo(
-    () => items.find((item) => driftItemKey(item) === openKey) ?? null,
-    [items, openKey]
-  );
+  const selectedItem = useMemo(() => items.find((item) => driftItemKey(item) === openKey) ?? null, [items, openKey]);
   const hasSelectedTarget = Boolean(selectedTarget);
   const isRunning = hasSelectedTarget && runs.some((run) => run.status === "running" || run.status === "pending");
   const runDisabledReason = (() => {
@@ -109,7 +106,9 @@ export const DriftPage = () => {
             <button
               aria-controls={driftDetailId(item)}
               aria-expanded={isOpen}
-              className={isOpen ? "link-button link-button--active drift-object-button" : "link-button drift-object-button"}
+              className={
+                isOpen ? "link-button link-button--active drift-object-button" : "link-button drift-object-button"
+              }
               title={item.name}
               type="button"
               onClick={() => openDriftDetail(item)}
@@ -150,7 +149,8 @@ export const DriftPage = () => {
         header: "Source",
         className: "drift-table__source",
         sortValue: (item) => item.source_file ?? "",
-        cell: (item) => item.source_file ? <code>{item.source_file}</code> : <span className="cell-subtle">Live catalog</span>
+        cell: (item) =>
+          item.source_file ? <code>{item.source_file}</code> : <span className="cell-subtle">Live catalog</span>
       },
       {
         id: "detected",
@@ -197,7 +197,10 @@ export const DriftPage = () => {
               className="button button--primary"
               type="button"
               disabled={Boolean(runDisabledReason) || executableSourceFiles.length === 0}
-              title={runDisabledReason ?? (executableSourceFiles.length === 0 ? "No executable drift items are available" : undefined)}
+              title={
+                runDisabledReason ??
+                (executableSourceFiles.length === 0 ? "No executable drift items are available" : undefined)
+              }
               onClick={() => startDriftRun()}
             >
               <Icon source={PlayIcon} size={16} weight="fill" />
@@ -219,8 +222,12 @@ export const DriftPage = () => {
           Drift execution is disabled by failed run {failedRun?.id}. Resolve it before starting another run.
         </div>
       ) : null}
-      {isRunning ? <div className="status-banner">Drift execution is disabled while this target has an active run.</div> : null}
-      {hasSelectedTarget && !canMutate ? <div className="status-banner">Viewer role cannot start drift runs.</div> : null}
+      {isRunning ? (
+        <div className="status-banner">Drift execution is disabled while this target has an active run.</div>
+      ) : null}
+      {hasSelectedTarget && !canMutate ? (
+        <div className="status-banner">Viewer role cannot start drift runs.</div>
+      ) : null}
 
       {!selectedTarget ? (
         <EmptyState icon={<Icon source={ShieldCheckIcon} size={24} />} title="Select a target">
@@ -252,7 +259,11 @@ export const DriftPage = () => {
 
       {data?.supported ? (
         <div className="drift-page-stack">
-          <ControlSummaryPanel checkedAt={data.checked_at} driftCount={data.items.length} summary={data.control_summary} />
+          <ControlSummaryPanel
+            checkedAt={data.checked_at}
+            driftCount={data.items.length}
+            summary={data.control_summary}
+          />
           {data.items.length === 0 ? (
             <EmptyState icon={<Icon source={ShieldCheckIcon} size={24} />} title="No drift detected">
               All returned objects match the available manifest and schema-control state.
@@ -297,7 +308,9 @@ export const DriftPage = () => {
               <div className="drift-section-header">
                 <div>
                   <h2 className="drift-section-header__title">Object Drift Status</h2>
-                  <p className="drift-section-header__description">Detailed view of all database objects and their drift status</p>
+                  <p className="drift-section-header__description">
+                    Detailed view of all database objects and their drift status
+                  </p>
                 </div>
               </div>
               <DataTable
@@ -323,7 +336,9 @@ const DriftDetail = ({ item }: { item: DriftItem }) => (
       <span className="drift-detail__title">
         <StatusBadge status={item.drift_type} />
         <strong id={`${driftDetailId(item)}-title`}>
-          <code>{item.schema}.{item.name}</code>
+          <code>
+            {item.schema}.{item.name}
+          </code>
         </strong>
       </span>
       <span className="drift-detail__meta">{formatLabel(item.object_type)}</span>
@@ -381,11 +396,15 @@ const ControlSummaryPanel = ({
       <dl className="control-summary__timestamps">
         <div>
           <dt>Last applied</dt>
-          <dd>{formatOptionalDate(summary.last_applied_at, { emptyLabel: "Not recorded", invalidLabel: "Invalid Date" })}</dd>
+          <dd>
+            {formatOptionalDate(summary.last_applied_at, { emptyLabel: "Not recorded", invalidLabel: "Invalid Date" })}
+          </dd>
         </div>
         <div>
           <dt>Last updated</dt>
-          <dd>{formatOptionalDate(summary.last_updated_at, { emptyLabel: "Not recorded", invalidLabel: "Invalid Date" })}</dd>
+          <dd>
+            {formatOptionalDate(summary.last_updated_at, { emptyLabel: "Not recorded", invalidLabel: "Invalid Date" })}
+          </dd>
         </div>
         <div>
           <dt>Last checked</dt>
@@ -393,7 +412,9 @@ const ControlSummaryPanel = ({
         </div>
         <div>
           <dt>Drift detected</dt>
-          <dd>{driftCount} {driftCount === 1 ? "object" : "objects"}</dd>
+          <dd>
+            {driftCount} {driftCount === 1 ? "object" : "objects"}
+          </dd>
         </div>
       </dl>
       {summary.failed_objects.length ? (
@@ -443,6 +464,6 @@ const countByDriftType = (items: DriftItem[]): Map<DriftType, number> => {
 };
 
 const uniqueSourceFiles = (items: DriftItem[]): string[] =>
-  Array.from(new Set(items.flatMap((item) => item.source_file?.trim() ? [item.source_file.trim()] : [])));
+  Array.from(new Set(items.flatMap((item) => (item.source_file?.trim() ? [item.source_file.trim()] : []))));
 
 const driftRowClass = (item: DriftItem): string => `row--drift row--drift-${item.drift_type}`;

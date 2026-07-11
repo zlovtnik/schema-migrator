@@ -79,7 +79,10 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
 
     assertEquals(
       routineDefinitions(sql).map(_.key),
-      List(ObjectKey("coordinator", "safe_int(text)", "function"), ObjectKey("coordinator", "safe_bool(text)", "function"))
+      List(
+        ObjectKey("coordinator", "safe_int(text)", "function"),
+        ObjectKey("coordinator", "safe_bool(text)", "function")
+      )
     )
   }
 
@@ -104,8 +107,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         kind = "function",
         objectName = "coordinator.safe helpers",
         sourceFile = "functions/002_coordinator_safe_helpers.sql",
-        rawSql =
-          """-- object: coordinator.safe helpers
+        rawSql = """-- object: coordinator.safe helpers
             |create or replace function coordinator.safe_int(p_value text)
             |returns integer language sql as $$ select p_value::integer $$;
             |
@@ -117,7 +119,10 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
 
     assertEquals(
       expected.map(_.key),
-      List(ObjectKey("coordinator", "safe_int(text)", "function"), ObjectKey("coordinator", "safe_bool(text)", "function"))
+      List(
+        ObjectKey("coordinator", "safe_int(text)", "function"),
+        ObjectKey("coordinator", "safe_bool(text)", "function")
+      )
     )
   }
 
@@ -127,8 +132,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         kind = "index",
         objectName = "sync plane indexes",
         sourceFile = "indexes/001_sync_events_indexes.sql",
-        rawSql =
-          """-- object: sync plane indexes
+        rawSql = """-- object: sync plane indexes
             |create index if not exists sync_events_status_idx on sync_events (status, observed_at);
             |create unique index if not exists wireless_authorized_networks_match_idx
             |  on wireless_authorized_networks (coalesce(lower(ssid), ''));
@@ -151,8 +155,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         kind = "extension",
         objectName = "extensions",
         sourceFile = "extensions/001_extensions.sql",
-        rawSql =
-          """-- object: extensions
+        rawSql = """-- object: extensions
             |create extension if not exists pg_trgm;
             |create extension if not exists vector;
             |
@@ -178,8 +181,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         kind = "view",
         objectName = "v_wireless_session_timeline override",
         sourceFile = "views/999_v_wireless_session_timeline_override.sql",
-        rawSql =
-          """-- object: v_wireless_session_timeline override
+        rawSql = """-- object: v_wireless_session_timeline override
             |create or replace view v_wireless_session_timeline as
             |select 1 as id;
             |""".stripMargin
@@ -195,8 +197,7 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         kind = "sql_file",
         objectName = "mixed ddl",
         sourceFile = "mixed/001_catalog_objects.sql",
-        rawSql =
-          """create schema if not exists coordinator;
+        rawSql = """create schema if not exists coordinator;
             |create table if not exists public.sync_events (id bigint primary key);
             |create materialized view mv_ap_risk_score as select 1 as score;
             |create trigger vec_alert_reembed after insert on vec_alerts
@@ -223,10 +224,23 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         |  add column if not exists max_attempts integer not null default 5;
         |""".stripMargin
     val expected = expectedFromManifest(
-      schemaObject("table", "device_graph_workmap_hardening_columns", "tables/031_device_graph_workmap_hardening.sql", sql)
+      schemaObject(
+        "table",
+        "device_graph_workmap_hardening_columns",
+        "tables/031_device_graph_workmap_hardening.sql",
+        sql
+      )
     )
     val control = controlSnapshot(
-      List(controlRow("table", "device_graph_workmap_hardening_columns", "tables/031_device_graph_workmap_hardening.sql", "skipped", Some(sql)))
+      List(
+        controlRow(
+          "table",
+          "device_graph_workmap_hardening_columns",
+          "tables/031_device_graph_workmap_hardening.sql",
+          "skipped",
+          Some(sql)
+        )
+      )
     )
 
     assertEquals(expected, Nil)
@@ -350,7 +364,12 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     val key = ObjectKey("public", "sync_stable_uuid(text)", "function")
 
     assertEquals(
-      driftItems(now, List(expected(key, expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
+      driftItems(
+        now,
+        List(expected(key, expectedDdl = Some(expectedSql))),
+        List(LiveObject(key, Some(actualSql))),
+        ControlSnapshot(Nil, None, Nil)
+      ),
       Nil
     )
   }
@@ -429,7 +448,12 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     val key = ObjectKey("coordinator", "list_pending_backlog()", "function")
 
     assertEquals(
-      driftItems(now, List(expected(key, expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
+      driftItems(
+        now,
+        List(expected(key, expectedDdl = Some(expectedSql))),
+        List(LiveObject(key, Some(actualSql))),
+        ControlSnapshot(Nil, None, Nil)
+      ),
       Nil
     )
   }
@@ -444,11 +468,24 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     )
     val actualSql = expectedObjects.head.expectedDdl.getOrElse(sql)
     val control = controlSnapshot(
-      List(controlRow("function", "coordinator.ensure_cursor", "functions/020_coordinator_ensure_cursor.sql", "applied", Some(sql)))
+      List(
+        controlRow(
+          "function",
+          "coordinator.ensure_cursor",
+          "functions/020_coordinator_ensure_cursor.sql",
+          "applied",
+          Some(sql)
+        )
+      )
     )
 
     assertEquals(
-      driftItems(now, expectedObjects, List(LiveObject(ObjectKey("coordinator", "ensure_cursor(text)", "function"), Some(actualSql))), control),
+      driftItems(
+        now,
+        expectedObjects,
+        List(LiveObject(ObjectKey("coordinator", "ensure_cursor(text)", "function"), Some(actualSql))),
+        control
+      ),
       Nil
     )
   }
@@ -487,7 +524,11 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     )
     val actualObjects = List(
       LiveObject(
-        ObjectKey("public", "vec_build_baseline_profiles(timestamp with time zone, timestamp with time zone, interval)", "function"),
+        ObjectKey(
+          "public",
+          "vec_build_baseline_profiles(timestamp with time zone, timestamp with time zone, interval)",
+          "function"
+        ),
         Some(actualSql)
       )
     )
@@ -509,7 +550,12 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         |as $$ begin return p_batch_size; end; $$;
         |""".stripMargin
     val expectedObjects = expectedFromManifest(
-      schemaObject("function", "coordinator.process_ingest_ledger", "functions/023_coordinator_process_ingest_ledger.sql", sql)
+      schemaObject(
+        "function",
+        "coordinator.process_ingest_ledger",
+        "functions/023_coordinator_process_ingest_ledger.sql",
+        sql
+      )
     )
     val key = ObjectKey("coordinator", "process_ingest_ledger(text[], text[], integer, integer, integer)", "function")
 
@@ -545,7 +591,12 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     val key = ObjectKey("public", "demo_compare(integer)", "function")
 
     assertEquals(
-      driftItems(now, List(expected(key, expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
+      driftItems(
+        now,
+        List(expected(key, expectedDdl = Some(expectedSql))),
+        List(LiveObject(key, Some(actualSql))),
+        ControlSnapshot(Nil, None, Nil)
+      ),
       Nil
     )
   }
@@ -602,7 +653,10 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         |$function$
         |""".stripMargin
     val expectedObjects = List(
-      expected(ObjectKey("coordinator", "ensure_cursor(text, text)", "function"), expectedDdl = Some(ensureExpectedSql)),
+      expected(
+        ObjectKey("coordinator", "ensure_cursor(text, text)", "function"),
+        expectedDdl = Some(ensureExpectedSql)
+      ),
       expected(
         ObjectKey("coordinator", "list_wireless_payload_archive_candidates(integer, integer)", "function"),
         expectedDdl = Some(archiveExpectedSql)
@@ -625,7 +679,15 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         |returns text language sql as $$ select p_stream_name $$;
         |""".stripMargin
     val control = controlSnapshot(
-      List(controlRow("function", "coordinator.ensure_cursor", "functions/020_coordinator_ensure_cursor.sql", "applied", Some(sql)))
+      List(
+        controlRow(
+          "function",
+          "coordinator.ensure_cursor",
+          "functions/020_coordinator_ensure_cursor.sql",
+          "applied",
+          Some(sql)
+        )
+      )
     )
     val actualSql = control.objects.head.expectedDdl.getOrElse(sql)
 
@@ -666,7 +728,12 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     val key = ObjectKey("public", "sync_events_expanded", "view")
 
     assertEquals(
-      driftItems(now, List(expected(key, sourceFile = "views/001_sync_events_expanded.sql", expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
+      driftItems(
+        now,
+        List(expected(key, sourceFile = "views/001_sync_events_expanded.sql", expectedDdl = Some(expectedSql))),
+        List(LiveObject(key, Some(actualSql))),
+        ControlSnapshot(Nil, None, Nil)
+      ),
       Nil
     )
   }
@@ -684,7 +751,14 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     val key = ObjectKey("public", "mv_ap_risk_score", "materialized_view")
 
     assertEquals(
-      driftItems(now, List(expected(key, sourceFile = "materialized_views/001_mv_ap_risk_score.sql", expectedDdl = Some(expectedSql))), List(LiveObject(key, Some(actualSql))), ControlSnapshot(Nil, None, Nil)),
+      driftItems(
+        now,
+        List(
+          expected(key, sourceFile = "materialized_views/001_mv_ap_risk_score.sql", expectedDdl = Some(expectedSql))
+        ),
+        List(LiveObject(key, Some(actualSql))),
+        ControlSnapshot(Nil, None, Nil)
+      ),
       Nil
     )
   }
@@ -694,9 +768,21 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     val materializedViewKey = ObjectKey("public", "mv_ap_risk_score", "materialized_view")
     val indexKey = ObjectKey("public", "sync_events_status_idx", "index")
     val expectedObjects = List(
-      expected(viewKey, sourceFile = "views/001_sync_events_expanded.sql", expectedDdl = Some("create view sync_events_expanded as select 1 as id;")),
-      expected(materializedViewKey, sourceFile = "materialized_views/001_mv_ap_risk_score.sql", expectedDdl = Some("create materialized view mv_ap_risk_score as select 1 as score;")),
-      expected(indexKey, sourceFile = "indexes/001_sync_events_indexes.sql", expectedDdl = Some("create index if not exists sync_events_status_idx on sync_events (status);"))
+      expected(
+        viewKey,
+        sourceFile = "views/001_sync_events_expanded.sql",
+        expectedDdl = Some("create view sync_events_expanded as select 1 as id;")
+      ),
+      expected(
+        materializedViewKey,
+        sourceFile = "materialized_views/001_mv_ap_risk_score.sql",
+        expectedDdl = Some("create materialized view mv_ap_risk_score as select 1 as score;")
+      ),
+      expected(
+        indexKey,
+        sourceFile = "indexes/001_sync_events_indexes.sql",
+        expectedDdl = Some("create index if not exists sync_events_status_idx on sync_events (status);")
+      )
     )
     val actualObjects = List(
       LiveObject(viewKey, Some("create view public.sync_events_expanded as select 2 as id;")),
@@ -707,14 +793,24 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     val drift = driftItems(now, expectedObjects, actualObjects, ControlSnapshot(Nil, None, Nil))
     val catalog = mergeCatalog(now, expectedObjects, actualObjects, ControlSnapshot(Nil, None, Nil))
 
-    assertEquals(drift.map(item => (item.object_type, item.drift_type)), List(("index", "definition_changed"), ("materialized_view", "definition_changed"), ("view", "definition_changed")))
-    assertEquals(catalog.map(item => (item.object_type, item.status)), List(("index", "drift_detected"), ("materialized_view", "drift_detected"), ("view", "drift_detected")))
+    assertEquals(
+      drift.map(item => (item.object_type, item.drift_type)),
+      List(("index", "definition_changed"), ("materialized_view", "definition_changed"), ("view", "definition_changed"))
+    )
+    assertEquals(
+      catalog.map(item => (item.object_type, item.status)),
+      List(("index", "drift_detected"), ("materialized_view", "drift_detected"), ("view", "drift_detected"))
+    )
   }
 
   test("matching idempotent btree index definitions do not report definition drift") {
     val indexKey = ObjectKey("public", "sync_events_status_idx", "index")
     val expectedObjects = List(
-      expected(indexKey, sourceFile = "indexes/001_sync_events_indexes.sql", expectedDdl = Some("create index if not exists sync_events_status_idx on sync_events (status);"))
+      expected(
+        indexKey,
+        sourceFile = "indexes/001_sync_events_indexes.sql",
+        expectedDdl = Some("create index if not exists sync_events_status_idx on sync_events (status);")
+      )
     )
     val actualObjects = List(
       LiveObject(indexKey, Some("CREATE INDEX sync_events_status_idx ON public.sync_events USING btree (status)"))
@@ -730,22 +826,44 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
   test("known built-in untracked catalog objects are hidden while user objects remain visible") {
     val actualObjects = List(
       LiveObject(ObjectKey("public", "public", "schema"), Some("create schema public")),
-      LiveObject(ObjectKey("public", "pg_stat_statements", "extension"), Some("create extension if not exists pg_stat_statements")),
-      LiveObject(ObjectKey("cron", "job.cron_job_cache_invalidate", "trigger"), Some("CREATE TRIGGER cron_job_cache_invalidate")),
-      LiveObject(ObjectKey("public", "custom_live_only", "view"), Some("create view custom_live_only as select 1 as id"))
+      LiveObject(
+        ObjectKey("public", "pg_stat_statements", "extension"),
+        Some("create extension if not exists pg_stat_statements")
+      ),
+      LiveObject(
+        ObjectKey("cron", "job.cron_job_cache_invalidate", "trigger"),
+        Some("CREATE TRIGGER cron_job_cache_invalidate")
+      ),
+      LiveObject(
+        ObjectKey("public", "custom_live_only", "view"),
+        Some("create view custom_live_only as select 1 as id")
+      )
     )
 
     val items = driftItems(now, Nil, actualObjects, ControlSnapshot(Nil, None, Nil))
 
-    assertEquals(items.map(item => (item.schema, item.object_type, item.name, item.drift_type)), List(("public", "view", "custom_live_only", "untracked_actual")))
+    assertEquals(
+      items.map(item => (item.schema, item.object_type, item.name, item.drift_type)),
+      List(("public", "view", "custom_live_only", "untracked_actual"))
+    )
   }
 
   test("pending and failed control rows take precedence over definition drift") {
-    val expectedSql = "create or replace function coordinator.ensure_cursor(p_stream_name text) returns text language sql as $$ select 'expected' $$;"
-    val actualSql = "create or replace function coordinator.ensure_cursor(p_stream_name text) returns text language sql as $$ select 'actual' $$;"
+    val expectedSql =
+      "create or replace function coordinator.ensure_cursor(p_stream_name text) returns text language sql as $$ select 'expected' $$;"
+    val actualSql =
+      "create or replace function coordinator.ensure_cursor(p_stream_name text) returns text language sql as $$ select 'actual' $$;"
     val key = ObjectKey("coordinator", "ensure_cursor(text)", "function")
     val control = controlSnapshot(
-      List(controlRow("function", "coordinator.ensure_cursor", "functions/020_coordinator_ensure_cursor.sql", "pending", Some(expectedSql)))
+      List(
+        controlRow(
+          "function",
+          "coordinator.ensure_cursor",
+          "functions/020_coordinator_ensure_cursor.sql",
+          "pending",
+          Some(expectedSql)
+        )
+      )
     )
 
     val items = driftItems(

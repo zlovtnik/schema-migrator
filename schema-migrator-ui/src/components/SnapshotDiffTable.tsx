@@ -24,13 +24,23 @@ const columns: DataTableColumn<SnapshotDiffItem>[] = [
     id: "before",
     header: "Base SHA-256",
     sortValue: (item) => item.before_sha256 ?? "",
-    cell: (item) => (item.before_sha256 ? <code title={item.before_sha256}>{item.before_sha256}</code> : <span className="cell-subtle">None</span>)
+    cell: (item) =>
+      item.before_sha256 ? (
+        <code title={item.before_sha256}>{item.before_sha256}</code>
+      ) : (
+        <span className="cell-subtle">None</span>
+      )
   },
   {
     id: "after",
     header: "Compare SHA-256",
     sortValue: (item) => item.after_sha256 ?? "",
-    cell: (item) => (item.after_sha256 ? <code title={item.after_sha256}>{item.after_sha256}</code> : <span className="cell-subtle">None</span>)
+    cell: (item) =>
+      item.after_sha256 ? (
+        <code title={item.after_sha256}>{item.after_sha256}</code>
+      ) : (
+        <span className="cell-subtle">None</span>
+      )
   }
 ];
 

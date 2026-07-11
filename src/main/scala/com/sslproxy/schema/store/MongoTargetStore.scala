@@ -88,13 +88,14 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
           val password = payload.password.filter(_.nonEmpty)
 
           val passwordUpdateIO = password match
-            case Some(value) => passwordCrypto.encrypt(value).map { encrypted =>
-              Updates.combine(
-                update,
-                Updates.set("password_ciphertext", encrypted.cipherTextBase64),
-                Updates.set("password_iv", encrypted.ivBase64)
-              )
-            }
+            case Some(value) =>
+              passwordCrypto.encrypt(value).map { encrypted =>
+                Updates.combine(
+                  update,
+                  Updates.set("password_ciphertext", encrypted.cipherTextBase64),
+                  Updates.set("password_iv", encrypted.ivBase64)
+                )
+              }
             case None => IO.pure(update)
 
           passwordUpdateIO.flatMap { passwordUpdate =>
@@ -167,12 +168,10 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
     )
 
   private def requiredString(document: Document, field: String): String =
-    Option(document.getString(field))
-      .filter(_.nonEmpty)
-      .getOrElse(throw IllegalStateException(s"target document is missing required field '$field'"))
+    MongoDocument.requiredString(document, field, "target")
 
   private def optionalString(document: Document, field: String): Option[String] =
-    Option(document.getString(field)).filter(_.nonEmpty)
+    MongoDocument.optionalString(document, field)
 
   private def idFilter(id: String): Document =
     new Document("_id", id)

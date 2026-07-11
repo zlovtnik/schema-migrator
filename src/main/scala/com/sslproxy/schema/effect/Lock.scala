@@ -2,7 +2,7 @@ package com.sslproxy.schema.effect
 
 import cats.effect.Sync
 import cats.syntax.all.*
-import com.sslproxy.schema.error.MigratorError
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 /** [[Lock]] algebras encapsulate the acquire/use/release lifecycle
   * of a distributed mutex, lifting the pattern used by
@@ -26,12 +26,13 @@ object Lock:
   def fromAcquireRelease[F[_]: Sync](acquire: F[Unit], release: F[Unit]): Lock[F] =
     new Lock[F]:
       private val F = Sync[F]
+      private val logger = Slf4jLogger.getLogger[F]
 
       def withLock[A](fa: F[A]): F[A] =
         F.bracket(acquire)(_ => fa)(_ => release.handleErrorWith(ignore))
 
       private def ignore(error: Throwable): F[Unit] =
-        F.delay(System.err.println(s"warning: schema lock release failed: ${error.getMessage}"))
+        logger.warn(error)("schema lock release failed")
 
   /** A no-op lock — the identity effect. */
   def none[F[_]]: Lock[F] =

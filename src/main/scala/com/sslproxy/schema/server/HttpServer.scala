@@ -21,13 +21,17 @@ import com.sslproxy.schema.store.{
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.server.Router
+import org.typelevel.log4cats.LoggerFactory
+import org.typelevel.log4cats.slf4j.Slf4jFactory
 
 object HttpServer:
+  private given LoggerFactory[IO] = Slf4jFactory.create[IO]
+  private val logger = LoggerFactory[IO].getLogger
+
   def serve(config: MigratorConfig): IO[Unit] =
     serverResource(config).use(_ =>
-      IO.println(
-        s"schema-migrator API listening on http://${config.server.host}:${config.server.port}/api"
-      ) *> IO.never
+      logger.info(s"schema-migrator API listening on http://${config.server.host}:${config.server.port}/api") *>
+        IO.never
     )
 
   private def serverResource(config: MigratorConfig): Resource[IO, org.http4s.server.Server] =

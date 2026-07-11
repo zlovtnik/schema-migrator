@@ -2,7 +2,15 @@ package com.sslproxy.schema.discovery
 
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
-import com.sslproxy.schema.store.{RepoSyncState, RepoSyncStore, SqlFileStore, StoredSqlFile, Target, TargetPayload, TargetStore}
+import com.sslproxy.schema.store.{
+  RepoSyncState,
+  RepoSyncStore,
+  SqlFileStore,
+  StoredSqlFile,
+  Target,
+  TargetPayload,
+  TargetStore
+}
 import munit.FunSuite
 import org.eclipse.jgit.api.Git
 
@@ -16,21 +24,26 @@ class RepoSyncServiceSuite extends FunSuite:
     try
       initRepo(repo, "select 1;")
       val payload = TargetPayload(
-        label = "Target", app_name = "app", env = "dev",
+        label = "Target",
+        app_name = "app",
+        env = "dev",
         jdbc_url = "jdbc:postgresql://localhost:5432/app?user=app",
-        password = None, repo_url = repo.toString,
-        repo_branch = "main", repo_sql_path = "sql"
+        password = None,
+        repo_url = repo.toString,
+        repo_branch = "main",
+        repo_sql_path = "sql"
       )
       val io = SqlFileStore.inMemory.flatMap { sqlStore =>
         RepoSyncStore.inMemory.flatMap { syncStore =>
           TargetStore.inMemory.flatMap { targetStore =>
-            targetStore.create(payload).flatMap { _ =>
+            targetStore.create(payload).flatMap { createdTarget =>
+              val storedTarget = target(repo).copy(id = createdTarget.id)
               val service = RepoSyncService(sqlStore, syncStore, GitRepoLoader(), cache, 30, targetStore)
-              service.sync("target-1", target(repo)).flatMap { first =>
-                service.sync("target-1", target(repo)).flatMap { second =>
-                  sqlStore.list("target-1").flatMap { files =>
-                    syncStore.getSyncState("target-1").flatMap { state =>
-                      targetStore.get("target-1").map { targetAfter =>
+              service.sync(createdTarget.id, storedTarget).flatMap { first =>
+                service.sync(createdTarget.id, storedTarget).flatMap { second =>
+                  sqlStore.list(createdTarget.id).flatMap { files =>
+                    syncStore.getSyncState(createdTarget.id).flatMap { state =>
+                      targetStore.get(createdTarget.id).map { targetAfter =>
                         (first, second, files, state, targetAfter)
                       }
                     }

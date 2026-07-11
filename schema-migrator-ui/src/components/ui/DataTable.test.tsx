@@ -20,7 +20,18 @@ const columns: DataTableColumn<Row>[] = [
 
 describe("DataTable", () => {
   it("renders a semantic table and sorts rows from a header button", () => {
-    renderApp(<DataTable caption="Objects" columns={columns} rows={[{ id: "2", name: "beta" }, { id: "1", name: "alpha" }]} rowKey={(row) => row.id} empty="Empty" />);
+    renderApp(
+      <DataTable
+        caption="Objects"
+        columns={columns}
+        rows={[
+          { id: "2", name: "beta" },
+          { id: "1", name: "alpha" }
+        ]}
+        rowKey={(row) => row.id}
+        empty="Empty"
+      />
+    );
 
     expect(screen.getByRole("table", { name: "Objects" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Name" }));

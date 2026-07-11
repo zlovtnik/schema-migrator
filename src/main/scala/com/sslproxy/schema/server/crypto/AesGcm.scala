@@ -9,6 +9,11 @@ import javax.crypto.Cipher
 import javax.crypto.spec.{GCMParameterSpec, SecretKeySpec}
 
 object AesGcm:
+  final case class Envelope(dataBase64: String, ivBase64: String, keyVersion: String)
+  final case class KeyRing(currentVersion: String, currentKey: SecretKeySpec, previousKeys: Map[String, SecretKeySpec]):
+    def key(version: String): Option[SecretKeySpec] =
+      Option.when(version == currentVersion)(currentKey).orElse(previousKeys.get(version))
+
   private val keyBytes = 32
   private val ivBytes = 12
   private val tagBits = 128
@@ -39,6 +44,19 @@ object AesGcm:
       cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(tagBits, iv))
       cipher.doFinal(cipherText)
     }
+
+  def encryptEnvelope(keyRing: KeyRing, plain: Array[Byte]): IO[Envelope] =
+    encrypt(keyRing.currentKey, plain).map { case (cipherText, iv) =>
+      Envelope(base64(cipherText), base64(iv), keyRing.currentVersion)
+    }
+
+  def decryptEnvelope(keyRing: KeyRing, envelope: Envelope): IO[Array[Byte]] =
+    keyRing.key(envelope.keyVersion) match
+      case Some(key) =>
+        val decoder = Base64.getDecoder
+        decrypt(key, decoder.decode(envelope.dataBase64), decoder.decode(envelope.ivBase64))
+      case None =>
+        IO.raiseError(IllegalArgumentException(s"AES-GCM key version '${envelope.keyVersion}' is not configured"))
 
   def base64(bytes: Array[Byte]): String =
     Base64.getEncoder.encodeToString(bytes)

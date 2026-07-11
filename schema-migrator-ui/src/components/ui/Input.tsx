@@ -12,7 +12,22 @@ interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "prefix
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ className, error, id, label, name, onClear, prefix, suffix, value, "aria-describedby": ariaDescribedBy, ...props }, ref) => {
+  (
+    {
+      className,
+      error,
+      id,
+      label,
+      name,
+      onClear,
+      prefix,
+      suffix,
+      value,
+      "aria-describedby": ariaDescribedBy,
+      ...props
+    },
+    ref
+  ) => {
     const generatedId = useId();
     const inputId = id ?? generatedId;
     const errorId = error ? `${inputId}-error` : undefined;

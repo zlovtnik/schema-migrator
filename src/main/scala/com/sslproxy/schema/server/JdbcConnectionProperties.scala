@@ -10,7 +10,10 @@ private[server] final case class JdbcConnectionSettings(jdbcUrl: String, user: O
 private[server] object JdbcConnectionProperties:
   def normalize(jdbcUrl: String, password: Option[String]): JdbcConnectionSettings =
     val trimmed = jdbcUrl.trim
-    if trimmed.startsWith("postgres://") || trimmed.startsWith("postgresql://") || trimmed.startsWith("jdbc:postgresql://") then
+    if trimmed.startsWith("postgres://") || trimmed.startsWith("postgresql://") || trimmed.startsWith(
+        "jdbc:postgresql://"
+      )
+    then
       PostgresProvider
         .normalize(trimmed)
         .map(config => JdbcConnectionSettings(config.url, config.user, password.orElse(config.password)))

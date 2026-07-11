@@ -107,10 +107,11 @@ private final class MongoSqlFileStore(collection: MongoCollection[Document]) ext
         )
       }
       if files.isEmpty then collection.deleteMany(targetIdFilter(targetId))
-      else collection.deleteMany(
-        new Document("target_id", targetId)
-          .append("_id", new Document("$nin", files.map(f => s"$targetId:${f.path}").asJava))
-      )
+      else
+        collection.deleteMany(
+          new Document("target_id", targetId)
+            .append("_id", new Document("$nin", files.map(f => s"$targetId:${f.path}").asJava))
+        )
       ()
     }
 
@@ -147,19 +148,21 @@ private final class MongoSqlFileStore(collection: MongoCollection[Document]) ext
     )
 
   private def requiredString(doc: Document, field: String): String =
-    Option(doc.getString(field))
-      .filter(_.nonEmpty)
-      .getOrElse(throw IllegalStateException(s"sql_file document is missing required field '$field'"))
+    MongoDocument.requiredString(doc, field, "sql_file")
 
   private def targetIdFilter(targetId: String): Document =
     new Document("target_id", targetId)
 
 private final class InMemorySqlFileStore(ref: Ref[IO, Map[String, StoredSqlFile]]) extends SqlFileStore:
   override def list(targetId: String): IO[List[StoredSqlFile]] =
-    ref.get.map(_.filter { case (key, _) => key.startsWith(s"$targetId:") }.values.toList.sortBy(f => (f.folder, f.filename)))
+    ref.get.map(
+      _.filter { case (key, _) => key.startsWith(s"$targetId:") }.values.toList.sortBy(f => (f.folder, f.filename))
+    )
 
   override def listByFolder(targetId: String, folder: String): IO[List[StoredSqlFile]] =
-    ref.get.map(_.filter { case (key, _) => key.startsWith(s"$targetId:") }.values.toList.filter(_.folder == folder).sortBy(_.filename))
+    ref.get.map(_.filter { case (key, _) =>
+      key.startsWith(s"$targetId:")
+    }.values.toList.filter(_.folder == folder).sortBy(_.filename))
 
   override def replaceAll(targetId: String, files: List[StoredSqlFile]): IO[Unit] =
     ref.update { current =>

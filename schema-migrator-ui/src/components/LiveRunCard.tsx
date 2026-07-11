@@ -71,7 +71,9 @@ export const LiveRunCard = ({ run, onAbort, aborting = false }: LiveRunCardProps
         value={completedScripts}
       />
       <div className="live-run__meta">
-        <span>{completedScripts} / {totalScripts} scripts</span>
+        <span>
+          {completedScripts} / {totalScripts} scripts
+        </span>
         <span>Elapsed {formatElapsed(elapsedSeconds)}</span>
         <span>{activeScript ? activeScript.filename : "Waiting for script event"}</span>
       </div>

@@ -211,7 +211,11 @@ export const AppShell = () => {
           <header className="app-topbar" aria-label="Session context">
             <div className="app-topbar__spacer" />
             <div className="session-context">
-              {subject ? <span className="session-context__subject" title={subject}>{subject}</span> : null}
+              {subject ? (
+                <span className="session-context__subject" title={subject}>
+                  {subject}
+                </span>
+              ) : null}
               <div className={`role-badge role-badge--${role}`} title={`Role: ${role}`}>
                 <span>Role</span>
                 <strong>{role}</strong>

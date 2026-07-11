@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import {
-  getApiBaseUrl,
-  getEncryptKey,
-  setApiBaseUrl,
-  setEncryptKey,
-  validateEncryptKey
-} from "../../api/client";
+import { getApiBaseUrl, getEncryptKey, setApiBaseUrl, setEncryptKey, validateEncryptKey } from "../../api/client";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useTargets } from "../../hooks/useTargets";
 
@@ -109,7 +103,12 @@ export const SettingsPage = () => {
               </label>
               <label htmlFor="settings-theme">
                 Theme
-                <select id="settings-theme" name="theme" value={theme} onChange={(event) => setTheme(event.target.value)}>
+                <select
+                  id="settings-theme"
+                  name="theme"
+                  value={theme}
+                  onChange={(event) => setTheme(event.target.value)}
+                >
                   <option value="dark">Dark</option>
                   <option value="light">Light</option>
                 </select>

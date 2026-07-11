@@ -41,13 +41,7 @@ const columns: DataTableColumn<AuditEvent>[] = [
 ];
 
 export const ActivityTable = ({ events, empty = "No activity found." }: ActivityTableProps) => (
-  <DataTable
-    caption="Activity"
-    columns={columns}
-    rows={events}
-    rowKey={(event) => event.id}
-    empty={empty}
-  />
+  <DataTable caption="Activity" columns={columns} rows={events} rowKey={(event) => event.id} empty={empty} />
 );
 
 const EntityLink = ({ event }: { event: AuditEvent }) => {

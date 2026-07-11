@@ -16,7 +16,7 @@ describe("SchemaPage", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((input: RequestInfo | URL) => {
-        const url = String(input);
+        const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
         if (url.includes("/targets")) {
           return Promise.resolve(
             jsonResponse({

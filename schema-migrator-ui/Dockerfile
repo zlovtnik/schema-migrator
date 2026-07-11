@@ -16,8 +16,7 @@ ENV VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID
 ENV VITE_KEYCLOAK_REDIRECT_URI=$VITE_KEYCLOAK_REDIRECT_URI
 ENV VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS=$VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS
 
-COPY --chown=bun:bun package.json pnpm-lock.yaml ./
-# bun can install from pnpm lockfile directly
+COPY --chown=bun:bun package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
 COPY --chown=bun:bun . .

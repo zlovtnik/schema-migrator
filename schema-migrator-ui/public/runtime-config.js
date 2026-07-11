@@ -1,0 +1,1 @@
+window.__SCHEMA_MIGRATOR_CONFIG__ = window.__SCHEMA_MIGRATOR_CONFIG__ || {};

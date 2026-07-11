@@ -89,10 +89,10 @@ export const TargetFormPage = () => {
             !canManageTargets
               ? "Admin role required to delete targets"
               : !runsLoaded || runsLoading
-              ? "Delete disabled until run state loads"
-              : hasActiveRuns
-                ? "Delete disabled while active runs exist"
-                : undefined
+                ? "Delete disabled until run state loads"
+                : hasActiveRuns
+                  ? "Delete disabled while active runs exist"
+                  : undefined
           }
           onClick={() => setConfirmOpen(true)}
         >

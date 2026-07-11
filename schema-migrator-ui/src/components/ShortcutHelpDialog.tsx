@@ -106,7 +106,14 @@ export const ShortcutHelpDialog = ({ open, onClose }: ShortcutHelpDialogProps) =
 
   return createPortal(
     <div className="modal-backdrop" role="presentation" ref={backdropRef}>
-      <div className="confirm-dialog shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcut-help-title" ref={dialogRef} tabIndex={-1}>
+      <div
+        className="confirm-dialog shortcut-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shortcut-help-title"
+        ref={dialogRef}
+        tabIndex={-1}
+      >
         <h2 id="shortcut-help-title">Keyboard shortcuts</h2>
         <dl className="shortcut-list">
           {shortcuts.map((shortcut) => (

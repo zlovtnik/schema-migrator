@@ -24,7 +24,11 @@ export const SnapshotDiffPage = () => {
   );
 
   if (isLoading) {
-    return <div className="page"><Skeleton rows={6} label="Loading snapshot diff" /></div>;
+    return (
+      <div className="page">
+        <Skeleton rows={6} label="Loading snapshot diff" />
+      </div>
+    );
   }
 
   if (error || !diff || !id || !otherId) {

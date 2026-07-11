@@ -41,8 +41,7 @@ export const RunListPage = () => {
   );
 
   const activeRun =
-    filteredRuns.find((run) => run.status === "running") ??
-    filteredRuns.find((run) => run.status === "pending");
+    filteredRuns.find((run) => run.status === "running") ?? filteredRuns.find((run) => run.status === "pending");
 
   const setStatus = (status: string) => {
     const next = new URLSearchParams(searchParams);

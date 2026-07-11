@@ -19,11 +19,8 @@ export interface SqlFileListResponse {
   files: SqlFileEntry[];
 }
 
-export const getSqlFileStatus = (): Promise<SqlFileStatus> =>
-  apiRequest<SqlFileStatus>("/sql-files/status");
+export const getSqlFileStatus = (): Promise<SqlFileStatus> => apiRequest<SqlFileStatus>("/sql-files/status");
 
-export const listSqlFiles = (): Promise<SqlFileListResponse> =>
-  apiRequest<SqlFileListResponse>("/sql-files");
+export const listSqlFiles = (): Promise<SqlFileListResponse> => apiRequest<SqlFileListResponse>("/sql-files");
 
-export const clearSqlFiles = (): Promise<void> =>
-  apiRequest<void>("/sql-files", { method: "DELETE" });
+export const clearSqlFiles = (): Promise<void> => apiRequest<void>("/sql-files", { method: "DELETE" });

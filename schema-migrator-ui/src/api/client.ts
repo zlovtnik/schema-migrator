@@ -1,3 +1,5 @@
+import { runtimeConfig } from "../runtimeConfig";
+
 export class ApiError extends Error {
   status: number;
   detail: unknown;
@@ -28,7 +30,7 @@ const normalizeApiBaseUrl = (value: string): string => {
 
 export const getApiBaseUrl = (): string => {
   const stored = window.localStorage.getItem(API_BASE_KEY);
-  const configured = stored || import.meta.env.VITE_API_BASE_URL || "/api";
+  const configured = stored || runtimeConfig("VITE_API_BASE_URL") || import.meta.env.VITE_API_BASE_URL || "/api";
   return normalizeApiBaseUrl(configured);
 };
 
@@ -125,7 +127,9 @@ const decryptEnvelope = async (text: string): Promise<string> => {
   }
 
   const envelope = JSON.parse(text) as EncryptedEnvelope;
-  const cryptoKey = await window.crypto.subtle.importKey("raw", toArrayBuffer(base64ToBytes(key)), "AES-GCM", false, ["decrypt"]);
+  const cryptoKey = await window.crypto.subtle.importKey("raw", toArrayBuffer(base64ToBytes(key)), "AES-GCM", false, [
+    "decrypt"
+  ]);
   const plain = await window.crypto.subtle.decrypt(
     { name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(envelope.iv)) },
     cryptoKey,

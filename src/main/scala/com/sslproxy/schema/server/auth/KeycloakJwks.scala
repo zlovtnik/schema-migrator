@@ -73,7 +73,9 @@ final class KeycloakJwks private (
       now <- Clock[IO].realTimeInstant
       current <- cache.get
       cacheFresh = current.expiresAt.isAfter(now)
-      unknownKidRefreshAllowed = current.lastUnknownKidRefresh.forall(_.plusSeconds(UnknownKidRefreshInterval.toSeconds).isBefore(now))
+      unknownKidRefreshAllowed = current.lastUnknownKidRefresh.forall(
+        _.plusSeconds(UnknownKidRefreshInterval.toSeconds).isBefore(now)
+      )
       result <- current.keys.get(kid) match
         case Some(publicKey) if cacheFresh => IO.pure(Right(publicKey))
         case None if cacheFresh && unknownKidRefreshAllowed =>
@@ -92,7 +94,11 @@ final class KeycloakJwks private (
         .flatMap(jwks => IO.fromEither(keysFromJwks(jwks).leftMap(new IllegalArgumentException(_))))
         .flatTap(keys =>
           cache.update(current =>
-            KeyCache(keys, now.plusSeconds(CacheTtl.toSeconds), lastUnknownKidRefresh.orElse(current.lastUnknownKidRefresh))
+            KeyCache(
+              keys,
+              now.plusSeconds(CacheTtl.toSeconds),
+              lastUnknownKidRefresh.orElse(current.lastUnknownKidRefresh)
+            )
           )
         )
         .attempt
@@ -166,7 +172,8 @@ object KeycloakJwks:
       .toRight(new IllegalArgumentException("BEDROCK_KEYCLOAK_ISSUER must be set when Keycloak auth is enabled"))
 
   private def configuredJwksUri(config: ServerConfig, issuer: String): Either[Throwable, Uri] =
-    val value = config.keycloakJwksUri.map(_.trim).filter(_.nonEmpty).getOrElse(s"$issuer/protocol/openid-connect/certs")
+    val value =
+      config.keycloakJwksUri.map(_.trim).filter(_.nonEmpty).getOrElse(s"$issuer/protocol/openid-connect/certs")
     Uri.fromString(value).leftMap(error => new IllegalArgumentException(error.message))
 
   private def normalizeIssuer(value: String): String =

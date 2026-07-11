@@ -4,13 +4,7 @@ import { EyeIcon } from "@phosphor-icons/react/dist/csr/Eye";
 import { EyeSlashIcon } from "@phosphor-icons/react/dist/csr/EyeSlash";
 import { PlugsConnectedIcon } from "@phosphor-icons/react/dist/csr/PlugsConnected";
 import { useForm } from "react-hook-form";
-import {
-  envOptions,
-  targetFormSchema,
-  type ConnectionTestResult,
-  type Target,
-  type TargetFormValues
-} from "../types";
+import { envOptions, targetFormSchema, type ConnectionTestResult, type Target, type TargetFormValues } from "../types";
 import { Icon } from "./ui/Icon";
 
 interface ConnectionFormProps {
@@ -84,8 +78,12 @@ export const ConnectionForm = ({
     await onTest?.(values);
   };
 
-  const jdbcUrlField = onCredentialsChange ? register("jdbc_url", { onChange: onCredentialsChange }) : register("jdbc_url");
-  const passwordField = onCredentialsChange ? register("password", { onChange: onCredentialsChange }) : register("password");
+  const jdbcUrlField = onCredentialsChange
+    ? register("jdbc_url", { onChange: onCredentialsChange })
+    : register("jdbc_url");
+  const passwordField = onCredentialsChange
+    ? register("password", { onChange: onCredentialsChange })
+    : register("password");
 
   const errorId = (name: keyof TargetFormValues) => `${fieldIds[name]}-error`;
   const fieldState = (name: keyof TargetFormValues, required = true) => ({
@@ -113,12 +111,24 @@ export const ConnectionForm = ({
       <div className="form-grid">
         <label htmlFor={fieldIds.label}>
           Label{renderRequired()}
-          <input id={fieldIds.label} {...register("label")} autoComplete="off" disabled={readOnly} {...fieldState("label")} />
+          <input
+            id={fieldIds.label}
+            {...register("label")}
+            autoComplete="off"
+            disabled={readOnly}
+            {...fieldState("label")}
+          />
           {renderError("label")}
         </label>
         <label htmlFor={fieldIds.app_name}>
           App{renderRequired()}
-          <input id={fieldIds.app_name} {...register("app_name")} autoComplete="off" disabled={readOnly} {...fieldState("app_name")} />
+          <input
+            id={fieldIds.app_name}
+            {...register("app_name")}
+            autoComplete="off"
+            disabled={readOnly}
+            {...fieldState("app_name")}
+          />
           {renderError("app_name")}
         </label>
         <label htmlFor={fieldIds.env}>
@@ -163,12 +173,24 @@ export const ConnectionForm = ({
         </label>
         <label htmlFor={fieldIds.repo_branch}>
           Branch{renderRequired()}
-          <input id={fieldIds.repo_branch} {...register("repo_branch")} autoComplete="off" disabled={readOnly} {...fieldState("repo_branch")} />
+          <input
+            id={fieldIds.repo_branch}
+            {...register("repo_branch")}
+            autoComplete="off"
+            disabled={readOnly}
+            {...fieldState("repo_branch")}
+          />
           {renderError("repo_branch")}
         </label>
         <label htmlFor={fieldIds.repo_sql_path}>
           SQL path{renderRequired()}
-          <input id={fieldIds.repo_sql_path} {...register("repo_sql_path")} autoComplete="off" disabled={readOnly} {...fieldState("repo_sql_path")} />
+          <input
+            id={fieldIds.repo_sql_path}
+            {...register("repo_sql_path")}
+            autoComplete="off"
+            disabled={readOnly}
+            {...fieldState("repo_sql_path")}
+          />
           {renderError("repo_sql_path")}
         </label>
       </div>
@@ -184,7 +206,12 @@ export const ConnectionForm = ({
             disabled={readOnly}
             {...fieldState("password", false)}
           />
-          <button className="icon-button" type="button" onClick={() => setShowPassword((value) => !value)} disabled={readOnly}>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setShowPassword((value) => !value)}
+            disabled={readOnly}
+          >
             <Icon source={showPassword ? EyeSlashIcon : EyeIcon} size={16} />
             <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
           </button>
@@ -193,8 +220,11 @@ export const ConnectionForm = ({
       </label>
 
       {testResult ? (
-        <div className={testResult.ok ? "inline-result inline-result--ok" : "inline-result inline-result--error"} role="status">
-          {testResult.ok ? `Connected in ${testResult.latency_ms ?? 0} ms` : testResult.error ?? "Connection failed"}
+        <div
+          className={testResult.ok ? "inline-result inline-result--ok" : "inline-result inline-result--error"}
+          role="status"
+        >
+          {testResult.ok ? `Connected in ${testResult.latency_ms ?? 0} ms` : (testResult.error ?? "Connection failed")}
         </div>
       ) : null}
 
@@ -214,7 +244,12 @@ export const ConnectionForm = ({
             Cancel
           </button>
         ) : null}
-        <button className="button button--primary" type="submit" disabled={submitting || readOnly} title={readOnly ? readOnlyReason : undefined}>
+        <button
+          className="button button--primary"
+          type="submit"
+          disabled={submitting || readOnly}
+          title={readOnly ? readOnlyReason : undefined}
+        >
           {submitting ? "Saving" : initialTarget ? "Save target" : "Create target"}
         </button>
       </div>

@@ -120,7 +120,11 @@ object JwtMiddleware:
             }
     }
 
-  private def verify(config: ServerConfig, keycloakVerifier: Option[TokenVerifier], token: String): IO[Either[String, Claims]] =
+  private def verify(
+    config: ServerConfig,
+    keycloakVerifier: Option[TokenVerifier],
+    token: String
+  ): IO[Either[String, Claims]] =
     config.apiBearerToken.filter(expected => constantTimeEquals(expected.trim, token)) match
       case Some(_) => IO.pure(Right(Claims("static-api-token", None, UserRole.Admin)))
       case None =>

@@ -1,7 +1,7 @@
 package com.sslproxy.schema.effect
 
 import cats.data.Kleisli
-import cats.effect.IO
+import cats.effect.{IO, Ref}
 import cats.effect.unsafe.implicits.global
 import cats.mtl.Ask
 import com.sslproxy.schema.config.DbKind
@@ -51,4 +51,38 @@ class EffectPrimitivesSuite extends FunSuite:
     )
 
     assertEquals(program.run(context).unsafeRunSync(), Some("target-1"))
+  }
+
+  test("Lock releases after the protected action fails") {
+    val result = (for
+      held <- Ref.of[IO, Boolean](false)
+      lock = Lock.fromAcquireRelease[IO](
+        held.modify {
+          case false => true -> IO.unit
+          case true => true -> IO.raiseError(IllegalStateException("lock already held"))
+        }.flatten,
+        held.set(false)
+      )
+      failure <- lock.withLock(IO.raiseError[Unit](RuntimeException("boom"))).attempt
+      stillHeld <- held.get
+    yield (failure.left.map(_.getMessage), stillHeld)).unsafeRunSync()
+
+    assertEquals(result, (Left("boom"), false))
+  }
+
+  test("Lock reports contention without releasing an unacquired lock") {
+    val result = (for
+      held <- Ref.of[IO, Boolean](true)
+      lock = Lock.fromAcquireRelease[IO](
+        held.modify {
+          case false => true -> IO.unit
+          case true => true -> IO.raiseError(IllegalStateException("lock already held"))
+        }.flatten,
+        held.set(false)
+      )
+      failure <- lock.withLock(IO.unit).attempt
+      stillHeld <- held.get
+    yield (failure.left.map(_.getMessage), stillHeld)).unsafeRunSync()
+
+    assertEquals(result, (Left("lock already held"), true))
   }

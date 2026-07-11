@@ -1,0 +1,57 @@
+{
+  "realm": "middleware",
+  "enabled": true,
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "loginWithEmailAllowed": true,
+  "roles": {
+    "realm": [
+      { "name": "admin" },
+      { "name": "operator" },
+      { "name": "viewer" }
+    ],
+    "client": {
+      "bedrock-ui": [
+        { "name": "admin" },
+        { "name": "operator" },
+        { "name": "viewer" }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "bedrock-ui",
+      "name": "Schema Migrator UI",
+      "enabled": true,
+      "publicClient": true,
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost/callback",
+        "http://localhost:5173/callback",
+        "${PUBLIC_ORIGIN}/callback"
+      ],
+      "webOrigins": [
+        "http://localhost",
+        "http://localhost:5173",
+        "${PUBLIC_ORIGIN}"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    }
+  ]
+}

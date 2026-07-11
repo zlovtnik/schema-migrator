@@ -186,7 +186,10 @@ describe("SqlFilesPage", () => {
     await user.keyboard("{Enter}");
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/targets/target-1/repo-sync"), expect.objectContaining({ method: "POST" }))
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/targets/target-1/repo-sync"),
+        expect.objectContaining({ method: "POST" })
+      )
     );
     expect(await screen.findByText(/synced commit abc123def456/i)).toBeInTheDocument();
   });

@@ -13,7 +13,9 @@ import scala.jdk.CollectionConverters.*
 class RunStoreSuite extends FunSuite:
   test("creating a second active run for the same target is rejected") {
     val result = cats.effect.Resource
-      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path => IO.blocking(deleteRecursively(path)))
+      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path =>
+        IO.blocking(deleteRecursively(path))
+      )
       .use { stageDir =>
         for
           patchStore <- PatchStore.inMemory(stageDir)
@@ -34,7 +36,9 @@ class RunStoreSuite extends FunSuite:
 
   test("aborting a running run finalizes scripts and leaves patch retryable") {
     val result = cats.effect.Resource
-      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path => IO.blocking(deleteRecursively(path)))
+      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path =>
+        IO.blocking(deleteRecursively(path))
+      )
       .use { stageDir =>
         for
           patchStore <- PatchStore.inMemory(stageDir)

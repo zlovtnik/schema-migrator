@@ -153,7 +153,11 @@ object CliOpts:
     Opts
       .option[Int]("repo-clone-timeout-seconds", help = "Repository clone timeout in seconds")
       .orNone
-      .map(_.orElse(env.get("BEDROCK_REPO_CLONE_TIMEOUT_SECONDS").flatMap(value => Either.catchNonFatal(value.toInt).toOption)).getOrElse(60))
+      .map(
+        _.orElse(
+          env.get("BEDROCK_REPO_CLONE_TIMEOUT_SECONDS").flatMap(value => Either.catchNonFatal(value.toInt).toOption)
+        ).getOrElse(60)
+      )
       .validate("repo-clone-timeout-seconds must be at least 1")(_ >= 1)
 
   private val dbTestAllowedHostsOpt: Opts[Set[String]] =
@@ -457,7 +461,12 @@ object CliOpts:
         Option.when(mongoTargetsCollection.isEmpty)("BEDROCK_MONGO_TARGETS_COLLECTION")
       ).flatten
       if missing.nonEmpty then Left(s"Mongo configuration is incomplete; missing ${missing.mkString(", ")}")
-      else Right(Some(MongoConfig(mongoUri.get, mongoDatabase.get, mongoTargetsCollection.get)))
+      else
+        for
+          uri <- mongoUri.toRight("BEDROCK_MONGO_URI is required")
+          database <- mongoDatabase.toRight("BEDROCK_MONGO_DATABASE is required")
+          targetsCollection <- mongoTargetsCollection.toRight("BEDROCK_MONGO_TARGETS_COLLECTION is required")
+        yield Some(MongoConfig(uri, database, targetsCollection))
 
   private def envInt(name: String, defaultValue: Int): Int =
     env
