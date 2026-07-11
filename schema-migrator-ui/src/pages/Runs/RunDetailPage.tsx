@@ -15,6 +15,7 @@ import { runKeys, useAbortRun, useRun } from "../../hooks/useRuns";
 import { useDrift } from "../../hooks/useSchema";
 import { useSession } from "../../hooks/useSession";
 import type { Run, SchemaControlObject } from "../../types";
+import { formatOptionalDate } from "../../utils/format";
 
 export const RunDetailPage = () => {
   const { id } = useParams();
@@ -199,11 +200,3 @@ const controlRowsForRun = (run: Run | undefined, rows: SchemaControlObject[]): S
 
 const controlStatus = (status: string): "pending" | "applied" | "failed" | "skipped" =>
   status === "applied" || status === "failed" || status === "skipped" ? status : "pending";
-
-const formatOptionalDate = (value?: string | null): string => {
-  if (!value) {
-    return "-";
-  }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? value : new Date(parsed).toLocaleString();
-};

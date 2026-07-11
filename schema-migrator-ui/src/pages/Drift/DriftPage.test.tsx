@@ -3,6 +3,7 @@ import { cleanup, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DriftPage } from "./DriftPage";
 import { setAuthToken } from "../../api/client";
+import { tokenWithRole } from "../../test/authToken";
 import { renderApp } from "../../test/render";
 
 const jsonResponse = (body: unknown): Response =>
@@ -15,7 +16,7 @@ describe("DriftPage", () => {
   let driftPayload: unknown;
 
   beforeEach(() => {
-    setAuthToken(testToken("operator"));
+    setAuthToken(tokenWithRole("operator"));
     driftPayload = {
       target_id: "target-1",
       db_kind: "postgres",
@@ -115,6 +116,51 @@ describe("DriftPage", () => {
     expect(screen.getByText("1 object")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run executable drift" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run" })).toBeInTheDocument();
+  });
+
+  it("keeps run gating banners hidden until a target is selected", async () => {
+    vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/targets")) {
+        return Promise.resolve(
+          jsonResponse({
+            targets: [
+              {
+                id: "target-1",
+                label: "Local",
+                app_name: "app",
+                env: "dev",
+                jdbc_url: "jdbc:postgresql://localhost/app",
+                created_at: "2026-06-28T12:00:00Z"
+              }
+            ]
+          })
+        );
+      }
+      if (url.includes("/runs")) {
+        return Promise.resolve(
+          jsonResponse({
+            runs: [
+              {
+                id: "run-global",
+                target_id: "other-target",
+                patch_id: "patch-1",
+                status: "running",
+                scripts: [],
+                started_at: "2026-06-28T12:01:00Z",
+                triggered_by: "operator"
+              }
+            ]
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+
+    renderApp(<DriftPage />, { route: "/drift" });
+
+    expect(await screen.findByText("Select a target")).toBeInTheDocument();
+    expect(screen.queryByText("Drift execution is disabled while this target has an active run.")).not.toBeInTheDocument();
   });
 
   it("starts all executable drift from the page action", async () => {
@@ -264,8 +310,3 @@ describe("DriftPage", () => {
     expect(screen.queryByLabelText("Filter results")).not.toBeInTheDocument();
   });
 });
-
-const testToken = (role: string): string => {
-  const encode = (value: unknown) => window.btoa(JSON.stringify(value)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/u, "");
-  return `${encode({ alg: "none" })}.${encode({ sub: "test-user", role })}.signature`;
-};

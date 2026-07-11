@@ -261,7 +261,8 @@ object SchemaRoutes:
                         }
                     }
             yield result).handleErrorWith { case NonFatal(error) =>
-              RouteJson.badRequest(s"drift run could not be prepared: ${error.getMessage}")
+              log.error(error)(s"failed to prepare drift run for target $targetId") *>
+                RouteJson.internalServerError("drift run could not be prepared")
             }
     yield response
 

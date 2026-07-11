@@ -94,8 +94,8 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
           """.query[(String, String)].option
         oldSha = existing.map(_._1)
         oldStatus = existing.map(_._2)
-        liveCurrent <- liveCatalogCurrent(objectDef)
         controlCurrent = oldSha.exists(_ == objectDef.sha256) && oldStatus.exists(Set("applied", "skipped"))
+        liveCurrent <- if controlCurrent then liveCatalogCurrent(objectDef) else true.pure[ConnectionIO]
         needsApply = !controlCurrent || !liveCurrent
         status = if needsApply then "pending" else "skipped"
         _ <- Update[
