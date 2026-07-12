@@ -69,7 +69,7 @@ object Canonicalizer:
             if end >= 0 then
               pushPendingSpace()
               output.append("$$")
-              output.append(sql, bodyStart, end - bodyStart)
+              output.append(sql.substring(bodyStart, end))
               output.append("$$")
               index = end + tag.length
             else

@@ -40,14 +40,14 @@ ThisBuild / wartremoverErrors ++= Warts.allBut(
   Wart.RedundantIsInstanceOf
 )
 
-val catsEffectVersion = "3.6.3"
+val catsEffectVersion = "3.7-4972921"
 val fs2Version = "3.12.2"
 val declineVersion = "2.5.0"
 val circeVersion = "0.14.14"
 val doobieVersion = "1.0.0-RC10"
 val http4sVersion = "0.23.34"
-val mongoDriverVersion = "5.8.0"
-val jgitVersion = "6.10.0.202406032230-r"
+val mongoDriverVersion = "5.9.0"
+val jgitVersion = "7.7.0.202606012155-r"
 val catsMtlVersion = "1.7.0"
 val oracleJdbcVersion = "23.6.0.24.10"
 val oracleOsdtVersion = "21.18.0.0"
@@ -76,14 +76,14 @@ lazy val root = (project in file("."))
       "org.eclipse.jgit" % "org.eclipse.jgit" % jgitVersion,
       "org.apache.commons" % "commons-compress" % "1.27.1",
       "org.typelevel" %% "log4cats-slf4j" % "2.7.1",
-      "org.slf4j" % "slf4j-simple" % "2.0.17",
+      "org.slf4j" % "slf4j-simple" % "2.0.18",
       "org.postgresql" % "postgresql" % "42.7.5",
       "com.oracle.database.jdbc" % "ojdbc11" % oracleJdbcVersion,
       "com.oracle.database.security" % "oraclepki" % oracleJdbcVersion,
       "com.oracle.database.security" % "osdt_core" % oracleOsdtVersion,
       "com.oracle.database.security" % "osdt_cert" % oracleOsdtVersion,
       "com.h2database" % "h2" % "2.4.240" % Test,
-      "org.scalameta" %% "munit" % "1.1.1" % Test
+      "org.scalameta" %% "munit" % "1.3.4" % Test
     ),
     scalacOptions ++= Seq("-Yfuture-lazy-vals", "-java-output-version:11"),
     Compile / mainClass := Some("com.sslproxy.schema.Main"),

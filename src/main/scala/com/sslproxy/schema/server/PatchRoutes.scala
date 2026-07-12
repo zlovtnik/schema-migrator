@@ -3,7 +3,16 @@ package com.sslproxy.schema.server
 import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
-import com.sslproxy.schema.store.{AuditStore, Models, PatchStore, PatchUpload, TargetStore}
+import com.sslproxy.schema.discovery.DiscoveryService
+import com.sslproxy.schema.store.{
+  AuditStore,
+  CreatePatchFromSqlFilesPayload,
+  Models,
+  PatchStore,
+  PatchUpload,
+  SqlFileStore,
+  TargetStore
+}
 import fs2.text
 import io.circe.Json
 import io.circe.syntax.*
@@ -12,13 +21,20 @@ import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.dsl.io.*
 import org.http4s.multipart.{Multipart, Part}
 
+import java.util.Base64
+
 object PatchRoutes:
   import Models.given
 
   private val maxUploadBytes = 10L * 1024L * 1024L
   private final class UploadTooLarge(message: String) extends IllegalArgumentException(message)
 
-  def routes(targetStore: TargetStore, patchStore: PatchStore, auditStore: AuditStore): HttpRoutes[IO] =
+  def routes(
+    targetStore: TargetStore,
+    patchStore: PatchStore,
+    sqlFileStore: SqlFileStore,
+    auditStore: AuditStore
+  ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
       case request @ GET -> Root / "patches" =>
         val targetId = request.uri.query.params.get("target_id").filter(_.nonEmpty)
@@ -61,6 +77,39 @@ object PatchRoutes:
             }
         }
 
+      case request @ POST -> Root / "patches" / "from-sql-files" =>
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          RouteJson.withJson[CreatePatchFromSqlFilesPayload](request, "invalid patch payload") { payload =>
+            targetStore.get(payload.target_id).flatMap {
+              case None => RouteJson.notFound(s"target '${payload.target_id}' was not found")
+              case Some(target) =>
+                TargetDatabase.dbKindFor(target.jdbc_url) match
+                  case Left(message) => RouteJson.badRequest(message)
+                  case Right(dbKind) =>
+                    patchUploadsFromSqlFiles(payload, sqlFileStore, dbKind).flatMap {
+                      case Left(message) => RouteJson.badRequest(message)
+                      case Right(uploads) =>
+                        patchStore.create(payload.target_id, uploads).flatMap { patch =>
+                          auditStore.record(
+                            claims.subject,
+                            claims.role,
+                            "patch.create_from_sql_files",
+                            "patch",
+                            patch.id,
+                            Some(payload.target_id),
+                            Some(
+                              Json.obj(
+                                "script_count" -> Json.fromInt(patch.scripts.length),
+                                "source_files" -> payload.source_files.asJson
+                              )
+                            )
+                          ) *> RouteJson.created(patch.asJson)
+                        }
+                    }
+            }
+          }
+        }
+
       case GET -> Root / "patches" / id =>
         patchStore.get(id).flatMap {
           case Some(patch) => RouteJson.ok(patch.asJson)
@@ -85,6 +134,29 @@ object PatchRoutes:
           }
         }
     }
+
+  private def patchUploadsFromSqlFiles(
+    payload: CreatePatchFromSqlFilesPayload,
+    sqlFileStore: SqlFileStore,
+    dbKind: com.sslproxy.schema.config.DbKind
+  ): IO[Either[String, List[PatchUpload]]] =
+    val selected = payload.source_files.map(_.trim).filter(_.nonEmpty).distinct
+    if selected.isEmpty then IO.pure(Left("at least one source file is required"))
+    else
+      sqlFileStore.list(payload.target_id).map { storedFiles =>
+        val byPath = storedFiles.map(file => file.path -> file).toMap
+        val missing = selected.filterNot(byPath.contains)
+        if missing.nonEmpty then Left(s"source_files were not found: ${missing.mkString(", ")}")
+        else
+          val selectedSet = selected.toSet
+          val selectedFiles = storedFiles.filter(file => selectedSet.contains(file.path))
+          val discovery = DiscoveryService[IO]().discoverFromFiles(selectedFiles.map(SqlFileStore.toSqlFileUnsafe), dbKind)
+          val orderedStored = discovery.files.flatMap(file => byPath.get(file.relativePath))
+          val fallbackStored = selectedFiles.filterNot(file => orderedStored.exists(_.path == file.path)).sortBy(_.path)
+          Right((orderedStored ++ fallbackStored).zipWithIndex.map { case (file, index) =>
+            PatchUpload(file.path, Base64.getDecoder.decode(file.contentBase64), index + 1)
+          })
+      }
 
   private def fieldValue(multipart: Multipart[IO], name: String): IO[Option[String]] =
     multipart.parts

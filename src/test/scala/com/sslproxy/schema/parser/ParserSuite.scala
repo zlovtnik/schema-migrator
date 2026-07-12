@@ -45,6 +45,46 @@ class ParserSuite extends FunSuite:
     assertNotEquals(left, right)
   }
 
+  test("canonical SQL preserves grouped dollar-quoted function bodies") {
+    val sql =
+      """-- object: coordinator.safe helpers
+        |-- folder: functions
+        |-- depends_on: coordinator
+        |create or replace function coordinator.safe_int(p_value text)
+        |returns integer
+        |language plpgsql
+        |immutable
+        |as $$
+        |begin
+        |  if p_value is null or p_value !~ '^-?[0-9]+$' then
+        |    return null;
+        |  end if;
+        |
+        |  begin
+        |    return p_value::integer;
+        |  exception
+        |    when others then
+        |      return null;
+        |  end;
+        |end;
+        |$$;
+        |
+        |create or replace function coordinator.safe_bigint(p_value text)
+        |returns bigint
+        |language sql
+        |immutable
+        |as $$
+        |  select case when p_value ~ '^-?[0-9]+$' then p_value::bigint end
+        |$$;
+        |""".stripMargin
+
+    val canonical = Canonicalizer.canonicalize(sql, SqlDialect.Postgres)
+
+    assert(canonical.contains("as $$\nbegin"))
+    assert(canonical.contains("select case when p_value ~ '^-?[0-9]+$' then p_value::bigint end"))
+    assert(!canonical.contains("as $$(-- object: coordinator.safe helpers"))
+  }
+
   test("oracle canonicalizer preserves optimizer hints and strips slash terminators") {
     val sql =
       """
