@@ -24,7 +24,10 @@ import { TargetSelector } from "../components/TargetSelector";
 import { Icon } from "../components/ui/Icon";
 import { useErrorGate } from "../hooks/useErrorGate";
 import { useResolveRun } from "../hooks/useRuns";
+import { useSelectedTargetId } from "../hooks/useSelectedTarget";
 import { useSession } from "../hooks/useSession";
+import { useTarget } from "../hooks/useTargets";
+import { isOracleTarget } from "../utils/dbKind";
 
 const SIDEBAR_KEY = "schemaMigrator.sidebarCollapsed";
 const NAV_ID = "primary-navigation";
@@ -35,7 +38,7 @@ const baseNavSections = [
     items: [
       { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
       { to: "/targets", label: "Targets", icon: PlugsConnectedIcon },
-      { to: "/schema", label: "Schema", icon: DatabaseIcon },
+      { to: "/schema", label: "Schema", icon: DatabaseIcon, postgresOnly: true },
       { to: "/sql-files", label: "SQL Files", icon: FileSqlIcon }
     ]
   },
@@ -43,9 +46,10 @@ const baseNavSections = [
     label: "Observe",
     items: [
       { to: "/runs", label: "Runs", icon: ClockCounterClockwiseIcon },
-      { to: "/drift", label: "Drift", icon: ListBulletsIcon },
+      { to: "/patches", label: "Patches", icon: FileSqlIcon },
+      { to: "/drift", label: "Drift", icon: ListBulletsIcon, postgresOnly: true },
       { to: "/validation/latest", label: "Validation", icon: ShieldCheckIcon },
-      { to: "/snapshots", label: "Snapshots", icon: GitBranchIcon }
+      { to: "/snapshots", label: "Snapshots", icon: GitBranchIcon, postgresOnly: true }
     ]
   },
   {
@@ -60,6 +64,9 @@ export const AppShell = () => {
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const { failedRun } = useErrorGate();
   const { canMutate, canViewAudit, role, subject } = useSession();
+  const selectedTargetId = useSelectedTargetId();
+  const selectedTarget = useTarget(selectedTargetId ?? undefined);
+  const oracleSelected = isOracleTarget(selectedTarget.data?.jdbc_url);
   const resolveRun = useResolveRun();
   const queryClient = useQueryClient();
   const matches = useMatches();
@@ -178,20 +185,36 @@ export const AppShell = () => {
             {navSections.map((section) => (
               <div className="nav-section" key={section.label}>
                 <div className="nav-section__label">{section.label}</div>
-                {section.items.map((item) => (
-                  <NavLink
-                    aria-label={item.label}
-                    className="nav-link"
-                    end={"end" in item && item.end === true}
-                    key={item.to}
-                    title={collapsed ? item.label : undefined}
-                    to={item.to}
-                    onClick={closeMobileMenu}
-                  >
-                    <Icon source={item.icon} size={20} />
-                    <span>{item.label}</span>
-                  </NavLink>
-                ))}
+                {section.items.map((item) => {
+                  const disabledForOracle = oracleSelected && "postgresOnly" in item && item.postgresOnly === true;
+                  return (
+                    <NavLink
+                      aria-label={item.label}
+                      aria-disabled={disabledForOracle}
+                      className={disabledForOracle ? "nav-link nav-link--disabled" : "nav-link"}
+                      end={"end" in item && item.end === true}
+                      key={item.to}
+                      title={
+                        disabledForOracle
+                          ? `${item.label} is Postgres only for schema targets`
+                          : collapsed
+                            ? item.label
+                            : undefined
+                      }
+                      to={item.to}
+                      onClick={(event) => {
+                        if (disabledForOracle) {
+                          event.preventDefault();
+                          return;
+                        }
+                        closeMobileMenu();
+                      }}
+                    >
+                      <Icon source={item.icon} size={20} />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  );
+                })}
               </div>
             ))}
           </nav>

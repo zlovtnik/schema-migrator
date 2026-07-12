@@ -1,11 +1,15 @@
 import { useMemo, useState } from "react";
 import { DownloadIcon } from "@phosphor-icons/react/dist/csr/Download";
-import { objectTypeOptions, type InvalidObject, type ObjectType, type ValidationResult } from "../types";
+import { objectTypeOptions, type InvalidObject, type ObjectType } from "../types";
 import { StatusBadge } from "./StatusBadge";
 import { Icon } from "./ui/Icon";
 
 interface ValidationTableProps {
-  result: ValidationResult;
+  result: {
+    run_id?: string;
+    target_id: string;
+    invalid: InvalidObject[];
+  };
 }
 
 type ValidationRow = InvalidObject & { key: string };
@@ -40,7 +44,7 @@ export const ValidationTable = ({ result }: ValidationTableProps) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `validation-${result.run_id}.csv`;
+    link.download = `validation-${result.run_id ?? result.target_id}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };

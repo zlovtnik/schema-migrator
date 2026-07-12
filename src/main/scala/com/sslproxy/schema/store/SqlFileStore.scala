@@ -60,17 +60,20 @@ object SqlFileStore:
   def inMemory: IO[SqlFileStore] =
     Ref.of[IO, Map[String, StoredSqlFile]](Map.empty).map(InMemorySqlFileStore(_))
 
+  def toSqlFileUnsafe(stored: StoredSqlFile): SqlFile =
+    val bytes = Base64.getDecoder.decode(stored.contentBase64)
+    val virtualPath = Path.of(stored.path)
+    SqlFile(
+      folder = stored.folder,
+      path = virtualPath,
+      name = stored.filename,
+      relativePath = stored.path,
+      content = Some(new String(bytes, StandardCharsets.UTF_8))
+    )
+
   private def toSqlFile(stored: StoredSqlFile): IO[SqlFile] =
     IO.delay {
-      val bytes = Base64.getDecoder.decode(stored.contentBase64)
-      val virtualPath = Path.of(stored.path)
-      SqlFile(
-        folder = stored.folder,
-        path = virtualPath,
-        name = stored.filename,
-        relativePath = stored.path,
-        content = Some(new String(bytes, StandardCharsets.UTF_8))
-      )
+      toSqlFileUnsafe(stored)
     }
 
 private final class MongoSqlFileStore(collection: MongoCollection[Document]) extends SqlFileStore:

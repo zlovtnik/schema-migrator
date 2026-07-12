@@ -271,6 +271,16 @@ code {
   text-decoration: none;
 }
 
+.nav-link--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.nav-link--disabled:hover {
+  background: transparent;
+  color: var(--muted);
+}
+
 .sidebar__selector {
   display: grid;
   gap: var(--space-2);
@@ -576,6 +586,32 @@ code {
 .section-block > h2 {
   font-size: var(--font-size-16);
   font-weight: 700;
+}
+
+.section-block__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.section-block__header > div {
+  display: grid;
+  min-width: min(100%, 280px);
+  gap: var(--space-1);
+}
+
+.section-block__header h2 {
+  font-size: var(--font-size-16);
+  font-weight: 750;
+}
+
+.section-block__header p {
+  max-width: 72ch;
+  color: var(--muted);
+  font-size: var(--font-size-13);
+  line-height: 1.5;
 }
 
 .detail-grid {
@@ -2455,6 +2491,57 @@ kbd {
   gap: var(--space-3);
 }
 
+.sql-files-tabs {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.sql-files-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 34px;
+  min-width: 104px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.sql-files-tab--active {
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-inset-highlight);
+}
+
+.sql-files-validate-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 180px) minmax(160px, 220px) auto;
+  gap: var(--space-3);
+  align-items: end;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.sql-files-validate-form label {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--font-size-12);
+  font-weight: 750;
+}
+
 .summary-card {
   display: grid;
   gap: var(--space-1);
@@ -2506,6 +2593,11 @@ kbd {
 .sql-files-listing {
   display: flex;
   flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sql-file-picker {
+  display: grid;
   gap: var(--space-3);
 }
 
@@ -2632,6 +2724,24 @@ kbd {
 
 .sql-file-item:hover {
   background: var(--surface-strong);
+}
+
+.sql-file-item--selectable {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sql-file-checkbox {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-2);
+  font-weight: 650;
+}
+
+.sql-file-checkbox input {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
 }
 
 .sql-file-name {
@@ -3021,9 +3131,24 @@ kbd {
     grid-template-columns: 1fr;
   }
 
+  .sql-files-tabs,
+  .sql-files-validate-form {
+    width: 100%;
+  }
+
+  .sql-files-tab {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .sql-files-validate-form {
+    grid-template-columns: 1fr;
+  }
+
   .sql-files-toolbar,
   .sql-files-upload-area,
   .sql-files-search-row,
+  .sql-files-validate-form .button,
   .audit-filter-bar,
   .sql-files-search-row .button,
   .sql-files-toolbar .button {
