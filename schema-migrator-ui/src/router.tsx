@@ -30,6 +30,9 @@ const RunDetailPage = lazy(() =>
   import("./pages/Runs/RunDetailPage").then((module) => ({ default: module.RunDetailPage }))
 );
 const DriftPage = lazy(() => import("./pages/Drift/DriftPage").then((module) => ({ default: module.DriftPage })));
+const PatchesPage = lazy(() =>
+  import("./pages/Patches/PatchesPage").then((module) => ({ default: module.PatchesPage }))
+);
 const ValidationReportPage = lazy(() =>
   import("./pages/Validation/ValidationReportPage").then((module) => ({ default: module.ValidationReportPage }))
 );
@@ -135,8 +138,20 @@ export const router = createBrowserRouter([
               title: "Snapshot diff"
             }
           },
-          { path: "patches", element: <Navigate to="/drift" replace /> },
-          { path: "patches/:id", element: <Navigate to="/drift" replace /> },
+          {
+            path: "patches",
+            element: routeElement(PatchesPage),
+            handle: { breadcrumb: "Patches", targetAware: true, title: "Patches" }
+          },
+          {
+            path: "patches/:id",
+            element: routeElement(PatchesPage),
+            handle: {
+              breadcrumb: "Patch detail",
+              parents: [{ breadcrumb: "Patches", breadcrumbTo: "/patches", targetAware: true }],
+              title: "Patch"
+            }
+          },
           {
             path: "runs",
             element: routeElement(RunListPage),

@@ -61,7 +61,7 @@ export const RunListPage = () => {
       <header className="page-header">
         <div>
           <span className="eyebrow">Runs</span>
-          <h1>Run manager</h1>
+          <h1>Run history</h1>
         </div>
         <div className="toolbar">
           <TargetSelector />

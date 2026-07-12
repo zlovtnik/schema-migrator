@@ -108,6 +108,18 @@ describe("SqlFilesPage", () => {
             })
           );
         }
+        if (url.endsWith("/validate") && method === "POST") {
+          return Promise.resolve(
+            jsonResponse({
+              target_id: "filesystem",
+              db_kind: "postgres",
+              checked_at: "2026-06-28T12:02:00Z",
+              file_count: 3,
+              invalid: [],
+              status: "clean"
+            })
+          );
+        }
         if (url.includes("/sql-files/status?target_id=target-1")) {
           return Promise.resolve(
             jsonResponse({
@@ -211,5 +223,26 @@ describe("SqlFilesPage", () => {
       )
     );
     expect(await screen.findByText("Created snapshot before")).toBeInTheDocument();
+  });
+
+  it("validates the server SQL directory from the Validate tab", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.mocked(fetch);
+    renderApp(<SqlFilesPage />, { route: "/sql-files?target=target-1" });
+
+    await user.click(await screen.findByRole("tab", { name: /validate/i }));
+    await user.click(screen.getByRole("button", { name: /^validate$/i }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/validate"),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ sql_dir: "./sql", db_kind: "postgres" })
+        })
+      )
+    );
+    expect(await screen.findByText("Validated 3 SQL files")).toBeInTheDocument();
+    expect(screen.getByText("SQL file validation")).toBeInTheDocument();
   });
 });
