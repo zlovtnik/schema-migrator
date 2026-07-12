@@ -13,6 +13,7 @@ import { useSession } from "../../hooks/useSession";
 import { useSnapshots } from "../../hooks/useSnapshots";
 import { useTarget } from "../../hooks/useTargets";
 import type { Run, Snapshot } from "../../types";
+import { isOracleTarget } from "../../utils/dbKind";
 
 type TargetTab = "overview" | "runs" | "validation" | "snapshots";
 
@@ -40,6 +41,7 @@ export const TargetDetailPage = () => {
     [snapshots]
   );
   const latestCompletedRun = sortedRuns.find((run) => run.status === "completed");
+  const oracleTarget = isOracleTarget(target?.jdbc_url);
 
   if (targetLoading) {
     return (
@@ -81,6 +83,8 @@ export const TargetDetailPage = () => {
             type="button"
             role="tab"
             aria-selected={activeTab === tab.id}
+            disabled={oracleTarget && tab.id === "snapshots"}
+            title={oracleTarget && tab.id === "snapshots" ? "Snapshots are Postgres only for schema targets" : undefined}
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
           >
@@ -88,6 +92,13 @@ export const TargetDetailPage = () => {
           </button>
         ))}
       </div>
+
+      {oracleTarget ? (
+        <div className="status-banner">
+          Oracle targets support connection checks and migration execution; schema drift, catalog snapshots, and snapshot
+          navigation are Postgres only.
+        </div>
+      ) : null}
 
       {activeTab === "overview" ? (
         <TargetOverviewTab

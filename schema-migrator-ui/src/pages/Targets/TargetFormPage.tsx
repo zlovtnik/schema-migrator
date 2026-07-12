@@ -10,6 +10,7 @@ import { useRuns } from "../../hooks/useRuns";
 import { useSession } from "../../hooks/useSession";
 import { useDeleteTarget, useTarget, useTestConnection, useUpdateTarget } from "../../hooks/useTargets";
 import type { ConnectionTestResult, TargetFormValues } from "../../types";
+import { isOracleTarget } from "../../utils/dbKind";
 
 export const TargetFormPage = () => {
   const { id } = useParams();
@@ -74,6 +75,8 @@ export const TargetFormPage = () => {
     return <div className="page status-banner status-banner--error">Target could not be loaded.</div>;
   }
 
+  const oracleTarget = isOracleTarget(target.jdbc_url);
+
   return (
     <section className="page">
       <header className="page-header">
@@ -100,6 +103,13 @@ export const TargetFormPage = () => {
           Delete
         </button>
       </header>
+
+      {oracleTarget ? (
+        <div className="status-banner">
+          Oracle targets support connection checks and migration execution; schema drift, catalog snapshots, and snapshot
+          navigation are Postgres only.
+        </div>
+      ) : null}
 
       <ConnectionForm
         initialTarget={target}

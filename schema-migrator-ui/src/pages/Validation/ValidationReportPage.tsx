@@ -59,7 +59,7 @@ export const ValidationReportPage = () => {
     <section className="page">
       <header className="page-header">
         <div>
-          <span className="eyebrow">Validation</span>
+          <span className="eyebrow">Run validation result</span>
           <h1>Run {runId}</h1>
           <p>Checked {new Date(result.checked_at).toLocaleString()}</p>
         </div>

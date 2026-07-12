@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react";
-import { BracketsCurlyIcon } from "@phosphor-icons/react/dist/csr/BracketsCurly";
 import { CopyIcon } from "@phosphor-icons/react/dist/csr/Copy";
-import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
-import { EyeIcon } from "@phosphor-icons/react/dist/csr/Eye";
 import { FileSqlIcon } from "@phosphor-icons/react/dist/csr/FileSql";
-import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
-import { TableIcon } from "@phosphor-icons/react/dist/csr/Table";
+import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { TreeStructureIcon } from "@phosphor-icons/react/dist/csr/TreeStructure";
 import { PageHeader } from "../../components/PageHeader";
+import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
+import { ValidationTable } from "../../components/ValidationTable";
+import { filterGroups, folderDialect, folderIconSource, groupSqlFiles } from "../../components/sqlFileTree";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { Icon, type IconSource } from "../../components/ui/Icon";
+import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { getRepoSyncStatus, triggerRepoSync, type RepoSyncResult, type RepoSyncStatus } from "../../api/repoSync";
 import {
@@ -26,13 +25,10 @@ import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useCreateSnapshot } from "../../hooks/useSnapshots";
 import { useTarget } from "../../hooks/useTargets";
+import { useValidateSqlFiles } from "../../hooks/useValidation";
+import type { SqlFilesValidationResult } from "../../types";
 
 const ExpandedFoldersStorageKey = "schemaMigrator.sqlFiles.expandedFolders";
-
-type FolderGroup = {
-  folder: string;
-  files: SqlFileEntry[];
-};
 
 const readExpandedFolders = (): Record<string, boolean> => {
   try {
@@ -48,57 +44,17 @@ const readExpandedFolders = (): Record<string, boolean> => {
   }
 };
 
-const groupSqlFiles = (files: SqlFileEntry[]): FolderGroup[] => {
-  const groups = new Map<string, SqlFileEntry[]>();
-  for (const file of files) {
-    const folderFiles = groups.get(file.folder) ?? [];
-    folderFiles.push(file);
-    groups.set(file.folder, folderFiles);
-  }
-
-  return Array.from(groups, ([folder, folderFiles]) => ({
-    folder,
-    files: [...folderFiles].sort((a, b) => a.filename.localeCompare(b.filename))
-  })).sort((a, b) => a.folder.localeCompare(b.folder));
-};
-
-const filterGroups = (groups: FolderGroup[], query: string): FolderGroup[] => {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) return groups;
-
-  return groups
-    .map((group) => ({
-      ...group,
-      files: group.files.filter((file) => {
-        const searchable = `${group.folder} ${file.filename} ${file.path}`.toLowerCase();
-        return searchable.includes(normalizedQuery);
-      })
-    }))
-    .filter((group) => group.files.length > 0);
-};
-
-const folderIconSource = (folder: string): IconSource => {
-  const normalizedFolder = folder.toLowerCase();
-  if (normalizedFolder.includes("oracle") || normalizedFolder.includes("postgres")) return DatabaseIcon;
-  if (normalizedFolder.includes("table")) return TableIcon;
-  if (normalizedFolder.includes("view")) return EyeIcon;
-  if (normalizedFolder.includes("function") || normalizedFolder.includes("type")) return BracketsCurlyIcon;
-  if (normalizedFolder.includes("index") || normalizedFolder.includes("schema")) return TreeStructureIcon;
-  return FolderOpenIcon;
-};
-
-const folderDialect = (folder: string): "Oracle" | "Postgres" =>
-  folder.toLowerCase().includes("oracle") ? "Oracle" : "Postgres";
-
 const SqlFilesPage = () => {
   const selectedTarget = useSelectedTargetId();
   const targetQuery = useTarget(selectedTarget ?? undefined);
   const { canMutate } = useSession();
   const createSnapshot = useCreateSnapshot();
+  const validateSqlFiles = useValidateSqlFiles();
   const [status, setStatus] = useState<SqlFileStatus | null>(null);
   const [files, setFiles] = useState<SqlFileEntry[]>([]);
   const [repoStatus, setRepoStatus] = useState<RepoSyncStatus | null>(null);
   const [syncResult, setSyncResult] = useState<RepoSyncResult | null>(null);
+  const [validationResult, setValidationResult] = useState<SqlFilesValidationResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +96,7 @@ const SqlFilesPage = () => {
 
   useEffect(() => {
     setSyncResult(null);
+    setValidationResult(null);
   }, [selectedTarget]);
 
   useEffect(() => {
@@ -252,6 +209,24 @@ const SqlFilesPage = () => {
     );
   };
 
+  const handleValidateSqlFiles = () => {
+    if (!canMutate || !effectiveTargetId) {
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    validateSqlFiles.mutate(
+      { target_id: effectiveTargetId },
+      {
+        onSuccess: (result) => {
+          setValidationResult(result);
+          setSuccess(`Validated ${result.file_count} SQL files`);
+        },
+        onError: (err) => setError(err instanceof Error ? err.message : "Failed to validate SQL files")
+      }
+    );
+  };
+
   return (
     <section className="page">
       <PageHeader
@@ -306,6 +281,22 @@ const SqlFilesPage = () => {
           >
             <Icon source={GitBranchIcon} size={16} />
             {createSnapshot.isPending ? "Creating" : "Create snapshot"}
+          </button>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={handleValidateSqlFiles}
+            disabled={!canMutate || !effectiveTargetId || loading || syncing || validateSqlFiles.isPending}
+            title={
+              !canMutate
+                ? "Viewer role cannot validate SQL files"
+                : !effectiveTargetId
+                  ? "Select a target before validating"
+                  : undefined
+            }
+          >
+            <Icon source={ShieldCheckIcon} size={16} />
+            {validateSqlFiles.isPending ? "Validating" : "Validate"}
           </button>
           {status?.loaded ? (
             <button
@@ -384,6 +375,22 @@ const SqlFilesPage = () => {
             <strong>{syncResult.unchanged}</strong>
           </div>
         </div>
+      ) : null}
+
+      {validationResult ? (
+        <section className="section-block">
+          <div className="section-block__header">
+            <div>
+              <h2>SQL file validation</h2>
+              <p>
+                Checked {validationResult.file_count} files for {validationResult.db_kind} at{" "}
+                {new Date(validationResult.checked_at).toLocaleString()}.
+              </p>
+            </div>
+            <StatusBadge status={validationResult.status} />
+          </div>
+          <ValidationTable result={validationResult} />
+        </section>
       ) : null}
 
       {!loading && groupedFiles.length > 0 ? (

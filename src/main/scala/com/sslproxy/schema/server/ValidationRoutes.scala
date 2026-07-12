@@ -1,21 +1,40 @@
 package com.sslproxy.schema.server
 
-import cats.effect.IO
+import cats.effect.{Clock, IO}
 import cats.syntax.all.*
+import com.sslproxy.schema.config.{DbKind, MigratorConfig}
+import com.sslproxy.schema.discovery.DiscoveryService
+import com.sslproxy.schema.validation.ValidationReport
+import com.sslproxy.schema.validation.Validator
 import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
-import com.sslproxy.schema.store.{AuditStore, Models, PatchStore, RunStore, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{
+  AuditStore,
+  InvalidObject,
+  Models,
+  PatchStore,
+  RunStore,
+  SqlFileStore,
+  SqlFilesValidationResult,
+  TargetStore,
+  ValidationStore
+}
 import io.circe.Json
 import io.circe.syntax.*
 import org.http4s.HttpRoutes
+import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.dsl.io.*
+
+import java.nio.file.{Files, Path}
 
 object ValidationRoutes:
   import Models.given
 
   def routes(
+    config: MigratorConfig,
     targetStore: TargetStore,
     patchStore: PatchStore,
     runStore: RunStore,
+    sqlFileStore: SqlFileStore,
     validationStore: ValidationStore,
     auditStore: AuditStore
   ): HttpRoutes[IO] =
@@ -24,6 +43,66 @@ object ValidationRoutes:
         validationStore.get(runId).flatMap {
           case Some(result) => RouteJson.ok(result.asJson)
           case None => RouteJson.notFound(s"validation for run '$runId' was not found")
+        }
+
+      case request @ GET -> Root / "validate" =>
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          validateSqlDirectory(
+            ValidateSqlPayload(
+              sql_dir = request.uri.query.params.get("sql_dir").getOrElse(config.sqlDir.toString),
+              db_kind = request.uri.query.params.get("db_kind").getOrElse(config.dbKind.toString.toLowerCase),
+              customer = request.uri.query.params.get("customer").filter(_.nonEmpty)
+            ),
+            claims
+          )
+        }
+
+      case request @ POST -> Root / "validate" =>
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          RouteJson.withJson[ValidateSqlPayload](request, "invalid validation payload") { payload =>
+            validateSqlDirectory(payload, claims)
+          }
+        }
+
+      case request @ POST -> Root / "validation" / "sql-files" =>
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          RouteJson.withJson[SqlFilesValidationPayload](request, "invalid validation payload") { payload =>
+            targetStore.get(payload.target_id).flatMap {
+              case None => RouteJson.notFound(s"target '${payload.target_id}' was not found")
+              case Some(target) =>
+                TargetDatabase.dbKindFor(target.jdbc_url) match
+                  case Left(message) => RouteJson.badRequest(message)
+                  case Right(dbKind) =>
+                    sqlFileStore.toSqlFiles(payload.target_id).flatMap {
+                      case Nil => RouteJson.badRequest("no synced SQL files are available for validation")
+                      case files =>
+                        val discovery = DiscoveryService[IO]().discoverFromFiles(files, dbKind)
+                        Validator[IO](dbKind).validate(discovery.files).flatMap { report =>
+                          for
+                            checkedAt <- Clock[IO].realTimeInstant.map(_.toString)
+                            reportWithDiscoveryWarnings = report.copy(warnings = discovery.warnings ++ report.warnings)
+                            result = sqlFilesValidationResult(
+                              payload.target_id,
+                              dbKind.toString.toLowerCase,
+                              checkedAt,
+                              discovery.files.length,
+                              reportWithDiscoveryWarnings
+                            )
+                            _ <- auditStore.record(
+                              claims.subject,
+                              claims.role,
+                              "validation.sql_files",
+                              "validation",
+                              payload.target_id,
+                              Some(payload.target_id),
+                              Some(Json.obj("status" -> Json.fromString(result.status)))
+                            )
+                            response <- RouteJson.ok(result.asJson)
+                          yield response
+                        }
+                    }
+            }
+          }
         }
 
       case request @ POST -> Root / "validation" / runId / "rerun" =>
@@ -53,3 +132,92 @@ object ValidationRoutes:
           }
         }
     }
+
+  final case class SqlFilesValidationPayload(target_id: String)
+  final case class ValidateSqlPayload(sql_dir: String, db_kind: String, customer: Option[String])
+
+  private given io.circe.Decoder[SqlFilesValidationPayload] = io.circe.generic.semiauto.deriveDecoder
+  private given io.circe.Decoder[ValidateSqlPayload] = io.circe.generic.semiauto.deriveDecoder
+
+  private def validateSqlDirectory(
+    payload: ValidateSqlPayload,
+    claims: com.sslproxy.schema.server.auth.Claims
+  ): IO[org.http4s.Response[IO]] =
+    val sqlDir = payload.sql_dir.trim
+    val customer = payload.customer.map(_.trim).filter(_.nonEmpty)
+    DbKind.parse(payload.db_kind) match
+      case Left(message) => RouteJson.badRequest(message)
+      case Right(dbKind) =>
+        validateSqlDir(sqlDir) match
+          case Left(message) => RouteJson.badRequest(message)
+          case Right(path) =>
+            for
+              discovery <- DiscoveryService[IO]().discover(path, dbKind, customer)
+              report <- Validator[IO](dbKind).validate(discovery.files)
+              checkedAt <- Clock[IO].realTimeInstant.map(_.toString)
+              reportWithDiscoveryWarnings = report.copy(warnings = discovery.warnings ++ report.warnings)
+              result = sqlFilesValidationResult(
+                targetId = "filesystem",
+                dbKind = dbKind.toString.toLowerCase,
+                checkedAt = checkedAt,
+                fileCount = discovery.files.length,
+                report = reportWithDiscoveryWarnings
+              )
+              _ <- auditStore.record(
+                claims.subject,
+                claims.role,
+                "validation.validate",
+                "validation",
+                sqlDir,
+                None,
+                Some(
+                  Json.obj(
+                    "db_kind" -> Json.fromString(result.db_kind),
+                    "status" -> Json.fromString(result.status),
+                    "file_count" -> Json.fromInt(result.file_count)
+                  )
+                )
+              )
+              response <- RouteJson.ok(result.asJson)
+            yield response
+  private def sqlFilesValidationResult(
+    targetId: String,
+    dbKind: String,
+    checkedAt: String,
+    fileCount: Int,
+    report: ValidationReport
+  ): SqlFilesValidationResult =
+    val errors = report.errors.map(message => invalidObject(message, "error"))
+    val warnings = report.warnings.map(message => invalidObject(message, "warning"))
+    SqlFilesValidationResult(
+      target_id = targetId,
+      db_kind = dbKind,
+      checked_at = checkedAt,
+      file_count = fileCount,
+      invalid = errors ++ warnings,
+      status =
+        if errors.nonEmpty then "errors"
+        else if warnings.nonEmpty then "warnings"
+        else "clean"
+    )
+
+  private def invalidObject(message: String, severity: String): InvalidObject =
+    val name =
+      message.takeWhile(_ != ':').trim match
+        case "" => "validation"
+        case value => value
+    InvalidObject(
+      object_type = "other",
+      schema = "",
+      name = name,
+      error = message,
+      severity = severity
+    )
+
+  private def validateSqlDir(value: String): Either[String, Path] =
+    if value.isEmpty then Left("sql_dir is required")
+    else
+      val path = Path.of(value)
+      if Files.notExists(path) then Left(s"sql directory '$path' does not exist or is not accessible")
+      else if !Files.isDirectory(path) then Left(s"path '$path' is not a directory")
+      else Right(path)

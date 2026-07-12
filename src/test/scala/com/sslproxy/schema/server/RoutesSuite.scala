@@ -582,6 +582,104 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     assertEquals(firstScriptOrder, 1)
   }
 
+  test("patch creation from synced SQL files preserves discovery order") {
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        val routes = fixture.app
+        val extensionSql =
+          """-- object: pgcrypto
+            |-- folder: extensions
+            |-- depends_on: -
+            |create extension if not exists pgcrypto;
+            |""".stripMargin
+        val tableSql =
+          """-- object: public.patch_devices
+            |-- folder: tables
+            |-- depends_on: pgcrypto
+            |create table if not exists public.patch_devices (
+            |  id uuid primary key
+            |);
+            |""".stripMargin
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List(
+              "tables/001_patch_devices.sql" -> tableSql,
+              "extensions/001_pgcrypto.sql" -> extensionSql
+            )
+          )
+          response <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/patches/from-sql-files",
+              Json.obj(
+                "target_id" -> Json.fromString(targetId),
+                "source_files" -> Json.arr(
+                  Json.fromString("tables/001_patch_devices.sql"),
+                  Json.fromString("extensions/001_pgcrypto.sql")
+                )
+              )
+            )
+          )
+          json <- bodyJson(response)
+          firstScriptName <- IO.fromEither(json.hcursor.downField("scripts").downArray.get[String]("filename"))
+          firstScriptOrder <- IO.fromEither(json.hcursor.downField("scripts").downArray.get[Int]("order"))
+          scriptCount = json.hcursor.downField("scripts").values.map(_.size)
+        yield (response.status, firstScriptName, firstScriptOrder, scriptCount)
+      }
+      .unsafeRunSync()
+
+    val (status, firstScriptName, firstScriptOrder, scriptCount) = result
+    assertEquals(status, Status.Created)
+    assertEquals(firstScriptName, "extensions/001_pgcrypto.sql")
+    assertEquals(firstScriptOrder, 1)
+    assertEquals(scriptCount, Some(2))
+  }
+
+  test("standalone SQL file validation uses synced target files without a run") {
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        val routes = fixture.app
+        val invalidSql = "select 1;"
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("tables/001_invalid.sql" -> invalidSql))
+          response <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/validation/sql-files",
+              Json.obj("target_id" -> Json.fromString(targetId))
+            )
+          )
+          json <- bodyJson(response)
+        yield (
+          response.status,
+          json.hcursor.get[String]("target_id"),
+          json.hcursor.get[String]("db_kind"),
+          json.hcursor.get[Int]("file_count"),
+          json.hcursor.get[String]("status"),
+          json.hcursor.downField("invalid").values.map(_.size),
+          json.hcursor.downField("run_id").succeeded
+        )
+      }
+      .unsafeRunSync()
+
+    val (status, targetId, dbKind, fileCount, validationStatus, invalidCount, hasRunId) = result
+    assertEquals(status, Status.Ok)
+    assert(targetId.exists(_.nonEmpty))
+    assertEquals(dbKind, Right("postgres"))
+    assertEquals(fileCount, Right(1))
+    assertEquals(validationStatus, Right("errors"))
+    assertEquals(invalidCount.exists(_ > 0), true)
+    assertEquals(hasRunId, false)
+  }
+
   test("snapshot routes capture stored SQL files without returning content") {
     val result = routeFixtureWithStore()
       .use { fixture =>

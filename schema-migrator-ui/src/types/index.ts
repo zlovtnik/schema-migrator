@@ -150,6 +150,15 @@ export interface ValidationResult {
   status: ValidationStatus;
 }
 
+export interface SqlFilesValidationResult {
+  target_id: string;
+  db_kind: DbKind;
+  checked_at: Rfc3339Timestamp;
+  file_count: number;
+  invalid: InvalidObject[];
+  status: ValidationStatus;
+}
+
 export interface InvalidObject {
   object_type: ObjectType;
   schema: string;
@@ -369,6 +378,15 @@ export const validationResultSchema = z.object({
   status: validationStatusSchema
 });
 
+export const sqlFilesValidationResultSchema = z.object({
+  target_id: z.string().min(1),
+  db_kind: dbKindSchema,
+  checked_at: rfc3339TimestampSchema,
+  file_count: z.number().int().nonnegative(),
+  invalid: z.array(invalidObjectSchema),
+  status: validationStatusSchema
+});
+
 export const schemaCatalogObjectSchema = z.object({
   schema: z.string(),
   name: z.string(),
@@ -506,6 +524,8 @@ export const parseRunList = (value: unknown): Run[] => {
 };
 export const parseValidationResult = (value: unknown): ValidationResult =>
   validationResultSchema.parse(value) as ValidationResult;
+export const parseSqlFilesValidationResult = (value: unknown): SqlFilesValidationResult =>
+  sqlFilesValidationResultSchema.parse(value) as SqlFilesValidationResult;
 export const parseSchemaCatalogResponse = (value: unknown): SchemaCatalogResponse =>
   schemaCatalogResponseSchema.parse(value) as SchemaCatalogResponse;
 export const parseDriftResponse = (value: unknown): DriftResponse => driftResponseSchema.parse(value) as DriftResponse;
@@ -598,9 +618,24 @@ export interface DriftRunPayload {
   source_files?: string[];
 }
 
+export interface CreatePatchFromSqlFilesPayload {
+  target_id: string;
+  source_files: string[];
+}
+
 export interface UploadPatchPayload {
   target_id: string;
   files: File[];
+}
+
+export interface ValidateSqlFilesPayload {
+  target_id: string;
+}
+
+export interface ValidateSqlDirectoryPayload {
+  sql_dir: string;
+  db_kind: DbKind;
+  customer?: string;
 }
 
 export interface CreateSnapshotPayload {
