@@ -189,6 +189,7 @@ private[schema] object PostgresDriftDiffEngine:
     controlItem
       .filter(item => cleanControlStatuses.contains(item.applyStatus))
       .flatMap(_.expectedDdl)
+      .filterNot(PostgresDriftDdlParser.hasCorruptCanonicalRoutineBody(expectedItem.key, _))
       .orElse(expectedItem.expectedDdl)
 
   private final case class PreparedState(

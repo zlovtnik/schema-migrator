@@ -194,6 +194,73 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     assertEquals(driftItems(now, expectedObjects, actualObjects, control), Nil)
   }
 
+  test("drift falls back to manifest when schema control has old corrupt routine canonical SQL") {
+    val sourceFile = "functions/010_vec_build_behaviour_snapshots.sql"
+    val manifestSql =
+      """-- object: vec_build_behaviour_snapshots
+        |-- folder: functions
+        |-- depends_on: vec_behaviour_snapshots
+        |create or replace function vec_build_behaviour_snapshots(
+        |  p_from timestamptz default now() - interval '2 hours',
+        |  p_to timestamptz default now(),
+        |  p_window interval default interval '15 minutes'
+        |)
+        |returns integer
+        |language plpgsql
+        |as $$
+        |declare
+        |  v_count integer := 0;
+        |begin
+        |  return v_count;
+        |end;
+        |$$;
+        |""".stripMargin
+    val corruptControlSql =
+      """create or replace function vec_build_behaviour_snapshots( p_from timestamptz default now() - interval '2 hours', p_to timestamptz default now(), p_window interval default interval '15 minutes' ) returns integer language plpgsql as $$(-- object: vec_build_behaviour_snapshots
+        |-- folder: functions
+        |-- depends_on: vec_behaviour_snapshots
+        |create or replace function vec_build_behaviour_snapshots(
+        |  p_from timestamptz default now() - interval '2 hours',
+        |  p_to timestamptz default now(),
+        |  p_window interval default interval '15 minutes'
+        |)
+        |returns integer
+        |language plpgsql
+        |as $$
+        |declare
+        |  v_count integer := 0;
+        |begin
+        |  return v_count;
+        |end;
+        |$$;
+        |""".stripMargin
+    val actualSql =
+      """CREATE OR REPLACE FUNCTION public.vec_build_behaviour_snapshots(p_from timestamp with time zone DEFAULT (now() - '02:00:00'::interval), p_to timestamp with time zone DEFAULT now(), p_window interval DEFAULT '00:15:00'::interval)
+        | RETURNS integer
+        | LANGUAGE plpgsql
+        |AS $function$
+        |declare
+        |  v_count integer := 0;
+        |begin
+        |  return v_count;
+        |end;
+        |$function$
+        |""".stripMargin
+    val key = ObjectKey(
+      "public",
+      "vec_build_behaviour_snapshots(timestamp with time zone, timestamp with time zone, interval)",
+      "function"
+    )
+    val expectedObjects = expectedFromManifest(
+      schemaObject("function", "vec_build_behaviour_snapshots", sourceFile, manifestSql)
+    )
+    val control = controlSnapshot(
+      List(controlRow("function", "vec_build_behaviour_snapshots", sourceFile, "applied", Some(corruptControlSql)))
+    )
+
+    assertEquals(driftItems(now, expectedObjects, List(LiveObject(key, Some(actualSql))), control), Nil)
+  }
+
   test("manifest extraction uses concrete index names from grouped index files") {
     val expected = expectedFromManifest(
       schemaObject(

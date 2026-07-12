@@ -43,6 +43,20 @@ private[schema] object PostgresDriftDdlParser:
   def definitionHash(key: ObjectKey, value: String): String =
     sha256Hex(comparableDefinition(key, value))
 
+  def hasCorruptCanonicalRoutineBody(key: ObjectKey, value: String): Boolean =
+    val lowerValue = value.toLowerCase(Locale.ROOT)
+    val hasCorruptPrefix = lowerValue.contains("as $$(-- object:")
+    val hasCorruptParsedBody =
+      routineDefinitions(value)
+        .find(routine => normalizeObjectKey(routine.key) == normalizeObjectKey(key))
+        .flatMap(routineBodyParts)
+        .exists { case (_, body) =>
+          val normalized = body.trim.stripPrefix("(").trim.toLowerCase(Locale.ROOT)
+          normalized.startsWith("-- object:") &&
+          normalized.contains("create or replace function")
+        }
+    isRoutineType(key.objectType) && (hasCorruptPrefix || hasCorruptParsedBody)
+
   private def definitionsEquivalent(key: ObjectKey, expected: String, actual: String): Boolean =
     val expectedComparable = comparableDefinition(key, expected)
     val actualComparable = comparableDefinition(key, actual)
