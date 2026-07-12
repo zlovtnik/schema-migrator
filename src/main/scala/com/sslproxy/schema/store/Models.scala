@@ -128,6 +128,8 @@ final case class TriggerRunPayload(patch_id: String, target_id: String)
 
 final case class DriftRunPayload(target_id: String, source_files: Option[List[String]])
 
+final case class CreatePatchFromSqlFilesPayload(target_id: String, source_files: List[String])
+
 final case class SnapshotFile(
   path: String,
   folder: String,
@@ -194,6 +196,15 @@ final case class ValidationResult(
   run_id: String,
   target_id: String,
   checked_at: String,
+  invalid: List[InvalidObject],
+  status: String
+)
+
+final case class SqlFilesValidationResult(
+  target_id: String,
+  db_kind: String,
+  checked_at: String,
+  file_count: Int,
   invalid: List[InvalidObject],
   status: String
 )
@@ -280,6 +291,7 @@ object Models:
   given Decoder[TargetPayload] = deriveDecoder
   given Decoder[TriggerRunPayload] = deriveDecoder
   given Decoder[DriftRunPayload] = deriveDecoder
+  given Decoder[CreatePatchFromSqlFilesPayload] = deriveDecoder
   given Decoder[CreateSnapshotPayload] = deriveDecoder
   given Decoder[RollbackToSnapshotPayload] = deriveDecoder
   given Decoder[AuthTokenRequest] = deriveDecoder
@@ -298,6 +310,7 @@ object Models:
   given Encoder[AuditEvent] = deriveEncoder
   given Encoder[InvalidObject] = deriveEncoder
   given Encoder[ValidationResult] = deriveEncoder
+  given Encoder[SqlFilesValidationResult] = deriveEncoder
   given Encoder[SchemaCatalogObject] = deriveEncoder
   given Encoder[SchemaCatalogResponse] = deriveEncoder
   given Encoder[DriftItem] = deriveEncoder

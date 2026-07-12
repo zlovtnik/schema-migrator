@@ -12,13 +12,16 @@ import { useMutationGuard } from "../../hooks/useMutationGuard";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useCreateSnapshot, useSnapshots } from "../../hooks/useSnapshots";
+import { useTarget } from "../../hooks/useTargets";
 import type { Snapshot } from "../../types";
+import { isOracleTarget } from "../../utils/dbKind";
 
 export const SnapshotListPage = () => {
   const selectedTarget = useSelectedTargetId();
   const { canMutate } = useSession();
   const mutationGuard = useMutationGuard(canMutate);
   const { data: snapshots = [], isLoading, error } = useSnapshots(selectedTarget);
+  const targetQuery = useTarget(selectedTarget ?? undefined);
   const createSnapshot = useCreateSnapshot();
   const [compareBySnapshot, setCompareBySnapshot] = useState<Record<string, string>>({});
 
@@ -26,14 +29,18 @@ export const SnapshotListPage = () => {
     () => [...snapshots].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)),
     [snapshots]
   );
+  const oracleTarget = isOracleTarget(targetQuery.data?.jdbc_url);
 
   const create = () => {
-    if (!canMutate || !selectedTarget) {
+    if (!canMutate || !selectedTarget || oracleTarget) {
       return;
     }
     createSnapshot.mutate({ target_id: selectedTarget });
   };
-  const createGuard = mutationGuard("Viewer role cannot create snapshots", !selectedTarget || createSnapshot.isPending);
+  const createGuard = mutationGuard(
+    "Viewer role cannot create snapshots",
+    !selectedTarget || oracleTarget || createSnapshot.isPending
+  );
 
   const columns = useMemo<DataTableColumn<Snapshot>[]>(
     () => [
@@ -124,6 +131,8 @@ export const SnapshotListPage = () => {
               title={
                 !canMutate
                   ? createGuard.title
+                  : oracleTarget
+                    ? "Snapshots are Postgres only for schema targets"
                   : !selectedTarget
                     ? "Select a target before creating a snapshot"
                     : undefined
@@ -147,6 +156,13 @@ export const SnapshotListPage = () => {
       {selectedTarget && error ? (
         <div className="status-banner status-banner--error" role="alert">
           Snapshots could not be loaded.
+        </div>
+      ) : null}
+
+      {selectedTarget && oracleTarget ? (
+        <div className="status-banner">
+          Snapshots are Postgres only for schema targets. Use Oracle connection checks and migration runs for Oracle
+          targets.
         </div>
       ) : null}
 

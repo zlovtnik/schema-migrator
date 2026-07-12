@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useMemo, useState, type SyntheticEvent } from "react";
-import { BracketsCurlyIcon } from "@phosphor-icons/react/dist/csr/BracketsCurly";
 import { CopyIcon } from "@phosphor-icons/react/dist/csr/Copy";
-import { DatabaseIcon } from "@phosphor-icons/react/dist/csr/Database";
-import { EyeIcon } from "@phosphor-icons/react/dist/csr/Eye";
 import { FileSqlIcon } from "@phosphor-icons/react/dist/csr/FileSql";
-import { FolderOpenIcon } from "@phosphor-icons/react/dist/csr/FolderOpen";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
-import { TableIcon } from "@phosphor-icons/react/dist/csr/Table";
+import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { TreeStructureIcon } from "@phosphor-icons/react/dist/csr/TreeStructure";
 import { PageHeader } from "../../components/PageHeader";
+import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
+import { ValidationTable } from "../../components/ValidationTable";
+import { filterGroups, folderDialect, folderIconSource, groupSqlFiles } from "../../components/sqlFileTree";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { Icon, type IconSource } from "../../components/ui/Icon";
+import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { getRepoSyncStatus, triggerRepoSync, type RepoSyncResult, type RepoSyncStatus } from "../../api/repoSync";
 import {
@@ -26,12 +25,19 @@ import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useCreateSnapshot } from "../../hooks/useSnapshots";
 import { useTarget } from "../../hooks/useTargets";
+import { useValidateSqlDirectory } from "../../hooks/useValidation";
+import type { DbKind, SqlFilesValidationResult } from "../../types";
 
 const ExpandedFoldersStorageKey = "schemaMigrator.sqlFiles.expandedFolders";
+const BrowseTabId = "sql-files-tab-browse";
+const BrowsePanelId = "sql-files-panel-browse";
+const ValidateTabId = "sql-files-tab-validate";
+const ValidatePanelId = "sql-files-panel-validate";
 
-type FolderGroup = {
-  folder: string;
-  files: SqlFileEntry[];
+type SqlFilesTab = "browse" | "validate";
+
+const dbKindFromJdbcUrl = (jdbcUrl?: string): DbKind => {
+  return jdbcUrl?.trim().toLowerCase().startsWith("jdbc:oracle:thin:") ? "oracle" : "postgres";
 };
 
 const readExpandedFolders = (): Record<string, boolean> => {
@@ -48,57 +54,21 @@ const readExpandedFolders = (): Record<string, boolean> => {
   }
 };
 
-const groupSqlFiles = (files: SqlFileEntry[]): FolderGroup[] => {
-  const groups = new Map<string, SqlFileEntry[]>();
-  for (const file of files) {
-    const folderFiles = groups.get(file.folder) ?? [];
-    folderFiles.push(file);
-    groups.set(file.folder, folderFiles);
-  }
-
-  return Array.from(groups, ([folder, folderFiles]) => ({
-    folder,
-    files: [...folderFiles].sort((a, b) => a.filename.localeCompare(b.filename))
-  })).sort((a, b) => a.folder.localeCompare(b.folder));
-};
-
-const filterGroups = (groups: FolderGroup[], query: string): FolderGroup[] => {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) return groups;
-
-  return groups
-    .map((group) => ({
-      ...group,
-      files: group.files.filter((file) => {
-        const searchable = `${group.folder} ${file.filename} ${file.path}`.toLowerCase();
-        return searchable.includes(normalizedQuery);
-      })
-    }))
-    .filter((group) => group.files.length > 0);
-};
-
-const folderIconSource = (folder: string): IconSource => {
-  const normalizedFolder = folder.toLowerCase();
-  if (normalizedFolder.includes("oracle") || normalizedFolder.includes("postgres")) return DatabaseIcon;
-  if (normalizedFolder.includes("table")) return TableIcon;
-  if (normalizedFolder.includes("view")) return EyeIcon;
-  if (normalizedFolder.includes("function") || normalizedFolder.includes("type")) return BracketsCurlyIcon;
-  if (normalizedFolder.includes("index") || normalizedFolder.includes("schema")) return TreeStructureIcon;
-  return FolderOpenIcon;
-};
-
-const folderDialect = (folder: string): "Oracle" | "Postgres" =>
-  folder.toLowerCase().includes("oracle") ? "Oracle" : "Postgres";
-
 const SqlFilesPage = () => {
   const selectedTarget = useSelectedTargetId();
   const targetQuery = useTarget(selectedTarget ?? undefined);
   const { canMutate } = useSession();
   const createSnapshot = useCreateSnapshot();
+  const validateSqlDirectory = useValidateSqlDirectory();
+  const [activeTab, setActiveTab] = useState<SqlFilesTab>("browse");
   const [status, setStatus] = useState<SqlFileStatus | null>(null);
   const [files, setFiles] = useState<SqlFileEntry[]>([]);
   const [repoStatus, setRepoStatus] = useState<RepoSyncStatus | null>(null);
   const [syncResult, setSyncResult] = useState<RepoSyncResult | null>(null);
+  const [validationResult, setValidationResult] = useState<SqlFilesValidationResult | null>(null);
+  const [validationSqlDir, setValidationSqlDir] = useState("./sql");
+  const [validationDbKind, setValidationDbKind] = useState<DbKind>("postgres");
+  const [validationCustomer, setValidationCustomer] = useState("");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +110,12 @@ const SqlFilesPage = () => {
 
   useEffect(() => {
     setSyncResult(null);
+    setValidationResult(null);
   }, [selectedTarget]);
+
+  useEffect(() => {
+    setValidationDbKind(dbKindFromJdbcUrl(targetQuery.data?.jdbc_url));
+  }, [targetQuery.data?.jdbc_url]);
 
   useEffect(() => {
     try {
@@ -248,6 +223,26 @@ const SqlFilesPage = () => {
       {
         onSuccess: (snapshot) => setSuccess(`Created snapshot ${snapshot.label}`),
         onError: (err) => setError(err instanceof Error ? err.message : "Failed to create snapshot")
+      }
+    );
+  };
+
+  const handleValidateSqlDirectory = () => {
+    const sqlDir = validationSqlDir.trim();
+    const customer = validationCustomer.trim();
+    if (!canMutate || !sqlDir) {
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    validateSqlDirectory.mutate(
+      { sql_dir: sqlDir, db_kind: validationDbKind, ...(customer ? { customer } : {}) },
+      {
+        onSuccess: (result) => {
+          setValidationResult(result);
+          setSuccess(`Validated ${result.file_count} SQL files`);
+        },
+        onError: (err) => setError(err instanceof Error ? err.message : "Failed to validate SQL files")
       }
     );
   };
@@ -386,8 +381,95 @@ const SqlFilesPage = () => {
         </div>
       ) : null}
 
-      {!loading && groupedFiles.length > 0 ? (
-        <>
+      <div className="sql-files-tabs" role="tablist" aria-label="SQL files views">
+        <button
+          id={BrowseTabId}
+          className={`sql-files-tab ${activeTab === "browse" ? "sql-files-tab--active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "browse"}
+          aria-controls={BrowsePanelId}
+          onClick={() => setActiveTab("browse")}
+        >
+          <Icon source={FileSqlIcon} size={16} />
+          Browse
+        </button>
+        <button
+          id={ValidateTabId}
+          className={`sql-files-tab ${activeTab === "validate" ? "sql-files-tab--active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "validate"}
+          aria-controls={ValidatePanelId}
+          onClick={() => setActiveTab("validate")}
+        >
+          <Icon source={ShieldCheckIcon} size={16} />
+          Validate
+        </button>
+      </div>
+
+      {activeTab === "validate" ? (
+        <section id={ValidatePanelId} className="section-block" role="tabpanel" aria-labelledby={ValidateTabId}>
+          <div className="sql-files-validate-form">
+            <label>
+              SQL directory
+              <input
+                type="text"
+                value={validationSqlDir}
+                onChange={(event) => setValidationSqlDir(event.target.value)}
+                placeholder="./sql"
+              />
+            </label>
+            <label>
+              Database
+              <select value={validationDbKind} onChange={(event) => setValidationDbKind(event.target.value as DbKind)}>
+                <option value="postgres">Postgres</option>
+                <option value="oracle">Oracle</option>
+              </select>
+            </label>
+            <label>
+              Customer
+              <input
+                type="text"
+                value={validationCustomer}
+                onChange={(event) => setValidationCustomer(event.target.value)}
+                placeholder="Optional"
+              />
+            </label>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={handleValidateSqlDirectory}
+              disabled={!canMutate || !validationSqlDir.trim() || validateSqlDirectory.isPending}
+              title={canMutate ? undefined : "Viewer role cannot validate SQL files"}
+            >
+              <Icon source={ShieldCheckIcon} size={16} />
+              {validateSqlDirectory.isPending ? "Validating" : "Validate"}
+            </button>
+          </div>
+
+          {validateSqlDirectory.isPending ? <Skeleton rows={3} label="Validating SQL files" /> : null}
+
+          {validationResult ? (
+            <section className="section-block">
+              <div className="section-block__header">
+                <div>
+                  <h2>SQL file validation</h2>
+                  <p>
+                    Checked {validationResult.file_count} files for {validationResult.db_kind} at{" "}
+                    {new Date(validationResult.checked_at).toLocaleString()}.
+                  </p>
+                </div>
+                <StatusBadge status={validationResult.status} />
+              </div>
+              <ValidationTable result={validationResult} />
+            </section>
+          ) : null}
+        </section>
+      ) : null}
+
+      {activeTab === "browse" && !loading && groupedFiles.length > 0 ? (
+        <section id={BrowsePanelId} role="tabpanel" aria-labelledby={BrowseTabId}>
           <div className="sql-files-search-row">
             <label className="sql-files-search-field">
               <span className="sr-only">Filter SQL files</span>
@@ -483,7 +565,7 @@ const SqlFilesPage = () => {
               Adjust the filter to find a file, folder, or path in the synced manifest.
             </EmptyState>
           )}
-        </>
+        </section>
       ) : null}
     </section>
   );
