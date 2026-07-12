@@ -9,7 +9,6 @@ import com.sslproxy.schema.validation.Validator
 import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
 import com.sslproxy.schema.store.{
   AuditStore,
-  InvalidObject,
   Models,
   PatchStore,
   RunStore,
@@ -24,7 +23,7 @@ import org.http4s.HttpRoutes
 import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.dsl.io.*
 
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, InvalidPathException, Path}
 
 object ValidationRoutes:
   import Models.given
@@ -47,21 +46,22 @@ object ValidationRoutes:
 
       case request @ GET -> Root / "validate" =>
         AuthContext.requireRole(request, UserRole.Operator) { claims =>
-          validateSqlDirectory(
-            ValidateSqlPayload(
-              sql_dir = request.uri.query.params.getOrElse("sql_dir", config.sqlDir.toString),
-              db_kind = request.uri.query.params.getOrElse("db_kind", config.dbKind.toString.toLowerCase),
-              customer = request.uri.query.params.get("customer").filter(_.nonEmpty)
-            ),
-            auditStore,
-            claims
+          val payload = ValidateSqlPayload(
+            sql_dir = request.uri.query.params.getOrElse("sql_dir", config.sqlDir.toString),
+            db_kind = request.uri.query.params.getOrElse("db_kind", config.dbKind.toString.toLowerCase),
+            customer = request.uri.query.params.get("customer").filter(_.nonEmpty)
           )
+          validateSqlDirWithinConfiguredRoot(payload.sql_dir, config.sqlDir) match
+            case Left(message) => RouteJson.badRequest(message)
+            case Right(()) => validateSqlDirectory(payload, auditStore, claims)
         }
 
       case request @ POST -> Root / "validate" =>
         AuthContext.requireRole(request, UserRole.Operator) { claims =>
           RouteJson.withJson[ValidateSqlPayload](request, "invalid validation payload") { payload =>
-            validateSqlDirectory(payload, auditStore, claims)
+            validateSqlDirWithinConfiguredRoot(payload.sql_dir, config.sqlDir) match
+              case Left(message) => RouteJson.badRequest(message)
+              case Right(()) => validateSqlDirectory(payload, auditStore, claims)
           }
         }
 
@@ -192,40 +192,42 @@ object ValidationRoutes:
     fileCount: Int,
     report: ValidationReport
   ): SqlFilesValidationResult =
-    val errors = report.errors.map(message => invalidObject(message, "error"))
-    val warnings = report.warnings.map(message => invalidObject(message, "warning"))
+    val (invalid, status) = ValidationStore.invalidObjectsAndStatus(report)
     SqlFilesValidationResult(
       target_id = targetId,
       db_kind = dbKind,
       checked_at = checkedAt,
       file_count = fileCount,
-      invalid = errors ++ warnings,
-      status =
-        if errors.nonEmpty then "errors"
-        else if warnings.nonEmpty then "warnings"
-        else "clean"
+      invalid = invalid,
+      status = status
     )
 
-  private def invalidObject(message: String, severity: String): InvalidObject =
-    val name =
-      message.takeWhile(_ != ':').trim match
-        case "" => "validation"
-        case value => value
-    InvalidObject(
-      object_type = "other",
-      schema = "",
-      name = name,
-      error = message,
-      severity = severity
-    )
+  private def validateSqlDirWithinConfiguredRoot(value: String, configuredRoot: Path): Either[String, Unit] =
+    val trimmed = value.trim
+    if trimmed.isEmpty then Left("sql_dir is required")
+    else
+      parseSqlPath(trimmed).flatMap { path =>
+        val root = configuredRoot.toAbsolutePath.normalize()
+        val requested = path.toAbsolutePath.normalize()
+        Either.cond(
+          requested.startsWith(root),
+          (),
+          s"sql_dir must be within configured sql directory '$root'"
+        )
+      }
 
   private def validateSqlDir(value: String): Either[String, Path] =
     if value.isEmpty then Left("sql_dir is required")
     else
-      val path = Path.of(value)
-      if Files.notExists(path) then Left(s"sql directory '$path' does not exist or is not accessible")
-      else if !Files.isDirectory(path) then Left(s"path '$path' is not a directory")
-      else Right(path)
+      parseSqlPath(value).flatMap { path =>
+        if Files.notExists(path) then Left(s"sql directory '$path' does not exist or is not accessible")
+        else if !Files.isDirectory(path) then Left(s"path '$path' is not a directory")
+        else Right(path)
+      }
+
+  private def parseSqlPath(value: String): Either[String, Path] =
+    try Right(Path.of(value))
+    catch case error: InvalidPathException => Left(s"invalid sql_dir '$value': ${error.getReason}")
 
   private def validateCustomer(value: Option[String]): Either[String, Unit] =
     value match

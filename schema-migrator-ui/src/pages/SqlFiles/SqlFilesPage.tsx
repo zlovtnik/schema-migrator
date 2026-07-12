@@ -29,6 +29,10 @@ import { useValidateSqlDirectory } from "../../hooks/useValidation";
 import type { DbKind, SqlFilesValidationResult } from "../../types";
 
 const ExpandedFoldersStorageKey = "schemaMigrator.sqlFiles.expandedFolders";
+const BrowseTabId = "sql-files-tab-browse";
+const BrowsePanelId = "sql-files-panel-browse";
+const ValidateTabId = "sql-files-tab-validate";
+const ValidatePanelId = "sql-files-panel-validate";
 
 type SqlFilesTab = "browse" | "validate";
 
@@ -223,7 +227,7 @@ const SqlFilesPage = () => {
     );
   };
 
-  const handleValidateSqlFiles = () => {
+  const handleValidateSqlDirectory = () => {
     const sqlDir = validationSqlDir.trim();
     const customer = validationCustomer.trim();
     if (!canMutate || !sqlDir) {
@@ -379,20 +383,24 @@ const SqlFilesPage = () => {
 
       <div className="sql-files-tabs" role="tablist" aria-label="SQL files views">
         <button
+          id={BrowseTabId}
           className={`sql-files-tab ${activeTab === "browse" ? "sql-files-tab--active" : ""}`}
           type="button"
           role="tab"
           aria-selected={activeTab === "browse"}
+          aria-controls={BrowsePanelId}
           onClick={() => setActiveTab("browse")}
         >
           <Icon source={FileSqlIcon} size={16} />
           Browse
         </button>
         <button
+          id={ValidateTabId}
           className={`sql-files-tab ${activeTab === "validate" ? "sql-files-tab--active" : ""}`}
           type="button"
           role="tab"
           aria-selected={activeTab === "validate"}
+          aria-controls={ValidatePanelId}
           onClick={() => setActiveTab("validate")}
         >
           <Icon source={ShieldCheckIcon} size={16} />
@@ -401,7 +409,7 @@ const SqlFilesPage = () => {
       </div>
 
       {activeTab === "validate" ? (
-        <section className="section-block" role="tabpanel" aria-label="Validate SQL files">
+        <section id={ValidatePanelId} className="section-block" role="tabpanel" aria-labelledby={ValidateTabId}>
           <div className="sql-files-validate-form">
             <label>
               SQL directory
@@ -431,7 +439,7 @@ const SqlFilesPage = () => {
             <button
               className="button button--primary"
               type="button"
-              onClick={handleValidateSqlFiles}
+              onClick={handleValidateSqlDirectory}
               disabled={!canMutate || !validationSqlDir.trim() || validateSqlDirectory.isPending}
               title={canMutate ? undefined : "Viewer role cannot validate SQL files"}
             >
@@ -461,7 +469,7 @@ const SqlFilesPage = () => {
       ) : null}
 
       {activeTab === "browse" && !loading && groupedFiles.length > 0 ? (
-        <>
+        <section id={BrowsePanelId} role="tabpanel" aria-labelledby={BrowseTabId}>
           <div className="sql-files-search-row">
             <label className="sql-files-search-field">
               <span className="sr-only">Filter SQL files</span>
@@ -557,7 +565,7 @@ const SqlFilesPage = () => {
               Adjust the filter to find a file, folder, or path in the synced manifest.
             </EmptyState>
           )}
-        </>
+        </section>
       ) : null}
     </section>
   );

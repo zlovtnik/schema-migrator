@@ -14,6 +14,7 @@ import { useSnapshots } from "../../hooks/useSnapshots";
 import { useTarget } from "../../hooks/useTargets";
 import type { Run, Snapshot } from "../../types";
 import { isOracleTarget } from "../../utils/dbKind";
+import { ORACLE_LIMITATION_BANNER } from "./oracleLimitations";
 
 type TargetTab = "overview" | "runs" | "validation" | "snapshots";
 
@@ -93,12 +94,7 @@ export const TargetDetailPage = () => {
         ))}
       </div>
 
-      {oracleTarget ? (
-        <div className="status-banner">
-          Oracle targets support connection checks and migration execution; schema drift, catalog snapshots, and snapshot
-          navigation are Postgres only.
-        </div>
-      ) : null}
+      {oracleTarget ? <div className="status-banner">{ORACLE_LIMITATION_BANNER}</div> : null}
 
       {activeTab === "overview" ? (
         <TargetOverviewTab

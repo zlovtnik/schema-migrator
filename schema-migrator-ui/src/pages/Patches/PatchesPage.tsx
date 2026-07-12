@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { FileSqlIcon } from "@phosphor-icons/react/dist/csr/FileSql";
 import { PlayIcon } from "@phosphor-icons/react/dist/csr/Play";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
@@ -26,6 +26,8 @@ export const PatchesPage = () => {
   return id ? <PatchDetail patchId={id} /> : <PatchList />;
 };
 
+type PatchMessage = { type: "success" | "error"; text: string };
+
 const PatchList = () => {
   const selectedTarget = useSelectedTargetId();
   const { canMutate } = useSession();
@@ -42,7 +44,7 @@ const PatchList = () => {
   const runPatch = useRunPatch();
   const deletePatch = useDeletePatch();
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<PatchMessage | null>(null);
 
   const sortedPatches = useMemo(
     () => [...patches].sort((a, b) => b.version.localeCompare(a.version)),
@@ -62,9 +64,13 @@ const PatchList = () => {
       {
         onSuccess: (patch) => {
           setSelectedPaths([]);
-          setMessage(`Created patch ${patch.id.slice(0, 8)} from ${patch.scripts.length} files`);
+          setMessage({
+            type: "success",
+            text: `Created patch ${patch.id.slice(0, 8)} from ${patch.scripts.length} files`
+          });
         },
-        onError: (err) => setMessage(err instanceof Error ? err.message : "Patch could not be created")
+        onError: (err) =>
+          setMessage({ type: "error", text: err instanceof Error ? err.message : "Patch could not be created" })
       }
     );
   };
@@ -155,8 +161,8 @@ const PatchList = () => {
       ) : null}
 
       {message ? (
-        <div className={message.includes("could not") ? "status-banner status-banner--error" : "status-banner"}>
-          {message}
+        <div className={message.type === "error" ? "status-banner status-banner--error" : "status-banner"}>
+          {message.text}
         </div>
       ) : null}
       {error ? <div className="status-banner status-banner--error">Patches could not be loaded.</div> : null}
@@ -223,6 +229,7 @@ const PatchList = () => {
 };
 
 const PatchDetail = ({ patchId }: { patchId: string }) => {
+  const navigate = useNavigate();
   const { canMutate } = useSession();
   const { data: patch, isLoading, error } = usePatch(patchId);
   const { data: runs = [] } = useRuns(patch?.target_id);
@@ -297,7 +304,7 @@ const PatchDetail = ({ patchId }: { patchId: string }) => {
               type="button"
               disabled={!canMutate || patch.status !== "pending" || deletePatch.isPending}
               title={!canMutate ? "Viewer role cannot delete patches" : undefined}
-              onClick={() => deletePatch.mutate(patch.id)}
+              onClick={() => deletePatch.mutate(patch.id, { onSuccess: () => navigate("/patches") })}
             >
               <Icon source={TrashIcon} size={16} />
               Delete

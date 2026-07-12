@@ -43,18 +43,23 @@ object ValidationStore:
     checkedAt: String,
     report: ValidationReport
   ): ValidationResult =
-    val errors = report.errors.map(message => invalidObject(message, "error"))
-    val warnings = report.warnings.map(message => invalidObject(message, "warning"))
+    val (invalid, status) = invalidObjectsAndStatus(report)
     ValidationResult(
       run_id = runId,
       target_id = targetId,
       checked_at = checkedAt,
-      invalid = errors ++ warnings,
-      status =
-        if errors.nonEmpty then "errors"
-        else if warnings.nonEmpty then "warnings"
-        else "clean"
+      invalid = invalid,
+      status = status
     )
+
+  def invalidObjectsAndStatus(report: ValidationReport): (List[InvalidObject], String) =
+    val errors = report.errors.map(message => invalidObject(message, "error"))
+    val warnings = report.warnings.map(message => invalidObject(message, "warning"))
+    val status =
+      if errors.nonEmpty then "errors"
+      else if warnings.nonEmpty then "warnings"
+      else "clean"
+    (errors ++ warnings, status)
 
   private def invalidObject(message: String, severity: String): InvalidObject =
     val name =

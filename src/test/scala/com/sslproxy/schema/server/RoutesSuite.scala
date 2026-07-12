@@ -29,6 +29,7 @@ import org.http4s.dsl.io.*
 import org.http4s.multipart.{Multipart, Part}
 import munit.FunSuite
 
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import scala.concurrent.duration.*
@@ -998,6 +999,56 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     assertEquals(targetId, Right("filesystem"))
     assertEquals(validationStatus, Right("warnings"))
     assertEquals(fileCount, Right(1))
+  }
+
+  test("validate route rejects GET SQL directories outside configured root") {
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        val outside = fixture.sqlDir.resolve("..").toString
+        val encoded = URLEncoder.encode(outside, StandardCharsets.UTF_8)
+        fixture.app.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/validate?sql_dir=$encoded&db_kind=postgres")))
+      }
+      .unsafeRunSync()
+
+    assertEquals(result.status, Status.BadRequest)
+  }
+
+  test("validate route rejects POST SQL directories outside configured root") {
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        fixture.app.run(
+          jsonRequest(
+            Method.POST,
+            "/validate",
+            Json.obj(
+              "sql_dir" -> Json.fromString(fixture.sqlDir.resolve("..").toString),
+              "db_kind" -> Json.fromString("postgres")
+            )
+          )
+        )
+      }
+      .unsafeRunSync()
+
+    assertEquals(result.status, Status.BadRequest)
+  }
+
+  test("validate route returns bad request for invalid SQL directory paths") {
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        fixture.app.run(
+          jsonRequest(
+            Method.POST,
+            "/validate",
+            Json.obj(
+              "sql_dir" -> Json.fromString(s"${fixture.sqlDir}\u0000broken"),
+              "db_kind" -> Json.fromString("postgres")
+            )
+          )
+        )
+      }
+      .unsafeRunSync()
+
+    assertEquals(result.status, Status.BadRequest)
   }
 
   test("patch upload over the size limit returns payload too large") {
