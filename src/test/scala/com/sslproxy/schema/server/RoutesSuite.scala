@@ -36,7 +36,7 @@ import scala.concurrent.duration.*
 class RoutesSuite extends FunSuite with TestSqlSupport:
   import Models.given
 
-  private final case class RouteFixture(app: HttpApp[IO], sqlFileStore: SqlFileStore)
+  private final case class RouteFixture(app: HttpApp[IO], sqlFileStore: SqlFileStore, sqlDir: Path)
 
   test("target routes create, list, fetch, update, and delete") {
     val result = routeFixture
@@ -969,6 +969,37 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     assertEquals(invalidCount.exists(_ > 0), true)
   }
 
+  test("validate route checks a SQL directory without a target or run") {
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        for
+          response <- fixture.app.run(
+            jsonRequest(
+              Method.POST,
+              "/validate",
+              Json.obj(
+                "sql_dir" -> Json.fromString(fixture.sqlDir.toString),
+                "db_kind" -> Json.fromString("postgres")
+              )
+            )
+          )
+          json <- bodyJson(response)
+        yield (
+          response.status,
+          json.hcursor.get[String]("target_id"),
+          json.hcursor.get[String]("status"),
+          json.hcursor.get[Int]("file_count")
+        )
+      }
+      .unsafeRunSync()
+
+    val (status, targetId, validationStatus, fileCount) = result
+    assertEquals(status, Status.Ok)
+    assertEquals(targetId, Right("filesystem"))
+    assertEquals(validationStatus, Right("warnings"))
+    assertEquals(fileCount, Right(1))
+  }
+
   test("patch upload over the size limit returns payload too large") {
     val result = routeFixture
       .use { routes =>
@@ -1037,7 +1068,7 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
               runExecutor
             )
             .orNotFound
-          RouteFixture(authedForTest(app), sqlFileStore)
+          RouteFixture(authedForTest(app), sqlFileStore, sqlDir)
       }
 
   private def migratorConfig(stageDir: Path, sqlDir: Path, allowedHosts: Set[String]): MigratorConfig =

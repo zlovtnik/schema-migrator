@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type SyntheticEvent } from "react";
 import { FileSqlIcon } from "@phosphor-icons/react/dist/csr/FileSql";
 import { TreeStructureIcon } from "@phosphor-icons/react/dist/csr/TreeStructure";
 import type { SqlFileEntry } from "../api/sqlFiles";
@@ -94,6 +94,13 @@ export const SqlFileTargetPicker = ({
     onSelectedPathsChange(Array.from(new Set([...selectedPaths, ...visiblePaths])));
   };
 
+  const handleFolderToggle = (folder: string, event: SyntheticEvent<HTMLDetailsElement>) => {
+    const details = event.currentTarget;
+    if (!details) return;
+    const isOpen = details.open;
+    setExpandedFolders((current) => ({ ...current, [folder]: isOpen }));
+  };
+
   return (
     <div className="sql-file-picker">
       <div className="sql-files-search-row">
@@ -144,9 +151,7 @@ export const SqlFileTargetPicker = ({
                 key={group.folder}
                 className="sql-folder-group"
                 open={isExpanded}
-                onToggle={(event) =>
-                  setExpandedFolders((current) => ({ ...current, [group.folder]: event.currentTarget.open }))
-                }
+                onToggle={(event) => handleFolderToggle(group.folder, event)}
               >
                 <summary className="sql-folder-summary">
                   <span className="sql-folder-title">

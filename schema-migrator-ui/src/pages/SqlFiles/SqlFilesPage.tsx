@@ -25,10 +25,16 @@ import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useCreateSnapshot } from "../../hooks/useSnapshots";
 import { useTarget } from "../../hooks/useTargets";
-import { useValidateSqlFiles } from "../../hooks/useValidation";
-import type { SqlFilesValidationResult } from "../../types";
+import { useValidateSqlDirectory } from "../../hooks/useValidation";
+import type { DbKind, SqlFilesValidationResult } from "../../types";
 
 const ExpandedFoldersStorageKey = "schemaMigrator.sqlFiles.expandedFolders";
+
+type SqlFilesTab = "browse" | "validate";
+
+const dbKindFromJdbcUrl = (jdbcUrl?: string): DbKind => {
+  return jdbcUrl?.trim().toLowerCase().startsWith("jdbc:oracle:thin:") ? "oracle" : "postgres";
+};
 
 const readExpandedFolders = (): Record<string, boolean> => {
   try {
@@ -49,12 +55,16 @@ const SqlFilesPage = () => {
   const targetQuery = useTarget(selectedTarget ?? undefined);
   const { canMutate } = useSession();
   const createSnapshot = useCreateSnapshot();
-  const validateSqlFiles = useValidateSqlFiles();
+  const validateSqlDirectory = useValidateSqlDirectory();
+  const [activeTab, setActiveTab] = useState<SqlFilesTab>("browse");
   const [status, setStatus] = useState<SqlFileStatus | null>(null);
   const [files, setFiles] = useState<SqlFileEntry[]>([]);
   const [repoStatus, setRepoStatus] = useState<RepoSyncStatus | null>(null);
   const [syncResult, setSyncResult] = useState<RepoSyncResult | null>(null);
   const [validationResult, setValidationResult] = useState<SqlFilesValidationResult | null>(null);
+  const [validationSqlDir, setValidationSqlDir] = useState("./sql");
+  const [validationDbKind, setValidationDbKind] = useState<DbKind>("postgres");
+  const [validationCustomer, setValidationCustomer] = useState("");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,6 +108,10 @@ const SqlFilesPage = () => {
     setSyncResult(null);
     setValidationResult(null);
   }, [selectedTarget]);
+
+  useEffect(() => {
+    setValidationDbKind(dbKindFromJdbcUrl(targetQuery.data?.jdbc_url));
+  }, [targetQuery.data?.jdbc_url]);
 
   useEffect(() => {
     try {
@@ -210,13 +224,15 @@ const SqlFilesPage = () => {
   };
 
   const handleValidateSqlFiles = () => {
-    if (!canMutate || !effectiveTargetId) {
+    const sqlDir = validationSqlDir.trim();
+    const customer = validationCustomer.trim();
+    if (!canMutate || !sqlDir) {
       return;
     }
     setError(null);
     setSuccess(null);
-    validateSqlFiles.mutate(
-      { target_id: effectiveTargetId },
+    validateSqlDirectory.mutate(
+      { sql_dir: sqlDir, db_kind: validationDbKind, ...(customer ? { customer } : {}) },
       {
         onSuccess: (result) => {
           setValidationResult(result);
@@ -281,22 +297,6 @@ const SqlFilesPage = () => {
           >
             <Icon source={GitBranchIcon} size={16} />
             {createSnapshot.isPending ? "Creating" : "Create snapshot"}
-          </button>
-          <button
-            className="button button--secondary"
-            type="button"
-            onClick={handleValidateSqlFiles}
-            disabled={!canMutate || !effectiveTargetId || loading || syncing || validateSqlFiles.isPending}
-            title={
-              !canMutate
-                ? "Viewer role cannot validate SQL files"
-                : !effectiveTargetId
-                  ? "Select a target before validating"
-                  : undefined
-            }
-          >
-            <Icon source={ShieldCheckIcon} size={16} />
-            {validateSqlFiles.isPending ? "Validating" : "Validate"}
           </button>
           {status?.loaded ? (
             <button
@@ -377,23 +377,90 @@ const SqlFilesPage = () => {
         </div>
       ) : null}
 
-      {validationResult ? (
-        <section className="section-block">
-          <div className="section-block__header">
-            <div>
-              <h2>SQL file validation</h2>
-              <p>
-                Checked {validationResult.file_count} files for {validationResult.db_kind} at{" "}
-                {new Date(validationResult.checked_at).toLocaleString()}.
-              </p>
-            </div>
-            <StatusBadge status={validationResult.status} />
+      <div className="sql-files-tabs" role="tablist" aria-label="SQL files views">
+        <button
+          className={`sql-files-tab ${activeTab === "browse" ? "sql-files-tab--active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "browse"}
+          onClick={() => setActiveTab("browse")}
+        >
+          <Icon source={FileSqlIcon} size={16} />
+          Browse
+        </button>
+        <button
+          className={`sql-files-tab ${activeTab === "validate" ? "sql-files-tab--active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "validate"}
+          onClick={() => setActiveTab("validate")}
+        >
+          <Icon source={ShieldCheckIcon} size={16} />
+          Validate
+        </button>
+      </div>
+
+      {activeTab === "validate" ? (
+        <section className="section-block" role="tabpanel" aria-label="Validate SQL files">
+          <div className="sql-files-validate-form">
+            <label>
+              SQL directory
+              <input
+                type="text"
+                value={validationSqlDir}
+                onChange={(event) => setValidationSqlDir(event.target.value)}
+                placeholder="./sql"
+              />
+            </label>
+            <label>
+              Database
+              <select value={validationDbKind} onChange={(event) => setValidationDbKind(event.target.value as DbKind)}>
+                <option value="postgres">Postgres</option>
+                <option value="oracle">Oracle</option>
+              </select>
+            </label>
+            <label>
+              Customer
+              <input
+                type="text"
+                value={validationCustomer}
+                onChange={(event) => setValidationCustomer(event.target.value)}
+                placeholder="Optional"
+              />
+            </label>
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={handleValidateSqlFiles}
+              disabled={!canMutate || !validationSqlDir.trim() || validateSqlDirectory.isPending}
+              title={canMutate ? undefined : "Viewer role cannot validate SQL files"}
+            >
+              <Icon source={ShieldCheckIcon} size={16} />
+              {validateSqlDirectory.isPending ? "Validating" : "Validate"}
+            </button>
           </div>
-          <ValidationTable result={validationResult} />
+
+          {validateSqlDirectory.isPending ? <Skeleton rows={3} label="Validating SQL files" /> : null}
+
+          {validationResult ? (
+            <section className="section-block">
+              <div className="section-block__header">
+                <div>
+                  <h2>SQL file validation</h2>
+                  <p>
+                    Checked {validationResult.file_count} files for {validationResult.db_kind} at{" "}
+                    {new Date(validationResult.checked_at).toLocaleString()}.
+                  </p>
+                </div>
+                <StatusBadge status={validationResult.status} />
+              </div>
+              <ValidationTable result={validationResult} />
+            </section>
+          ) : null}
         </section>
       ) : null}
 
-      {!loading && groupedFiles.length > 0 ? (
+      {activeTab === "browse" && !loading && groupedFiles.length > 0 ? (
         <>
           <div className="sql-files-search-row">
             <label className="sql-files-search-field">

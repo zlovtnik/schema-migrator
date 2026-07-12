@@ -2491,6 +2491,57 @@ kbd {
   gap: var(--space-3);
 }
 
+.sql-files-tabs {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.sql-files-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 34px;
+  min-width: 104px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.sql-files-tab--active {
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: var(--shadow-inset-highlight);
+}
+
+.sql-files-validate-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 180px) minmax(160px, 220px) auto;
+  gap: var(--space-3);
+  align-items: end;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.sql-files-validate-form label {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--font-size-12);
+  font-weight: 750;
+}
+
 .summary-card {
   display: grid;
   gap: var(--space-1);
@@ -3080,9 +3131,24 @@ kbd {
     grid-template-columns: 1fr;
   }
 
+  .sql-files-tabs,
+  .sql-files-validate-form {
+    width: 100%;
+  }
+
+  .sql-files-tab {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .sql-files-validate-form {
+    grid-template-columns: 1fr;
+  }
+
   .sql-files-toolbar,
   .sql-files-upload-area,
   .sql-files-search-row,
+  .sql-files-validate-form .button,
   .audit-filter-bar,
   .sql-files-search-row .button,
   .sql-files-toolbar .button {

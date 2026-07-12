@@ -49,10 +49,11 @@ object ValidationRoutes:
         AuthContext.requireRole(request, UserRole.Operator) { claims =>
           validateSqlDirectory(
             ValidateSqlPayload(
-              sql_dir = request.uri.query.params.get("sql_dir").getOrElse(config.sqlDir.toString),
-              db_kind = request.uri.query.params.get("db_kind").getOrElse(config.dbKind.toString.toLowerCase),
+              sql_dir = request.uri.query.params.getOrElse("sql_dir", config.sqlDir.toString),
+              db_kind = request.uri.query.params.getOrElse("db_kind", config.dbKind.toString.toLowerCase),
               customer = request.uri.query.params.get("customer").filter(_.nonEmpty)
             ),
+            auditStore,
             claims
           )
         }
@@ -60,7 +61,7 @@ object ValidationRoutes:
       case request @ POST -> Root / "validate" =>
         AuthContext.requireRole(request, UserRole.Operator) { claims =>
           RouteJson.withJson[ValidateSqlPayload](request, "invalid validation payload") { payload =>
-            validateSqlDirectory(payload, claims)
+            validateSqlDirectory(payload, auditStore, claims)
           }
         }
 
@@ -141,6 +142,7 @@ object ValidationRoutes:
 
   private def validateSqlDirectory(
     payload: ValidateSqlPayload,
+    auditStore: AuditStore,
     claims: com.sslproxy.schema.server.auth.Claims
   ): IO[org.http4s.Response[IO]] =
     val sqlDir = payload.sql_dir.trim
@@ -151,35 +153,38 @@ object ValidationRoutes:
         validateSqlDir(sqlDir) match
           case Left(message) => RouteJson.badRequest(message)
           case Right(path) =>
-            for
-              discovery <- DiscoveryService[IO]().discover(path, dbKind, customer)
-              report <- Validator[IO](dbKind).validate(discovery.files)
-              checkedAt <- Clock[IO].realTimeInstant.map(_.toString)
-              reportWithDiscoveryWarnings = report.copy(warnings = discovery.warnings ++ report.warnings)
-              result = sqlFilesValidationResult(
-                targetId = "filesystem",
-                dbKind = dbKind.toString.toLowerCase,
-                checkedAt = checkedAt,
-                fileCount = discovery.files.length,
-                report = reportWithDiscoveryWarnings
-              )
-              _ <- auditStore.record(
-                claims.subject,
-                claims.role,
-                "validation.validate",
-                "validation",
-                sqlDir,
-                None,
-                Some(
-                  Json.obj(
-                    "db_kind" -> Json.fromString(result.db_kind),
-                    "status" -> Json.fromString(result.status),
-                    "file_count" -> Json.fromInt(result.file_count)
+            validateCustomer(customer) match
+              case Left(message) => RouteJson.badRequest(message)
+              case Right(()) =>
+                for
+                  discovery <- DiscoveryService[IO]().discover(path, dbKind, customer)
+                  report <- Validator[IO](dbKind).validate(discovery.files)
+                  checkedAt <- Clock[IO].realTimeInstant.map(_.toString)
+                  reportWithDiscoveryWarnings = report.copy(warnings = discovery.warnings ++ report.warnings)
+                  result = sqlFilesValidationResult(
+                    targetId = "filesystem",
+                    dbKind = dbKind.toString.toLowerCase,
+                    checkedAt = checkedAt,
+                    fileCount = discovery.files.length,
+                    report = reportWithDiscoveryWarnings
                   )
-                )
-              )
-              response <- RouteJson.ok(result.asJson)
-            yield response
+                  _ <- auditStore.record(
+                    claims.subject,
+                    claims.role,
+                    "validation.validate",
+                    "validation",
+                    sqlDir,
+                    None,
+                    Some(
+                      Json.obj(
+                        "db_kind" -> Json.fromString(result.db_kind),
+                        "status" -> Json.fromString(result.status),
+                        "file_count" -> Json.fromInt(result.file_count)
+                      )
+                    )
+                  )
+                  response <- RouteJson.ok(result.asJson)
+                yield response
   private def sqlFilesValidationResult(
     targetId: String,
     dbKind: String,
@@ -221,3 +226,11 @@ object ValidationRoutes:
       if Files.notExists(path) then Left(s"sql directory '$path' does not exist or is not accessible")
       else if !Files.isDirectory(path) then Left(s"path '$path' is not a directory")
       else Right(path)
+
+  private def validateCustomer(value: Option[String]): Either[String, Unit] =
+    value match
+      case None => Right(())
+      case Some(customer) if customer.isEmpty => Left("customer must not be empty")
+      case Some(customer) if customer.contains("/") || customer.contains("\\") || customer == "." || customer == ".." =>
+        Left("customer must be a single directory name")
+      case Some(_) => Right(())
