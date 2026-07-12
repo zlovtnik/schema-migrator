@@ -76,7 +76,7 @@ lazy val root = (project in file("."))
       "org.eclipse.jgit" % "org.eclipse.jgit" % jgitVersion,
       "org.apache.commons" % "commons-compress" % "1.27.1",
       "org.typelevel" %% "log4cats-slf4j" % "2.7.1",
-      "org.slf4j" % "slf4j-simple" % "2.0.17",
+      "org.slf4j" % "slf4j-simple" % "2.0.18",
       "org.postgresql" % "postgresql" % "42.7.5",
       "com.oracle.database.jdbc" % "ojdbc11" % oracleJdbcVersion,
       "com.oracle.database.security" % "oraclepki" % oracleJdbcVersion,
