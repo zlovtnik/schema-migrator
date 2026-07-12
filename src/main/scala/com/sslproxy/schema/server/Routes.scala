@@ -112,9 +112,9 @@ object Routes:
         repoSyncStore
       ) <+>
       SchemaRoutes.routes(config, targetStore, sqlFileStore, patchStore, runStore, auditStore, runExecutor) <+>
-      PatchRoutes.routes(targetStore, patchStore, auditStore) <+>
+      PatchRoutes.routes(targetStore, patchStore, sqlFileStore, auditStore) <+>
       RunRoutes.routes(config, targetStore, patchStore, runStore, validationStore, auditStore, runExecutor) <+>
-      ValidationRoutes.routes(targetStore, patchStore, runStore, validationStore, auditStore) <+>
+      ValidationRoutes.routes(config, targetStore, patchStore, runStore, sqlFileStore, validationStore, auditStore) <+>
       SnapshotRoutes.routes(
         config,
         targetStore,

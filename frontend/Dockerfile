@@ -1,5 +1,5 @@
 # --- build frontend ---
-FROM oven/bun:1.2 AS ui-builder
+FROM oven/bun:1.3 AS ui-builder
 
 WORKDIR /ui
 RUN chown bun:bun /ui
@@ -24,7 +24,7 @@ COPY --chown=bun:bun schema-migrator-ui/ .
 RUN bun run build
 
 # --- static nginx with SPA assets baked in ---
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 RUN rm /etc/nginx/conf.d/default.conf \
   && sed -i 's#^pid .*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \

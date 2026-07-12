@@ -1,6 +1,8 @@
 package com.sslproxy.schema.server
 
 import com.sslproxy.schema.engine.SchemaObject
+import com.sslproxy.schema.db.syntax.SqlDialect
+import com.sslproxy.schema.parser.Canonicalizer
 import munit.FunSuite
 
 class PostgresDriftAnalyzerSuite extends FunSuite:
@@ -124,6 +126,72 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
         ObjectKey("coordinator", "safe_bool(text)", "function")
       )
     )
+  }
+
+  test("schema control canonical SQL isolates grouped routine expected DDL") {
+    val sql =
+      """-- object: coordinator.safe helpers
+        |-- folder: functions
+        |-- depends_on: coordinator
+        |create or replace function coordinator.safe_int(p_value text)
+        |returns integer
+        |language plpgsql
+        |immutable
+        |as $$
+        |begin
+        |  if p_value is null or p_value !~ '^-?[0-9]+$' then
+        |    return null;
+        |  end if;
+        |
+        |  begin
+        |    return p_value::integer;
+        |  exception
+        |    when others then
+        |      return null;
+        |  end;
+        |end;
+        |$$;
+        |
+        |create or replace function coordinator.safe_bigint(p_value text)
+        |returns bigint
+        |language sql
+        |immutable
+        |as $$
+        |  select case when p_value ~ '^-?[0-9]+$' then p_value::bigint end
+        |$$;
+        |""".stripMargin
+    val sourceFile = "functions/002_coordinator_safe_helpers.sql"
+    val expectedObjects = expectedFromManifest(schemaObject("function", "coordinator.safe helpers", sourceFile, sql))
+    val control = controlSnapshot(
+      List(
+        controlRow(
+          "function",
+          "coordinator.safe helpers",
+          sourceFile,
+          "applied",
+          Some(Canonicalizer.canonicalize(sql, SqlDialect.Postgres))
+        )
+      )
+    )
+    val safeBigintKey = ObjectKey("coordinator", "safe_bigint(text)", "function")
+    val safeBigintControlDdl = control.objects.find(_.key == safeBigintKey).flatMap(_.expectedDdl).get
+    val actualSafeBigintSql =
+      """CREATE OR REPLACE FUNCTION coordinator.safe_bigint(p_value text)
+        | RETURNS bigint
+        | LANGUAGE sql
+        | IMMUTABLE
+        |AS $function$
+        |  select case when p_value ~ '^-?[0-9]+$' then p_value::bigint end
+        |$function$
+        |""".stripMargin
+    val actualObjects = expectedObjects.map { item =>
+      if item.key == safeBigintKey then LiveObject(item.key, Some(actualSafeBigintSql))
+      else LiveObject(item.key, item.expectedDdl)
+    }
+
+    assert(!safeBigintControlDdl.contains("safe_int"))
+    assert(!safeBigintControlDdl.contains("-- object: coordinator.safe helpers"))
+    assertEquals(driftItems(now, expectedObjects, actualObjects, control), Nil)
   }
 
   test("manifest extraction uses concrete index names from grouped index files") {
