@@ -40,7 +40,7 @@ ThisBuild / wartremoverErrors ++= Warts.allBut(
   Wart.RedundantIsInstanceOf
 )
 
-val catsEffectVersion = "3.6.3"
+val catsEffectVersion = "3.7-4972921"
 val fs2Version = "3.12.2"
 val declineVersion = "2.5.0"
 val circeVersion = "0.14.14"
