@@ -24,7 +24,7 @@ COPY --chown=bun:bun schema-migrator-ui/ .
 RUN bun run build
 
 # --- static nginx with SPA assets baked in ---
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 RUN rm /etc/nginx/conf.d/default.conf \
   && sed -i 's#^pid .*#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \
