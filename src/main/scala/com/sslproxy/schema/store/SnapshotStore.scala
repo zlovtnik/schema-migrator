@@ -188,24 +188,19 @@ private final class MongoSnapshotStore(collection: MongoCollection[Document]) ex
     )
 
   private def fileDocuments(document: Document): List[Document] =
-    Option(document.get("files")) match
-      case Some(values: java.util.List[?]) =>
-        values.asScala.toList.collect { case doc: Document => doc }
-      case _ => Nil
+    MongoDocument.documentList(document, "files")
 
   private def idFilter(id: String): Document =
     new Document("_id", id)
 
   private def requiredString(document: Document, field: String): String =
-    Option(document.getString(field))
-      .filter(_.nonEmpty)
-      .getOrElse(throw IllegalStateException(s"snapshot document is missing required field '$field'"))
+    MongoDocument.requiredString(document, field, "snapshot")
 
   private def optionalRawString(document: Document, field: String): Option[String] =
-    Option(document.getString(field))
+    MongoDocument.optionalRawString(document, field)
 
   private def intValue(document: Document, field: String): Option[Int] =
-    Option(document.get(field)).collect { case number: java.lang.Number => number.intValue() }
+    MongoDocument.optionalInt(document, field)
 
   private def longValue(document: Document, field: String): Option[Long] =
-    Option(document.get(field)).collect { case number: java.lang.Number => number.longValue() }
+    MongoDocument.optionalLong(document, field)

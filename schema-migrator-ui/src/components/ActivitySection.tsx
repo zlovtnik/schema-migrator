@@ -10,6 +10,10 @@ interface ActivitySectionProps {
 export const ActivitySection = ({ events, isLoading, empty }: ActivitySectionProps) => (
   <section className="section-block">
     <h2>Activity</h2>
-    {isLoading ? <div className="empty-state">Loading activity...</div> : <ActivityTable events={events} empty={empty} />}
+    {isLoading ? (
+      <div className="empty-state">Loading activity...</div>
+    ) : (
+      <ActivityTable events={events} empty={empty} />
+    )}
   </section>
 );

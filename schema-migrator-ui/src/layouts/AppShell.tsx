@@ -23,6 +23,7 @@ import { ShortcutHelpDialog } from "../components/ShortcutHelpDialog";
 import { TargetSelector } from "../components/TargetSelector";
 import { Icon } from "../components/ui/Icon";
 import { useErrorGate } from "../hooks/useErrorGate";
+import { useResolveRun } from "../hooks/useRuns";
 import { useSession } from "../hooks/useSession";
 
 const SIDEBAR_KEY = "schemaMigrator.sidebarCollapsed";
@@ -58,7 +59,8 @@ export const AppShell = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const { failedRun } = useErrorGate();
-  const { canViewAudit, role, subject } = useSession();
+  const { canMutate, canViewAudit, role, subject } = useSession();
+  const resolveRun = useResolveRun();
   const queryClient = useQueryClient();
   const matches = useMatches();
   const routeTitle = activeRouteTitle(matches);
@@ -211,7 +213,11 @@ export const AppShell = () => {
           <header className="app-topbar" aria-label="Session context">
             <div className="app-topbar__spacer" />
             <div className="session-context">
-              {subject ? <span className="session-context__subject" title={subject}>{subject}</span> : null}
+              {subject ? (
+                <span className="session-context__subject" title={subject}>
+                  {subject}
+                </span>
+              ) : null}
               <div className={`role-badge role-badge--${role}`} title={`Role: ${role}`}>
                 <span>Role</span>
                 <strong>{role}</strong>
@@ -227,7 +233,13 @@ export const AppShell = () => {
               </button>
             </div>
           </header>
-          <ErrorGateBanner failedRun={failedRun} />
+          <ErrorGateBanner
+            failedRun={failedRun}
+            canResolve={canMutate}
+            resolving={resolveRun.isPending}
+            resolveTitle={canMutate ? undefined : "Viewer role cannot resolve runs"}
+            onResolve={(runId) => resolveRun.mutate(runId)}
+          />
           <main className="main-scroll" id="main-content" tabIndex={-1}>
             <AppBreadcrumbs />
             <Outlet />

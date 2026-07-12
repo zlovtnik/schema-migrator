@@ -15,7 +15,13 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon, type IconSource } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { getRepoSyncStatus, triggerRepoSync, type RepoSyncResult, type RepoSyncStatus } from "../../api/repoSync";
-import { clearSqlFiles, getSqlFileStatus, listSqlFiles, type SqlFileEntry, type SqlFileStatus } from "../../api/sqlFiles";
+import {
+  clearSqlFiles,
+  getSqlFileStatus,
+  listSqlFiles,
+  type SqlFileEntry,
+  type SqlFileStatus
+} from "../../api/sqlFiles";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useCreateSnapshot } from "../../hooks/useSnapshots";
@@ -103,13 +109,20 @@ const SqlFilesPage = () => {
   const effectiveTargetId = selectedTarget ?? targetQuery.data?.id ?? repoStatus?.target_id ?? null;
 
   const load = useCallback(async () => {
+    if (!selectedTarget) {
+      setStatus(null);
+      setFiles([]);
+      setRepoStatus(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const [s, f, repo] = await Promise.all([
-        getSqlFileStatus(),
-        listSqlFiles(),
-        selectedTarget ? getRepoSyncStatus(selectedTarget) : Promise.resolve(null)
+        getSqlFileStatus(selectedTarget),
+        listSqlFiles(selectedTarget),
+        getRepoSyncStatus(selectedTarget)
       ]);
       setStatus(s);
       setFiles(f.files);
@@ -122,7 +135,7 @@ const SqlFilesPage = () => {
   }, [selectedTarget]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   useEffect(() => {
@@ -145,7 +158,8 @@ const SqlFilesPage = () => {
   );
   const visibleFolders = useMemo(() => filteredGroups.map((group) => group.folder), [filteredGroups]);
   const hasQuery = query.trim().length > 0;
-  const allVisibleExpanded = visibleFolders.length > 0 && visibleFolders.every((folder) => expandedFolders[folder] ?? false);
+  const allVisibleExpanded =
+    visibleFolders.length > 0 && visibleFolders.every((folder) => expandedFolders[folder] ?? false);
 
   useEffect(() => {
     if (!hasQuery) return;
@@ -207,12 +221,12 @@ const SqlFilesPage = () => {
   };
 
   const handleClear = async () => {
-    if (!canMutate) return;
+    if (!canMutate || !effectiveTargetId) return;
     if (!window.confirm("Clear all synced SQL files? This will remove the loaded repository manifest.")) return;
     setLoading(true);
     setError(null);
     try {
-      await clearSqlFiles();
+      await clearSqlFiles(effectiveTargetId);
       setSuccess("SQL files cleared");
       setSyncResult(null);
       await load();
@@ -253,7 +267,8 @@ const SqlFilesPage = () => {
             <strong>{targetQuery.data?.repo_url ?? repoStatus?.repo_url ?? "No target selected"}</strong>
             <span className="repo-sync-meta">
               <Icon source={GitBranchIcon} size={16} />
-              {targetQuery.data?.repo_branch ?? repoStatus?.repo_branch ?? "main"} / {targetQuery.data?.repo_sql_path ?? repoStatus?.repo_sql_path ?? "sql"}
+              {targetQuery.data?.repo_branch ?? repoStatus?.repo_branch ?? "main"} /{" "}
+              {targetQuery.data?.repo_sql_path ?? repoStatus?.repo_sql_path ?? "sql"}
             </span>
           </div>
           <button
@@ -323,11 +338,9 @@ const SqlFilesPage = () => {
       {syncing ? <Skeleton rows={3} label="Syncing repository SQL files" /> : null}
 
       {!loading && status && !status.loaded ? (
-        <EmptyState
-          icon={<Icon source={GitBranchIcon} size={24} />}
-          title="No SQL files synced"
-        >
-          Select a target and sync its configured repository SQL path to load the manifest for schema comparison and drift detection.
+        <EmptyState icon={<Icon source={GitBranchIcon} size={24} />} title="No SQL files synced">
+          Select a target and sync its configured repository SQL path to load the manifest for schema comparison and
+          drift detection.
         </EmptyState>
       ) : null}
 
@@ -429,7 +442,9 @@ const SqlFilesPage = () => {
                         <strong>{group.folder}</strong>
                         <span className={`folder-dialect folder-dialect--${dialect.toLowerCase()}`}>{dialect}</span>
                       </span>
-                      <span className="file-count">{group.files.length} file{group.files.length !== 1 ? "s" : ""}</span>
+                      <span className="file-count">
+                        {group.files.length} file{group.files.length !== 1 ? "s" : ""}
+                      </span>
                     </summary>
                     {isExpanded ? (
                       <ul className="sql-file-list">

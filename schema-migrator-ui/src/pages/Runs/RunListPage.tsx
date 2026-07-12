@@ -3,8 +3,9 @@ import { Link, useSearchParams } from "react-router-dom";
 import { LiveRunCard } from "../../components/LiveRunCard";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
-import { useAbortRun, useRuns } from "../../hooks/useRuns";
+import { useAbortRun, useResolveRun, useRuns } from "../../hooks/useRuns";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
+import { useSession } from "../../hooks/useSession";
 import { runStatusOptions, type RunStatus } from "../../types";
 
 const formatDuration = (startedAt: string, endedAt?: string) => {
@@ -22,6 +23,8 @@ export const RunListPage = () => {
   const statusFilter = runStatusOptions.includes(rawStatusFilter as RunStatus) ? (rawStatusFilter as RunStatus) : null;
   const { data: runs = [], isLoading, error } = useRuns(targetId);
   const abortRun = useAbortRun();
+  const resolveRun = useResolveRun();
+  const { canMutate } = useSession();
 
   useEffect(() => {
     if (!rawStatusFilter || statusFilter) {
@@ -41,8 +44,7 @@ export const RunListPage = () => {
   );
 
   const activeRun =
-    filteredRuns.find((run) => run.status === "running") ??
-    filteredRuns.find((run) => run.status === "pending");
+    filteredRuns.find((run) => run.status === "running") ?? filteredRuns.find((run) => run.status === "pending");
 
   const setStatus = (status: string) => {
     const next = new URLSearchParams(searchParams);
@@ -95,6 +97,7 @@ export const RunListPage = () => {
                 <th scope="col">Started</th>
                 <th scope="col">Duration</th>
                 <th scope="col">Status</th>
+                <th scope="col">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -108,6 +111,19 @@ export const RunListPage = () => {
                   <td>{formatDuration(run.started_at, run.ended_at)}</td>
                   <td>
                     <StatusBadge status={run.status} />
+                  </td>
+                  <td>
+                    {run.status === "failed" ? (
+                      <button
+                        className="button button--secondary button--small"
+                        type="button"
+                        disabled={!canMutate || resolveRun.isPending}
+                        title={canMutate ? undefined : "Viewer role cannot resolve runs"}
+                        onClick={() => resolveRun.mutate(run.id)}
+                      >
+                        {resolveRun.isPending ? "Resolving" : "Resolve"}
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

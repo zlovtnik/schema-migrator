@@ -20,6 +20,7 @@ trait RunStore:
   def create(payload: TriggerRunPayload, patch: Patch, triggeredBy: String): IO[Run]
   def get(id: String): IO[Option[Run]]
   def abort(id: String): IO[Option[Run]]
+  def resolveFailed(id: String): IO[Option[Run]]
   def startRun(id: String): IO[Boolean]
   def completeRun(id: String, endedAt: String, validationTriggered: Boolean): IO[Option[Run]]
   def failRun(id: String, endedAt: String, failedScriptId: String, reason: String): IO[Option[Run]]
@@ -94,6 +95,9 @@ private object RunState:
       }
       run.copy(status = "aborted", scripts = scripts, ended_at = Some(endedAt))
     }
+
+  def resolveFailed(run: Run): Option[Run] =
+    Option.when(run.status == "failed")(run.copy(status = "aborted"))
 
   def updateScript(run: Run, scriptId: String)(f: ScriptRun => ScriptRun): Option[Run] =
     Option.when(!isTerminal(run.status)) {
@@ -253,6 +257,12 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
       _ <- result.traverse_(_ => publishRunFailed(id, "", "aborted"))
     yield result
 
+  override def resolveFailed(id: String): IO[Option[Run]] =
+    for
+      result <- updateRun(id)(RunState.resolveFailed)
+      _ <- result.traverse_(_ => publishRunFailed(id, "", "resolved"))
+    yield result
+
   override def startRun(id: String): IO[Boolean] =
     updateRun(id)(RunState.start).map(_.nonEmpty)
 
@@ -370,6 +380,12 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
       ended <- nowString
       result <- updateRun(id)(RunState.abort(_, ended))
       _ <- result.traverse_(_ => publishRunFailed(id, "", "aborted"))
+    yield result
+
+  override def resolveFailed(id: String): IO[Option[Run]] =
+    for
+      result <- updateRun(id)(RunState.resolveFailed)
+      _ <- result.traverse_(_ => publishRunFailed(id, "", "resolved"))
     yield result
 
   override def startRun(id: String): IO[Boolean] =
@@ -524,10 +540,7 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
     )
 
   private def scriptDocuments(document: Document): List[Document] =
-    Option(document.get("scripts")) match
-      case Some(values: java.util.List[?]) =>
-        values.asScala.toList.collect { case doc: Document => doc }
-      case _ => Nil
+    MongoDocument.documentList(document, "scripts")
 
   private def idFilter(id: String): Document =
     new Document("_id", id)
@@ -540,24 +553,22 @@ private final class MongoRunStore(collection: MongoCollection[Document], protect
       .append("scripts", snapshot.get("scripts"))
 
   private def requiredString(document: Document, field: String): String =
-    optionalString(document, field)
-      .filter(_.nonEmpty)
-      .getOrElse(throw IllegalStateException(s"run document is missing required field '$field'"))
+    MongoDocument.requiredString(document, field, "run")
 
   private def optionalString(document: Document, field: String): Option[String] =
-    Option(document.getString(field)).filter(_.nonEmpty)
+    MongoDocument.optionalString(document, field)
 
   private def optionalDocument(document: Document, field: String): Option[Document] =
-    Option(document.get(field)).collect { case doc: Document => doc }
+    MongoDocument.optionalDocument(document, field)
 
   private def intValue(document: Document, field: String): Int =
-    Option(document.get(field)).collect { case number: java.lang.Number => number.intValue() }.getOrElse(0)
+    MongoDocument.intValue(document, field, 0)
 
   private def optionalInt(document: Document, field: String): Option[Int] =
-    Option(document.get(field)).collect { case number: java.lang.Number => number.intValue() }
+    MongoDocument.optionalInt(document, field)
 
   private def optionalLong(document: Document, field: String): Option[Long] =
-    Option(document.get(field)).collect { case number: java.lang.Number => number.longValue() }
+    MongoDocument.optionalLong(document, field)
 
 private object MongoRunStore:
   private val CasRetryPolicy = RetryPolicy(maxAttempts = 5, baseDelay = 10.millis)

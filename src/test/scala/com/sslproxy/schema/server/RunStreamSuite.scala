@@ -48,7 +48,9 @@ class RunStreamSuite extends FunSuite with TestSqlSupport:
           run <- runStore.create(TriggerRunPayload(patch.id, target.id), patch, "test")
           subscribed <- Deferred[IO, Unit]
           streamStore = signalingRunStore(runStore, subscribed)
-          routes = RunRoutes.routes(routeConfig(stageDir), targetStore, patchStore, streamStore, validationStore, auditStore, executor).orNotFound
+          routes = RunRoutes
+            .routes(routeConfig(stageDir), targetStore, patchStore, streamStore, validationStore, auditStore, executor)
+            .orNotFound
           response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/runs/${run.id}/stream")))
           collect = response.body
             .through(text.utf8.decode)
@@ -92,7 +94,9 @@ class RunStreamSuite extends FunSuite with TestSqlSupport:
           run <- runStore.create(TriggerRunPayload(patch.id, target.id), patch, "test")
           storedTarget <- targetStore.getStored(target.id).map(_.get)
           _ <- executor.run(storedTarget, run, patch)
-          routes = RunRoutes.routes(routeConfig(stageDir), targetStore, patchStore, runStore, validationStore, auditStore, executor).orNotFound
+          routes = RunRoutes
+            .routes(routeConfig(stageDir), targetStore, patchStore, runStore, validationStore, auditStore, executor)
+            .orNotFound
           response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/runs/${run.id}/stream")))
           body <- response.body
             .through(text.utf8.decode)
@@ -140,6 +144,9 @@ class RunStreamSuite extends FunSuite with TestSqlSupport:
 
       override def abort(id: String): IO[Option[Run]] =
         delegate.abort(id)
+
+      override def resolveFailed(id: String): IO[Option[Run]] =
+        delegate.resolveFailed(id)
 
       override def startRun(id: String): IO[Boolean] =
         delegate.startRun(id)

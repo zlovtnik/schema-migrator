@@ -19,10 +19,8 @@ interface BreadcrumbDefinition {
   targetAware?: boolean;
 }
 
-export const resolveRouteLabel = (
-  label: RouteLabel | undefined,
-  match: RouteLabelContext
-): string | undefined => (typeof label === "function" ? label(match) : label);
+export const resolveRouteLabel = (label: RouteLabel | undefined, match: RouteLabelContext): string | undefined =>
+  typeof label === "function" ? label(match) : label;
 
 export const activeRouteTitle = (
   matches: Array<{ handle: unknown; params: Record<string, string | undefined>; pathname: string }>

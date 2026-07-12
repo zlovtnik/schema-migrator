@@ -50,6 +50,6 @@ object ValidationRoutes:
                       }
               }
             case None => RouteJson.notFound(s"run '$runId' was not found")
-            }
+          }
         }
     }

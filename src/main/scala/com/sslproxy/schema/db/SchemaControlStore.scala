@@ -127,14 +127,16 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
     val expectedDefinitions = catalogDefinitions(objectDef.rawSql)
     if expectedDefinitions.isEmpty then true.pure[ConnectionIO]
     else
-      expectedDefinitions.traverse { definition =>
-        liveDefinition(definition.key).map {
-          case None => false
-          case Some(None) => true
-          case Some(Some(actualDdl)) =>
-            definitionHash(definition.key, definition.ddl) == definitionHash(definition.key, actualDdl)
+      expectedDefinitions
+        .traverse { definition =>
+          liveDefinition(definition.key).map {
+            case None => false
+            case Some(None) => true
+            case Some(Some(actualDdl)) =>
+              definitionHash(definition.key, definition.ddl) == definitionHash(definition.key, actualDdl)
+          }
         }
-      }.map(_.forall(identity))
+        .map(_.forall(identity))
 
   private def liveDefinition(key: ObjectKey): ConnectionIO[Option[Option[String]]] =
     key.objectType match
@@ -213,7 +215,11 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
       .query[Boolean]
       .unique
 
-  private def relationDefinition(key: ObjectKey, relKinds: Set[String], createPrefix: String): ConnectionIO[Option[Option[String]]] =
+  private def relationDefinition(
+    key: ObjectKey,
+    relKinds: Set[String],
+    createPrefix: String
+  ): ConnectionIO[Option[Option[String]]] =
     (fr"""
     select format($createPrefix || ' %I.%I as %s', n.nspname, c.relname, pg_get_viewdef(c.oid, true))::text
       from pg_class c

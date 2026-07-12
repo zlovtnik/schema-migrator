@@ -19,11 +19,13 @@ export interface SqlFileListResponse {
   files: SqlFileEntry[];
 }
 
-export const getSqlFileStatus = (): Promise<SqlFileStatus> =>
-  apiRequest<SqlFileStatus>("/sql-files/status");
+const targetQuery = (targetId: string): string => `target_id=${encodeURIComponent(targetId)}`;
 
-export const listSqlFiles = (): Promise<SqlFileListResponse> =>
-  apiRequest<SqlFileListResponse>("/sql-files");
+export const getSqlFileStatus = (targetId: string): Promise<SqlFileStatus> =>
+  apiRequest<SqlFileStatus>(`/sql-files/status?${targetQuery(targetId)}`);
 
-export const clearSqlFiles = (): Promise<void> =>
-  apiRequest<void>("/sql-files", { method: "DELETE" });
+export const listSqlFiles = (targetId: string): Promise<SqlFileListResponse> =>
+  apiRequest<SqlFileListResponse>(`/sql-files?${targetQuery(targetId)}`);
+
+export const clearSqlFiles = (targetId: string): Promise<void> =>
+  apiRequest<void>(`/sql-files?${targetQuery(targetId)}`, { method: "DELETE" });

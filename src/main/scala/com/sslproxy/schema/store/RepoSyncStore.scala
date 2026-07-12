@@ -73,9 +73,7 @@ private final class MongoRepoSyncStore(collection: MongoCollection[Document]) ex
     )
 
   private def requiredString(document: Document, field: String): String =
-    Option(document.getString(field))
-      .filter(_.nonEmpty)
-      .getOrElse(throw IllegalStateException(s"repo_sync_state document is missing required field '$field'"))
+    MongoDocument.requiredString(document, field, "repo_sync_state")
 
   private def idFilter(targetId: String): Document =
     new Document("_id", targetId)

@@ -15,7 +15,7 @@ class CorsSuite extends FunSuite:
     val config = ServerConfig(
       host = "127.0.0.1",
       port = 8080,
-      corsOrigins = Set("http://localhost:5173"),
+      corsOrigins = Set("https://localhost", "http://localhost:5173"),
       encryptKeyBase64 = None,
       jwtSecret = "jwt",
       devAuthSecret = "dev",
@@ -26,7 +26,7 @@ class CorsSuite extends FunSuite:
     val request =
       Request[IO](Method.OPTIONS, Uri.unsafeFromString("/api/targets"))
         .putHeaders(
-          Header.Raw(CIString("Origin"), "http://localhost:5173"),
+          Header.Raw(CIString("Origin"), "https://localhost"),
           Header.Raw(CIString("Access-Control-Request-Method"), "GET"),
           Header.Raw(CIString("Access-Control-Request-Headers"), "authorization")
         )
@@ -36,7 +36,7 @@ class CorsSuite extends FunSuite:
     assertEquals(response.status, Status.NoContent)
     assertEquals(
       response.headers.headers.find(_.name == CIString("Access-Control-Allow-Origin")).map(_.value),
-      Some("http://localhost:5173")
+      Some("https://localhost")
     )
     assertEquals(
       response.headers.headers.find(_.name == CIString("Access-Control-Allow-Methods")).map(_.value),

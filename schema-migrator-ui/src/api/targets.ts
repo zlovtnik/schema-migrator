@@ -13,7 +13,8 @@ export const listTargets = async (): Promise<Target[]> => {
   return parseTargetList(response);
 };
 
-export const getTarget = async (id: string): Promise<Target> => parseTarget(await apiRequest<unknown>(`/targets/${id}`));
+export const getTarget = async (id: string): Promise<Target> =>
+  parseTarget(await apiRequest<unknown>(`/targets/${id}`));
 
 export const createTarget = (payload: TargetPayload): Promise<Target> =>
   apiRequest<unknown>("/targets", {

@@ -47,6 +47,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
+      - name: Scala format check
+        run: sbt scalafmtCheck
+
+      - name: Scalafix check
+        run: sbt "scalafixAll --check"
+
       - name: Unit tests
         run: sbt test
 
@@ -98,3 +104,38 @@ jobs:
                and object_type = 'function'
                and object_name = 'sync_stable_uuid(text)'
           " | grep '^customized$'
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: schema-migrator-ui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.22"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Format check
+        run: bun run format:check
+
+      - name: Unit tests
+        run: bun run test
+
+      - name: Build
+        run: bun run build

@@ -55,7 +55,7 @@ object SnapshotRoutes:
 
       case request @ POST -> Root / "snapshots" =>
         AuthContext.requireRole(request, UserRole.Operator) { claims =>
-          request.as[CreateSnapshotPayload].flatMap { payload =>
+          RouteJson.withJson[CreateSnapshotPayload](request, "invalid snapshot payload") { payload =>
             targetStore.get(payload.target_id).flatMap {
               case None => RouteJson.notFound(s"target '${payload.target_id}' was not found")
               case Some(_) =>
@@ -78,9 +78,10 @@ object SnapshotRoutes:
         }
 
       case GET -> Root / "snapshots" / id =>
-        snapshotStore.get(id).flatMap {
-          case Some(snapshot) => RouteJson.ok(SnapshotStore.publicView(snapshot).asJson)
-          case None => RouteJson.notFound(s"snapshot '$id' was not found")
+        snapshotStore.get(id).flatMap { snapshot =>
+          RouteJson.fromOption(snapshot, s"snapshot '$id' was not found")(snapshot =>
+            RouteJson.ok(SnapshotStore.publicView(snapshot).asJson)
+          )
         }
 
       case GET -> Root / "snapshots" / id / "diff" / otherId =>
@@ -93,7 +94,7 @@ object SnapshotRoutes:
 
       case request @ POST -> Root / "snapshots" / id / "rollback" =>
         AuthContext.requireRole(request, UserRole.Operator) { claims =>
-          request.as[RollbackToSnapshotPayload].flatMap { payload =>
+          RouteJson.withJson[RollbackToSnapshotPayload](request, "invalid rollback payload") { payload =>
             (targetStore.getStored(payload.target_id), snapshotStore.get(id)).tupled.flatMap {
               case (None, _) => RouteJson.notFound(s"target '${payload.target_id}' was not found")
               case (_, None) => RouteJson.notFound(s"snapshot '$id' was not found")
@@ -163,7 +164,7 @@ object SnapshotRoutes:
                       auditStore,
                       runExecutor
                     )
-                }
+              }
       }
     }
 
@@ -209,7 +210,9 @@ object SnapshotRoutes:
               "run",
               run.id,
               Some(payload.target_id),
-              Some(Json.obj("patch_id" -> Json.fromString(patch.id), "source_snapshot_id" -> Json.fromString(snapshot.id)))
+              Some(
+                Json.obj("patch_id" -> Json.fromString(patch.id), "source_snapshot_id" -> Json.fromString(snapshot.id))
+              )
             ) *>
             runExecutor.run(target, run, patch).start.void *>
             RouteJson.created(run.asJson)
@@ -271,14 +274,22 @@ object SnapshotRoutes:
         (),
         s"${file.path}: rollback file '${rollbackFile.path}' is empty"
       )
-    yield PatchUpload(generatedFilename("rollback", file.folder, file.filename), rollbackSql.getBytes(StandardCharsets.UTF_8), order)
+    yield PatchUpload(
+      generatedFilename("rollback", file.folder, file.filename),
+      rollbackSql.getBytes(StandardCharsets.UTF_8),
+      order
+    )
 
   private def restoreUpload(file: SnapshotFile, order: Int): Either[String, PatchUpload] =
     for
       contentBase64 <- file.content_base64.toRight(s"${file.path}: snapshot file content is missing")
       sql <- decodeBase64(contentBase64).leftMap(error => s"${file.path}: snapshot SQL is unreadable ($error)")
       _ <- Either.cond(sql.trim.nonEmpty, (), s"${file.path}: snapshot SQL is empty")
-    yield PatchUpload(generatedFilename("restore", file.folder, file.filename), sql.getBytes(StandardCharsets.UTF_8), order)
+    yield PatchUpload(
+      generatedFilename("restore", file.folder, file.filename),
+      sql.getBytes(StandardCharsets.UTF_8),
+      order
+    )
 
   private def resolveStoredRollback(
     currentPath: String,
@@ -317,7 +328,9 @@ object SnapshotRoutes:
     SqlFile(file.folder, Path.of(file.path), file.filename, file.path, decodeBase64(file.contentBase64).toOption)
 
   private def snapshotToSqlFile(file: SnapshotFile): Option[SqlFile] =
-    file.content_base64.map(content => SqlFile(file.folder, Path.of(file.path), file.filename, file.path, decodeBase64(content).toOption))
+    file.content_base64.map(content =>
+      SqlFile(file.folder, Path.of(file.path), file.filename, file.path, decodeBase64(content).toOption)
+    )
 
   private def decodeBase64(value: String): Either[String, String] =
     Either

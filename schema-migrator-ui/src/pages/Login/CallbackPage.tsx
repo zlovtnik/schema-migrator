@@ -61,7 +61,9 @@ export const CallbackPage = () => {
             </Link>
           </div>
         ) : (
-          <div className="empty-state" role="status">Completing sign-in...</div>
+          <div className="empty-state" role="status">
+            Completing sign-in...
+          </div>
         )}
       </section>
     </main>

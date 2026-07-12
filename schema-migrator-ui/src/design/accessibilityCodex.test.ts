@@ -72,7 +72,9 @@ describe("WCAG 2.2 AA UI codex", () => {
     expect(loginPage).toContain("loginWithKeycloak");
 
     const passwordInputs = Array.from(
-      connectionForm.matchAll(/<input[\s\S]*?(?:type=\{[^}]*password[^}]*\}|type=["']password["']|register\(["']password["']\))[\s\S]*?\/>/g)
+      connectionForm.matchAll(
+        /<input[\s\S]*?(?:type=\{[^}]*password[^}]*\}|type=["']password["']|register\(["']password["']\))[\s\S]*?\/>/g
+      )
     );
     expect(passwordInputs.length).toBeGreaterThan(0);
     for (const [input] of passwordInputs) {
@@ -81,7 +83,9 @@ describe("WCAG 2.2 AA UI codex", () => {
   });
 
   it("requires alternatives before drag-only interaction code is introduced", () => {
-    const dragSources = allSources().filter(({ text }) => /onDrag|draggable=|addEventListener\(\s*["']drag|onPointerDown|onMouseDown/.test(text));
+    const dragSources = allSources().filter(({ text }) =>
+      /onDrag|draggable=|addEventListener\(\s*["']drag|onPointerDown|onMouseDown/.test(text)
+    );
     for (const { label, text } of dragSources) {
       expect(text, `${label} needs a keyboard or single-pointer alternative for dragging`).toMatch(
         /onKeyDown|aria-keyshortcuts|Move up|Move down|move up|move down|click destination|file input|type=["']file["']/

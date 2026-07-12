@@ -176,7 +176,7 @@ code {
   border: 1px solid color-mix(in srgb, var(--schema-accent) 25%, var(--border));
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--schema-accent) 10%, transparent);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+  box-shadow: var(--shadow-inset-highlight);
 }
 
 .brand-mark img {

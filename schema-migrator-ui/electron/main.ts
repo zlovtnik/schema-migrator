@@ -1,6 +1,12 @@
 import { app, BrowserWindow, Menu, session, shell, type MenuItemConstructorOptions } from "electron";
 import { createReadStream, promises as fs } from "node:fs";
-import { createServer, request as createHttpRequest, type Server, type IncomingMessage, type ServerResponse } from "node:http";
+import {
+  createServer,
+  request as createHttpRequest,
+  type Server,
+  type IncomingMessage,
+  type ServerResponse
+} from "node:http";
 import { request as createHttpsRequest } from "node:https";
 import { extname, resolve, sep } from "node:path";
 
@@ -371,7 +377,7 @@ const createWindow = async (): Promise<void> => {
 
 installApplicationMenu();
 
-app.whenReady().then(() => {
+void app.whenReady().then(() => {
   installContentSecurityPolicy();
 
   createWindow().catch((error: unknown) => {

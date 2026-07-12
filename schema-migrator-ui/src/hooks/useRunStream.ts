@@ -296,14 +296,17 @@ export const useRunStream = (runId?: string, initialRun?: Run, options: UseRunSt
         if (!closed) {
           throw new Error("run stream ended before a terminal event");
         }
-      } catch (error) {
+      } catch {
         if (closed || controller.signal.aborted || attempts >= 3) {
           return;
         }
         attempts += 1;
-        retryTimer = window.setTimeout(() => {
-          void connect();
-        }, Math.min(1000 * 2 ** attempts, 8000));
+        retryTimer = window.setTimeout(
+          () => {
+            void connect();
+          },
+          Math.min(1000 * 2 ** attempts, 8000)
+        );
       }
     };
 

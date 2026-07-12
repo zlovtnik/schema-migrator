@@ -50,11 +50,13 @@ object SqlFileRoutes:
           case Some(id) =>
             sqlFileStore.list(id).flatMap { files =>
               val folders = files.map(_.folder).distinct.sorted
-              RouteJson.ok(Json.obj(
-                "loaded" -> Json.fromBoolean(files.nonEmpty),
-                "file_count" -> Json.fromInt(files.size),
-                "folders" -> Json.fromValues(folders.map(Json.fromString))
-              ))
+              RouteJson.ok(
+                Json.obj(
+                  "loaded" -> Json.fromBoolean(files.nonEmpty),
+                  "file_count" -> Json.fromInt(files.size),
+                  "folders" -> Json.fromValues(folders.map(Json.fromString))
+                )
+              )
             }
           case None => RouteJson.badRequest("target_id is required")
 

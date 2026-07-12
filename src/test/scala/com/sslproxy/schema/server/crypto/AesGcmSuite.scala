@@ -20,3 +20,18 @@ class AesGcmSuite extends FunSuite:
   test("AES-GCM rejects non-256-bit keys") {
     assert(AesGcm.keyFromBase64("c2hvcnQ=").isLeft)
   }
+
+  test("AES-GCM key ring decrypts envelopes encrypted under an old key version") {
+    val oldKey =
+      AesGcm.keyFromBase64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").fold(message => fail(message), identity)
+    val currentKey = AesGcm.keyFromBase64(keyText).fold(message => fail(message), identity)
+    val oldRing = AesGcm.KeyRing("v1", oldKey, Map.empty)
+    val rotatedRing = AesGcm.KeyRing("v2", currentKey, Map("v1" -> oldKey))
+    val plain = "rotatable payload".getBytes(StandardCharsets.UTF_8)
+
+    val envelope = AesGcm.encryptEnvelope(oldRing, plain).unsafeRunSync()
+    val decrypted = AesGcm.decryptEnvelope(rotatedRing, envelope).unsafeRunSync()
+
+    assertEquals(envelope.keyVersion, "v1")
+    assertEquals(String(decrypted, StandardCharsets.UTF_8), "rotatable payload")
+  }

@@ -159,7 +159,9 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
         val table = normalizeQualifiedIdentifier(statement.group(1))
         addColumnPattern
           .findAllMatchIn(statement.group(2))
-          .map(addColumn => (table, normalizeIdentifier(addColumn.group(2)), Option(addColumn.group(1)).exists(_.trim.nonEmpty)))
+          .map(addColumn =>
+            (table, normalizeIdentifier(addColumn.group(2)), Option(addColumn.group(1)).exists(_.trim.nonEmpty))
+          )
       }
       .toList
 

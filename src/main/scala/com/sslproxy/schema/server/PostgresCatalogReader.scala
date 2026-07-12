@@ -21,8 +21,7 @@ private[schema] object PostgresCatalogReader:
     JdbcSupport.queryList(connection, postgresCatalogSql)(readLiveObject)
 
   private def readControlObjects(connection: Connection): ControlSnapshot =
-    try
-      controlSnapshot(JdbcSupport.queryList(connection, controlSql)(readControlRow))
+    try controlSnapshot(JdbcSupport.queryList(connection, controlSql)(readControlRow))
     catch
       case NonFatal(error) =>
         unavailableControlSnapshot(s"schema_control status unavailable: ${error.getMessage}")

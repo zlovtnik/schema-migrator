@@ -106,6 +106,7 @@ final case class ServerConfig(
   validationsCollection: String = "validations",
   snapshotsCollection: String = "snapshots",
   auditCollection: String = "audit_events",
+  keycloakConfigCollection: String = "keycloak_config",
   mongoConfigError: Option[String] = None
 ):
   def validate: Either[String, Unit] =
@@ -128,10 +129,12 @@ final case class ServerConfig(
     else if validationsCollection.trim.isEmpty then Left("BEDROCK_VALIDATIONS_COLLECTION must not be empty")
     else if snapshotsCollection.trim.isEmpty then Left("BEDROCK_SNAPSHOTS_COLLECTION must not be empty")
     else if auditCollection.trim.isEmpty then Left("BEDROCK_AUDIT_COLLECTION must not be empty")
-    else validateEncryptKeyBase64()
-      .flatMap(_ => validateMongo())
-      .flatMap(_ => validatePatchStageDir())
-      .flatMap(_ => validateRepoCacheDir())
+    else if keycloakConfigCollection.trim.isEmpty then Left("BEDROCK_KEYCLOAK_CONFIG_COLLECTION must not be empty")
+    else
+      validateEncryptKeyBase64()
+        .flatMap(_ => validateMongo())
+        .flatMap(_ => validatePatchStageDir())
+        .flatMap(_ => validateRepoCacheDir())
 
   def mongoConfig: Either[String, MongoConfig] =
     mongo.toRight(
@@ -162,8 +165,7 @@ final case class ServerConfig(
 
   private def validateWritableDirectory(path: Path, label: String): Either[String, Unit] =
     try
-      if Files.exists(path) && !Files.isDirectory(path) then
-        Left(s"$label path '$path' is not a directory")
+      if Files.exists(path) && !Files.isDirectory(path) then Left(s"$label path '$path' is not a directory")
       else
         if Files.notExists(path) then Files.createDirectories(path)
         if !Files.isDirectory(path) then Left(s"$label path '$path' is not a directory")

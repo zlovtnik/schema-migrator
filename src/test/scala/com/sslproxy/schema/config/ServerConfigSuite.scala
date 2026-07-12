@@ -91,6 +91,15 @@ class ServerConfigSuite extends FunSuite:
     finally Files.deleteIfExists(stageDir)
   }
 
+  test("server validation requires Keycloak config collection name") {
+    val stageDir = Files.createTempDirectory("schema-migrator-config")
+    try
+      val config = validConfig(stageDir).copy(keycloakConfigCollection = "")
+
+      assertEquals(config.validate, Left("BEDROCK_KEYCLOAK_CONFIG_COLLECTION must not be empty"))
+    finally Files.deleteIfExists(stageDir)
+  }
+
   private def validConfig(stageDir: java.nio.file.Path): ServerConfig =
     ServerConfig(
       host = "127.0.0.1",

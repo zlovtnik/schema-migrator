@@ -192,7 +192,7 @@ If no command is given, `apply` is used as the default.
 | `VITE_KEYCLOAK_REDIRECT_URI` | Optional browser redirect URI. Defaults to the current origin plus `/callback` when omitted. |
 | `VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS` | Set to `true` only when the Keycloak client allows username/password direct access grants. Defaults to `false`. |
 | `BEDROCK_ENCRYPT_KEY` | Base64 AES-256-GCM key used to encrypt persisted target passwords and API responses. |
-| `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist targets, uploaded SQL files, patches, runs, and validations. |
+| `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist targets, uploaded SQL files, patches, runs, validations, snapshots, audit events, and the active Keycloak configuration snapshot. |
 | `BEDROCK_MONGO_DATABASE` | MongoDB database for persisted HTTP API state. |
 | `BEDROCK_MONGO_TARGETS_COLLECTION` | MongoDB collection for persisted target records. |
 | `BEDROCK_SQL_FILES_COLLECTION` | MongoDB collection for uploaded repository SQL files. Defaults to `sql_files`. |
@@ -201,13 +201,18 @@ If no command is given, `apply` is used as the default.
 | `BEDROCK_VALIDATIONS_COLLECTION` | MongoDB collection for validation results. Defaults to `validations`. |
 | `BEDROCK_SNAPSHOTS_COLLECTION` | MongoDB collection for SQL manifest snapshots. Defaults to `snapshots`. |
 | `BEDROCK_AUDIT_COLLECTION` | MongoDB collection for audit events. Defaults to `audit_events`. |
+| `BEDROCK_KEYCLOAK_CONFIG_COLLECTION` | MongoDB collection for the non-secret Keycloak configuration snapshot written by the backend at startup. Defaults to `keycloak_config`. |
 | `DOCKER_SOCKET` | Docker socket bind source for the Traefik Docker provider in `docker-compose.yml`. Defaults to `/var/run/docker.sock`; Docker Desktop users may need `${HOME}/.docker/run/docker.sock`. |
 | `DOCKER_API_VERSION` | Optional Docker API version used by Traefik's Docker client. Defaults to `1.40` for compatibility with newer Docker engines. |
 
 Oracle schema catalog and drift endpoints currently return `supported = false`; Oracle targets are limited to connection-level checks and JDBC migration execution until Oracle catalog introspection is added.
 
 Postgres drift checks persist the latest object-level result per customer overlay in
-`schema_control.object_customization_registry`. To install or query the report view:
+`schema_control.object_customization_registry`. The Docker Compose and Kubernetes
+deployments keep Keycloak's realm/user database on a dedicated persistent volume.
+Keycloak does not support MongoDB as its user database; MongoDB stores the
+schema-migrator API state plus the backend's active Keycloak configuration
+snapshot. To install or query the report view:
 
 ```bash
 psql "$DATABASE_URL" -f sql/registry/drift_report.sql

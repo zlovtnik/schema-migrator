@@ -44,7 +44,7 @@ object RunRoutes:
     HttpRoutes.of[IO] {
       case request @ POST -> Root / "runs" =>
         AuthContext.requireRole(request, UserRole.Operator) { claims =>
-          request.as[TriggerRunPayload].flatMap { payload =>
+          RouteJson.withJson[TriggerRunPayload](request, "invalid run payload") { payload =>
             (targetStore.getStored(payload.target_id), patchStore.get(payload.patch_id)).tupled.flatMap {
               case (None, _) => RouteJson.notFound(s"target '${payload.target_id}' was not found")
               case (_, None) => RouteJson.notFound(s"patch '${payload.patch_id}' was not found")
@@ -100,10 +100,9 @@ object RunRoutes:
         }
 
       case GET -> Root / "runs" / id =>
-        runStore.get(id).flatMap {
-          case Some(run) => RouteJson.ok(run.asJson)
-          case None => RouteJson.notFound(s"run '$id' was not found")
-        }
+        runStore
+          .get(id)
+          .flatMap(run => RouteJson.fromOption(run, s"run '$id' was not found")(run => RouteJson.ok(run.asJson)))
 
       case request @ POST -> Root / "runs" / id / "abort" =>
         AuthContext.requireRole(request, UserRole.Operator) { claims =>
@@ -127,6 +126,40 @@ object RunRoutes:
                 Json.obj("event" -> Json.fromString("run_abort_not_found"), "run_id" -> Json.fromString(id)).noSpaces
               ) *>
                 RouteJson.notFound(s"run '$id' was not found")
+          }
+        }
+
+      case request @ POST -> Root / "runs" / id / "resolve" =>
+        AuthContext.requireRole(request, UserRole.Operator) { claims =>
+          runStore.get(id).flatMap {
+            case None => RouteJson.notFound(s"run '$id' was not found")
+            case Some(run) if run.status != "failed" =>
+              RouteJson.conflict(s"run '$id' is not failed")
+            case Some(run) =>
+              runStore.resolveFailed(id).flatMap {
+                case Some(resolved) =>
+                  auditStore.record(
+                    claims.subject,
+                    claims.role,
+                    "run.resolve",
+                    "run",
+                    resolved.id,
+                    Some(resolved.target_id),
+                    Some(Json.obj("patch_id" -> Json.fromString(resolved.patch_id)))
+                  ) *>
+                    log.info(
+                      Json
+                        .obj(
+                          "event" -> Json.fromString("run_resolved"),
+                          "run_id" -> Json.fromString(id),
+                          "target_id" -> Json.fromString(resolved.target_id)
+                        )
+                        .noSpaces
+                    ) *>
+                    RouteJson.ok(resolved.asJson)
+                case None =>
+                  RouteJson.conflict(s"run '$id' is no longer failed")
+              }
           }
         }
     }

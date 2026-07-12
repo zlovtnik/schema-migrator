@@ -108,7 +108,7 @@ describe("SqlFilesPage", () => {
             })
           );
         }
-        if (url.includes("/sql-files/status")) {
+        if (url.includes("/sql-files/status?target_id=target-1")) {
           return Promise.resolve(
             jsonResponse({
               loaded: true,
@@ -117,7 +117,7 @@ describe("SqlFilesPage", () => {
             })
           );
         }
-        if (url.endsWith("/sql-files")) {
+        if (url.includes("/sql-files?target_id=target-1")) {
           return Promise.resolve(jsonResponse({ files: sqlFiles }));
         }
         throw new Error(`Unexpected fetch request: ${url}`);
@@ -186,7 +186,10 @@ describe("SqlFilesPage", () => {
     await user.keyboard("{Enter}");
 
     await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/targets/target-1/repo-sync"), expect.objectContaining({ method: "POST" }))
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining("/targets/target-1/repo-sync"),
+        expect.objectContaining({ method: "POST" })
+      )
     );
     expect(await screen.findByText(/synced commit abc123def456/i)).toBeInTheDocument();
   });

@@ -29,7 +29,11 @@ export const LogViewer = ({ lines }: LogViewerProps) => {
     <div className="log-viewer">
       <div className="log-viewer__toolbar">
         <span>{lines.length} log lines</span>
-        <button className="button button--ghost button--small" type="button" onClick={() => setScrollPaused((value) => !value)}>
+        <button
+          className="button button--ghost button--small"
+          type="button"
+          onClick={() => setScrollPaused((value) => !value)}
+        >
           {scrollPaused ? "Resume scroll" : "Pause scroll"}
         </button>
       </div>

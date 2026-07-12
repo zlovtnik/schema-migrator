@@ -263,7 +263,8 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
   test("target routes reject non-HTTPS repository URLs") {
     val result = routeFixture
       .use { routes =>
-        val payload = targetPayload("Bad repo").mapObject(_.add("repo_url", Json.fromString("git@github.com:example/schema.git")))
+        val payload =
+          targetPayload("Bad repo").mapObject(_.add("repo_url", Json.fromString("git@github.com:example/schema.git")))
 
         for
           response <- routes.run(jsonRequest(Method.POST, "/targets", payload))
@@ -420,8 +421,9 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
         now
       )
     )
-    val result = routeFixture(Set("localhost", "127.0.0.1"), storedFiles)
-      .use { routes =>
+    val result = routeFixtureWithStore(Set("localhost", "127.0.0.1"))
+      .use { fixture =>
+        val routes = fixture.app
         for
           targetResponse <- routes.run(
             jsonRequest(
@@ -432,6 +434,7 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           )
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          _ <- fixture.sqlFileStore.replaceAll(targetId, storedFiles)
           response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/schema?target_id=$targetId")))
           json <- bodyJson(response)
         yield (response.status, json)
@@ -443,7 +446,10 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
 
     assertEquals(schemaStatus, Status.Ok)
     assertEquals(schemaJson.hcursor.downField("objects").downArray.get[String]("name"), Right("uploaded_devices"))
-    assertEquals(schemaJson.hcursor.downField("objects").downArray.get[String]("source_file"), Right("tables/001_uploaded_devices.sql"))
+    assertEquals(
+      schemaJson.hcursor.downField("objects").downArray.get[String]("source_file"),
+      Right("tables/001_uploaded_devices.sql")
+    )
     assert(!warnings.exists(_.contains("unrecognized sql folder")))
     assert(!warnings.exists(_.contains("has no files in store")))
   }
@@ -529,7 +535,10 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     val (schemaStatus, schemaJson, driftStatus, driftJson) = result
     assertEquals(schemaStatus, Status.Forbidden)
     assertEquals(driftStatus, Status.Forbidden)
-    assertEquals(schemaJson.hcursor.get[String]("error"), Right("database schema access is not allowed for this target"))
+    assertEquals(
+      schemaJson.hcursor.get[String]("error"),
+      Right("database schema access is not allowed for this target")
+    )
     assertEquals(driftJson.hcursor.get[String]("error"), Right("database drift access is not allowed for this target"))
   }
 
@@ -578,10 +587,14 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
       .use { fixture =>
         val routes = fixture.app
         for
-          _ <- replaceSqlFiles(fixture.sqlFileStore, "target-1", List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);"))
           targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);")
+          )
           createResponse <- routes.run(
             jsonRequest(
               Method.POST,
@@ -617,22 +630,43 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
-          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);", "sql/views/001_devices_view.sql" -> "create or replace view public.devices_view as select id from public.devices;"))
-          baseResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List(
+              "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
+              "sql/views/001_devices_view.sql" -> "create or replace view public.devices_view as select id from public.devices;"
+            )
+          )
+          baseResponse <- routes.run(
+            jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId)))
+          )
           baseJson <- bodyJson(baseResponse)
           baseId <- IO.fromEither(baseJson.hcursor.get[String]("id"))
-          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key, name text);", "sql/functions/001_touch.sql" -> "create or replace function public.touch() returns void language sql as $$ select 1 $$;"))
-          compareResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List(
+              "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key, name text);",
+              "sql/functions/001_touch.sql" -> "create or replace function public.touch() returns void language sql as $$ select 1 $$;"
+            )
+          )
+          compareResponse <- routes.run(
+            jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId)))
+          )
           compareJson <- bodyJson(compareResponse)
           compareId <- IO.fromEither(compareJson.hcursor.get[String]("id"))
-          diffResponse <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/snapshots/$baseId/diff/$compareId")))
+          diffResponse <- routes.run(
+            Request[IO](Method.GET, Uri.unsafeFromString(s"/snapshots/$baseId/diff/$compareId"))
+          )
           diffJson <- bodyJson(diffResponse)
         yield diffResponse.status -> diffJson
       }
       .unsafeRunSync()
 
     val (status, json) = result
-    val diffTypes = json.hcursor.downField("items").values.toList.flatten.flatMap(_.hcursor.get[String]("diff_type").toOption).sorted
+    val diffTypes =
+      json.hcursor.downField("items").values.toList.flatten.flatMap(_.hcursor.get[String]("diff_type").toOption).sorted
     assertEquals(status, Status.Ok)
     assertEquals(diffTypes, List("added", "changed", "removed"))
   }
@@ -645,13 +679,30 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
-          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);"))
-          snapshotResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);")
+          )
+          snapshotResponse <- routes.run(
+            jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId)))
+          )
           snapshotJson <- bodyJson(snapshotResponse)
           snapshotId <- IO.fromEither(snapshotJson.hcursor.get[String]("id"))
-          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);", "sql/tables/002_extra.sql" -> "create table if not exists public.extra (id bigint primary key);"))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List(
+              "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
+              "sql/tables/002_extra.sql" -> "create table if not exists public.extra (id bigint primary key);"
+            )
+          )
           rollbackResponse <- routes.run(
-            jsonRequest(Method.POST, s"/snapshots/$snapshotId/rollback", Json.obj("target_id" -> Json.fromString(targetId)))
+            jsonRequest(
+              Method.POST,
+              s"/snapshots/$snapshotId/rollback",
+              Json.obj("target_id" -> Json.fromString(targetId))
+            )
           )
           rollbackJson <- bodyJson(rollbackResponse)
         yield rollbackResponse.status -> rollbackJson
@@ -660,7 +711,10 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
 
     val (status, json) = result
     assertEquals(status, Status.UnprocessableEntity)
-    assertEquals(json.hcursor.downField("details").downArray.as[String].map(_.contains("missing -- rollback: reference")), Right(true))
+    assertEquals(
+      json.hcursor.downField("details").downArray.as[String].map(_.contains("missing -- rollback: reference")),
+      Right(true)
+    )
   }
 
   test("rollback to snapshot creates sourced patch and run in deterministic order") {
@@ -676,13 +730,34 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
-          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);", "sql/rollbacks/drop_extra.sql" -> rollbackSql))
-          snapshotResponse <- routes.run(jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId))))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List(
+              "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
+              "sql/rollbacks/drop_extra.sql" -> rollbackSql
+            )
+          )
+          snapshotResponse <- routes.run(
+            jsonRequest(Method.POST, "/snapshots", Json.obj("target_id" -> Json.fromString(targetId)))
+          )
           snapshotJson <- bodyJson(snapshotResponse)
           snapshotId <- IO.fromEither(snapshotJson.hcursor.get[String]("id"))
-          _ <- replaceSqlFiles(fixture.sqlFileStore, targetId, List("sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);", "sql/rollbacks/drop_extra.sql" -> rollbackSql, "sql/tables/002_extra.sql" -> extraSql))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List(
+              "sql/tables/001_devices.sql" -> "create table if not exists public.devices (id bigint primary key);",
+              "sql/rollbacks/drop_extra.sql" -> rollbackSql,
+              "sql/tables/002_extra.sql" -> extraSql
+            )
+          )
           rollbackResponse <- routes.run(
-            jsonRequest(Method.POST, s"/snapshots/$snapshotId/rollback", Json.obj("target_id" -> Json.fromString(targetId)))
+            jsonRequest(
+              Method.POST,
+              s"/snapshots/$snapshotId/rollback",
+              Json.obj("target_id" -> Json.fromString(targetId))
+            )
           )
           rollbackJson <- bodyJson(rollbackResponse)
           patchId <- IO.fromEither(rollbackJson.hcursor.get[String]("patch_id"))
@@ -708,7 +783,9 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Audited")))
           targetJson <- bodyJson(targetResponse)
           targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
-          auditResponse <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/audit?entity_type=target&target_id=$targetId")))
+          auditResponse <- routes.run(
+            Request[IO](Method.GET, Uri.unsafeFromString(s"/audit?entity_type=target&target_id=$targetId"))
+          )
           auditJson <- bodyJson(auditResponse)
         yield auditResponse.status -> auditJson
       }
@@ -780,7 +857,11 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           _ <- awaitValidation(routes, runId)
           rerun <- routes.run(Request[IO](Method.POST, Uri.unsafeFromString(s"/validation/$runId/rerun")))
           rerunJson <- bodyJson(rerun)
-        yield (rerun.status, rerunJson.hcursor.get[String]("status"), rerunJson.hcursor.downField("invalid").values.map(_.size))
+        yield (
+          rerun.status,
+          rerunJson.hcursor.get[String]("status"),
+          rerunJson.hcursor.downField("invalid").values.map(_.size)
+        )
       }
       .unsafeRunSync()
 

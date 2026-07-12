@@ -6,13 +6,13 @@ import com.sslproxy.schema.store.StoredSqlFile
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.ObjectId
 
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, LinkOption, Path}
 import scala.jdk.CollectionConverters.*
 
 final class GitRepoLoader(transportTimeoutSeconds: Int = 60):
   private val maxFileCount = 10000
-  private val maxFileSizeBytes = 10L * 1024 * 1024   // 10 MB
-  private val maxTotalSizeBytes = 500L * 1024 * 1024  // 500 MB
+  private val maxFileSizeBytes = 10L * 1024 * 1024 // 10 MB
+  private val maxTotalSizeBytes = 500L * 1024 * 1024 // 500 MB
 
   def cloned[A](repoUrl: String, branch: String, cacheDir: Path)(use: Path => IO[A]): IO[A] =
     cloneResource(repoUrl, branch, cacheDir).use(use)
@@ -26,7 +26,7 @@ final class GitRepoLoader(transportTimeoutSeconds: Int = 60):
       val candidate = repoRootNormalized.resolve(relative).normalize()
       if relative.isAbsolute || !candidate.startsWith(repoRootNormalized) then
         Left("Repository SQL path must stay inside the repository")
-      else if isSymlink(repoRootNormalized) || isSymlink(candidate) then
+      else if traversesSymlink(repoRootNormalized, candidate) then
         Left("Repository SQL path must not traverse symlinks")
       else if Files.notExists(candidate) then Left(s"repository SQL path '$repoSqlPath' does not exist")
       else if !Files.isDirectory(candidate) then Left(s"repository SQL path '$repoSqlPath' is not a directory")
@@ -136,11 +136,14 @@ final class GitRepoLoader(transportTimeoutSeconds: Int = 60):
         }
     }
 
-  private def isSymlink(path: Path): Boolean =
-    Files.isSymbolicLink(path) || {
-      var current = path
-      while current != null do
-        if Files.isSymbolicLink(current) then return true
+  private def traversesSymlink(repoRoot: Path, candidate: Path): Boolean =
+    if Files.isSymbolicLink(repoRoot) then true
+    else
+      var current = candidate
+      while current != null && current != repoRoot do
+        if Files.exists(current, LinkOption.NOFOLLOW_LINKS) && Files.isSymbolicLink(current) then return true
         current = current.getParent
       false
-    }
+
+  private def isSymlink(path: Path): Boolean =
+    Files.isSymbolicLink(path)

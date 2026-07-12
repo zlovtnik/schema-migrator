@@ -46,11 +46,25 @@ export const objectTypeOptions = [
   "type",
   "other"
 ] as const;
-export const schemaObjectStatusOptions = ["defined", "in_sync", "drift_detected", "pending_migration", "unknown"] as const;
-export const driftTypeOptions = ["missing_actual", "untracked_actual", "definition_changed", "pending_or_failed_control"] as const;
+export const schemaObjectStatusOptions = [
+  "defined",
+  "in_sync",
+  "drift_detected",
+  "pending_migration",
+  "unknown"
+] as const;
+export const driftTypeOptions = [
+  "missing_actual",
+  "untracked_actual",
+  "definition_changed",
+  "pending_or_failed_control"
+] as const;
 export const snapshotDiffTypeOptions = ["added", "changed", "removed"] as const;
 
-const rfc3339TimestampSchema = z.string().datetime({ offset: true }).transform((value) => value as Rfc3339Timestamp);
+const rfc3339TimestampSchema = z
+  .string()
+  .datetime({ offset: true })
+  .transform((value) => value as Rfc3339Timestamp);
 const envSchema = z.enum(envOptions);
 const runStatusSchema = z.enum(runStatusOptions);
 const patchStatusSchema = z.enum(patchStatusOptions);
@@ -248,7 +262,7 @@ export interface SnapshotDiff {
 export interface AuditEvent {
   id: string;
   actor: string;
-  role?: UserRole | string | null;
+  role?: string | null;
   action: string;
   entity_type: string;
   entity_id: string;
@@ -541,16 +555,16 @@ export const targetFormSchema = z.object({
     .min(1, "Repository URL is required")
     .url("Repository URL must be a valid URL")
     .refine((value) => value.startsWith("https://"), "Repository URL must start with https://")
-    .refine(
-      (value) => !/^https:\/\/[^/?#\s]*@/iu.test(value),
-      "Repository URL must not include credentials"
-    ),
+    .refine((value) => !/^https:\/\/[^/?#\s]*@/iu.test(value), "Repository URL must not include credentials"),
   repo_branch: z.string().trim().min(1, "Branch is required").default("main"),
   repo_sql_path: z
     .string()
     .trim()
     .min(1, "SQL path is required")
-    .refine((value) => !value.startsWith("/") && !value.includes("..") && !value.includes("\\"), "SQL path must stay inside the repository")
+    .refine(
+      (value) => !value.startsWith("/") && !value.includes("..") && !value.includes("\\"),
+      "SQL path must stay inside the repository"
+    )
     .default("sql")
 });
 

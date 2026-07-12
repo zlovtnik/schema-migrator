@@ -45,11 +45,12 @@ object ApplyCallbacks:
           if config.verbose then
             IO.println(s"executing ${prepared.objectDef.sourceFile}\n${prepared.objectDef.rawSql}\n")
           else IO.unit
-        echo *> IO.println(s"[$position/$total] running ${prepared.objectDef.sourceFile}"),
-      scriptSkipped = (prepared, position, total, _) =>
-        IO.println(s"[$position/$total] skipped ${prepared.objectDef.sourceFile}"),
-      scriptCompleted = (prepared, position, total, _) =>
-        IO.println(s"[$position/$total] applied ${prepared.objectDef.sourceFile}"),
+        echo *> IO.println(s"[$position/$total] running ${prepared.objectDef.sourceFile}")
+      ,
+      scriptSkipped =
+        (prepared, position, total, _) => IO.println(s"[$position/$total] skipped ${prepared.objectDef.sourceFile}"),
+      scriptCompleted =
+        (prepared, position, total, _) => IO.println(s"[$position/$total] applied ${prepared.objectDef.sourceFile}"),
       scriptFailed = (prepared, position, total, error, _) =>
         IO.println(s"[$position/$total] failed ${prepared.objectDef.sourceFile}: ${error.getMessage}")
     )
@@ -121,13 +122,16 @@ final class MigrationEngine[F[_]: Async](provider: DbProvider[F], discoveryServi
 
       val structuralReportIO: F[ApplyReport] =
         if structural.isEmpty then Async[F].pure(ApplyReport())
-        else callbacks.phaseStarted("Phase 1/2: Structural objects") *> applyPhase(session, structural, config, callbacks)
+        else
+          callbacks.phaseStarted("Phase 1/2: Structural objects") *> applyPhase(session, structural, config, callbacks)
 
       structuralReportIO.flatMap { structuralReport =>
         val behavioralReportIO: F[ApplyReport] =
           if behavioral.isEmpty || (structuralReport.failedFiles > 0 && !config.continueOnError) then
             Async[F].pure(ApplyReport())
-          else callbacks.phaseStarted("Phase 2/2: Behavioral objects") *> applyPhase(session, behavioral, config, callbacks)
+          else
+            callbacks
+              .phaseStarted("Phase 2/2: Behavioral objects") *> applyPhase(session, behavioral, config, callbacks)
 
         behavioralReportIO.map { behavioralReport =>
           structuralReport.combine(behavioralReport)

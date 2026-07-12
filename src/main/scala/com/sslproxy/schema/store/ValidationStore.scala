@@ -155,14 +155,10 @@ private final class MongoValidationStore(collection: MongoCollection[Document]) 
     )
 
   private def invalidDocuments(document: Document): List[Document] =
-    Option(document.get("invalid")) match
-      case Some(values: java.util.List[?]) =>
-        values.asScala.toList.collect { case doc: Document => doc }
-      case _ => Nil
+    MongoDocument.documentList(document, "invalid")
 
   private def idFilter(runId: String): Document =
     new Document("_id", runId)
 
   private def requiredString(document: Document, field: String): String =
-    Option(document.getString(field))
-      .getOrElse(throw IllegalStateException(s"validation document is missing required field '$field'"))
+    MongoDocument.requiredString(document, field, "validation")

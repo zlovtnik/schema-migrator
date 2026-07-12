@@ -76,7 +76,9 @@ object PatchRoutes:
             case Some(patch) =>
               patchStore.delete(id).flatMap {
                 case true =>
-                  auditStore.record(claims.subject, claims.role, "patch.delete", "patch", id, Some(patch.target_id)).void *>
+                  auditStore
+                    .record(claims.subject, claims.role, "patch.delete", "patch", id, Some(patch.target_id))
+                    .void *>
                     NoContent()
                 case false => RouteJson.notFound(s"patch '$id' was not found")
               }

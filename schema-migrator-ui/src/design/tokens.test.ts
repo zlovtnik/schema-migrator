@@ -88,14 +88,18 @@ describe("design color tokens", () => {
         expect(contrast(text, blend(color, surface, 0.16))).toBeGreaterThanOrEqual(4.5);
       }
 
-      expect(contrast(resolveToken(tokens, "--color-accent-contrast"), resolveToken(tokens, "--color-accent-primary"))).toBeGreaterThanOrEqual(
-        4.5
-      );
-      expect(contrast(resolveToken(tokens, "--color-accent-contrast"), resolveToken(tokens, "--color-accent-primary-hover"))).toBeGreaterThanOrEqual(
-        4.5
-      );
-      expect(contrast(resolveToken(tokens, "--color-danger-contrast"), resolveToken(tokens, "--color-danger"))).toBeGreaterThanOrEqual(4.5);
-      expect(contrast(resolveToken(tokens, "--color-danger-contrast"), resolveToken(tokens, "--color-danger-hover"))).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrast(resolveToken(tokens, "--color-accent-contrast"), resolveToken(tokens, "--color-accent-primary"))
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrast(resolveToken(tokens, "--color-accent-contrast"), resolveToken(tokens, "--color-accent-primary-hover"))
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrast(resolveToken(tokens, "--color-danger-contrast"), resolveToken(tokens, "--color-danger"))
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrast(resolveToken(tokens, "--color-danger-contrast"), resolveToken(tokens, "--color-danger-hover"))
+      ).toBeGreaterThanOrEqual(4.5);
     }
   });
 });

@@ -2,6 +2,8 @@ package com.sslproxy.schema.db
 
 import cats.effect.{IO, Resource}
 import com.sslproxy.schema.error.MigratorError
+import org.typelevel.log4cats.LoggerFactory
+import org.typelevel.log4cats.slf4j.Slf4jFactory
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
@@ -27,6 +29,9 @@ final case class JdbcConnectionConfig(
   * `ConnectionIO` instead of these statement/query helpers.
   */
 object JdbcSupport:
+  private given LoggerFactory[IO] = Slf4jFactory.create[IO]
+  private val logger = LoggerFactory[IO].getLogger
+
   def connection(config: JdbcConnectionConfig): Resource[IO, Connection] =
     Resource.make {
       IO.blocking {
@@ -101,7 +106,7 @@ object JdbcSupport:
     def loop(remaining: Int, used: Int): IO[A] =
       operation.handleErrorWith {
         case error if MigratorError.isConnectionFailure(error) && remaining > 0 =>
-          IO.println(
+          logger.warn(
             s"warning: connection attempt ${used + 1}/${attempts + 1} failed, retrying in ${backoff.toSeconds}s: ${error.getMessage}"
           ) *> IO.sleep(backoff * math.pow(2.0, used.toDouble).toLong) *> loop(remaining - 1, used + 1)
         case error => IO.raiseError(error)

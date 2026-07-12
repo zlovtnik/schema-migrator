@@ -19,3 +19,8 @@ export const abortRun = (id: string): Promise<Run> =>
   apiRequest<unknown>(`/runs/${id}/abort`, {
     method: "POST"
   }).then(parseRun);
+
+export const resolveRun = (id: string): Promise<Run> =>
+  apiRequest<unknown>(`/runs/${id}/resolve`, {
+    method: "POST"
+  }).then(parseRun);

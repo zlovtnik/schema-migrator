@@ -116,7 +116,11 @@ export const DataTable = <T,>({
     });
 
     return [...groups.values()]
-      .sort((a, b) => String(a.group.sortLabel ?? a.group.id).localeCompare(String(b.group.sortLabel ?? b.group.id), undefined, { numeric: true }))
+      .sort((a, b) =>
+        String(a.group.sortLabel ?? a.group.id).localeCompare(String(b.group.sortLabel ?? b.group.id), undefined, {
+          numeric: true
+        })
+      )
       .flatMap<DataTableItem<T>>(({ group, rows: groupRows }) => [
         { type: "group", group, rowCount: groupRows.length },
         ...(collapsedGroups.has(group.id) ? [] : groupRows.map((row) => ({ type: "row" as const, row })))
@@ -132,11 +136,14 @@ export const DataTable = <T,>({
     enabled: shouldVirtualize
   });
   const virtualItems = shouldVirtualize ? virtualizer.getVirtualItems() : [];
-  const renderedIndexes = shouldVirtualize ? virtualItems.map((item) => item.index) : tableItems.map((_, index) => index);
+  const renderedIndexes = shouldVirtualize
+    ? virtualItems.map((item) => item.index)
+    : tableItems.map((_, index) => index);
   const firstVirtualItem = virtualItems[0];
   const lastVirtualItem = virtualItems[virtualItems.length - 1];
   const topPadding = shouldVirtualize && firstVirtualItem ? firstVirtualItem.start : 0;
-  const bottomPadding = shouldVirtualize && lastVirtualItem ? Math.max(0, virtualizer.getTotalSize() - lastVirtualItem.end) : 0;
+  const bottomPadding =
+    shouldVirtualize && lastVirtualItem ? Math.max(0, virtualizer.getTotalSize() - lastVirtualItem.end) : 0;
   const measureVirtualRow = shouldVirtualize ? virtualizer.measureElement : undefined;
 
   const toggleGroup = (groupId: string) => {
@@ -161,7 +168,12 @@ export const DataTable = <T,>({
       {rows.length === 0 ? (
         <div className="empty-state data-table__empty">{empty}</div>
       ) : (
-        <div className={shouldVirtualize ? "table-panel__scroller table-panel__scroller--virtual" : "table-panel__scroller"} ref={scrollRef}>
+        <div
+          className={
+            shouldVirtualize ? "table-panel__scroller table-panel__scroller--virtual" : "table-panel__scroller"
+          }
+          ref={scrollRef}
+        >
           <table className="data-table">
             <caption className="sr-only">{caption}</caption>
             <thead>

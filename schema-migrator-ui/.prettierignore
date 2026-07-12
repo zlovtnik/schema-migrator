@@ -1,0 +1,9 @@
+dist
+dist-electron
+dist-electron-preload
+release
+coverage
+node_modules
+bun.lock
+pnpm-lock.yaml
+*.svg

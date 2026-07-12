@@ -250,7 +250,7 @@ export const SchemaPage = () => {
                   ? `No schema objects match "${textFilter}".`
                   : filter === "all"
                     ? "No schema objects were returned."
-                  : `No ${formatObjectType(filter)} objects were returned.`
+                    : `No ${formatObjectType(filter)} objects were returned.`
               }
             />
             <div className="schema-workspace__detail">
@@ -342,7 +342,9 @@ const SchemaObjectDetail = ({
                 {
                   id: `${objectKey(object)}:source`,
                   label: object.source_file,
-                  detail: object.apply_status ? `schema_control status ${object.apply_status}` : "Defined by SQL manifest",
+                  detail: object.apply_status
+                    ? `schema_control status ${object.apply_status}`
+                    : "Defined by SQL manifest",
                   timestamp: object.last_checked
                 }
               ]

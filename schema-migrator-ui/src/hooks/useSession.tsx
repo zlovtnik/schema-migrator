@@ -82,7 +82,9 @@ const collectRoles = (...values: unknown[]): string[] => {
       Object.values(objectValue).forEach((nested) => {
         if (nested && typeof nested === "object" && Array.isArray((nested as Record<string, unknown>).roles)) {
           roles.push(
-            ...(nested as { roles: unknown[] }).roles.flatMap((item) => (typeof item === "string" ? [item.toLowerCase()] : []))
+            ...(nested as { roles: unknown[] }).roles.flatMap((item) =>
+              typeof item === "string" ? [item.toLowerCase()] : []
+            )
           );
         }
       });

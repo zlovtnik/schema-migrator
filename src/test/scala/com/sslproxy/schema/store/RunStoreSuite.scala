@@ -13,7 +13,9 @@ import scala.jdk.CollectionConverters.*
 class RunStoreSuite extends FunSuite:
   test("creating a second active run for the same target is rejected") {
     val result = cats.effect.Resource
-      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path => IO.blocking(deleteRecursively(path)))
+      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path =>
+        IO.blocking(deleteRecursively(path))
+      )
       .use { stageDir =>
         for
           patchStore <- PatchStore.inMemory(stageDir)
@@ -34,7 +36,9 @@ class RunStoreSuite extends FunSuite:
 
   test("aborting a running run finalizes scripts and leaves patch retryable") {
     val result = cats.effect.Resource
-      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path => IO.blocking(deleteRecursively(path)))
+      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path =>
+        IO.blocking(deleteRecursively(path))
+      )
       .use { stageDir =>
         for
           patchStore <- PatchStore.inMemory(stageDir)
@@ -78,6 +82,35 @@ class RunStoreSuite extends FunSuite:
     assertEquals(storedRun.map(_.status), Some("aborted"))
     assertEquals(storedRun.map(_.scripts.map(_.status).distinct), Some(List("skipped")))
     assertEquals(storedPatch.map(_.status), Some("pending"))
+  }
+
+  test("resolving a failed run clears the failed gate without changing non-failed runs") {
+    val result = cats.effect.Resource
+      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path =>
+        IO.blocking(deleteRecursively(path))
+      )
+      .use { stageDir =>
+        for
+          patchStore <- PatchStore.inMemory(stageDir)
+          runStore <- RunStore.inMemory
+          patch <- patchStore.create(
+            "target-1",
+            List(PatchUpload("001_test.sql", "select 1;".getBytes(StandardCharsets.UTF_8), 1))
+          )
+          failedRun <- runStore.create(TriggerRunPayload(patch.id, "target-1"), patch, "test")
+          _ <- runStore.startRun(failedRun.id)
+          _ <- runStore.failRun(failedRun.id, "2026-07-11T12:00:00Z", patch.scripts.head.id, "failed")
+          resolved <- runStore.resolveFailed(failedRun.id)
+          pendingRun <- runStore.create(TriggerRunPayload(patch.id, "target-1"), patch, "test")
+          pendingResolve <- runStore.resolveFailed(pendingRun.id)
+        yield (resolved, pendingResolve)
+      }
+      .unsafeRunSync()
+
+    val (resolved, pendingResolve) = result
+    assertEquals(resolved.map(_.status), Some("aborted"))
+    assertEquals(resolved.flatMap(_.ended_at), Some("2026-07-11T12:00:00Z"))
+    assertEquals(pendingResolve, None)
   }
 
   private def waitUntil(check: IO[Boolean], attempts: Int): IO[Unit] =

@@ -4,7 +4,16 @@ import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.discovery.{GitRepoLoader, RepoSyncService}
-import com.sslproxy.schema.store.{AuditStore, PatchStore, RepoSyncStore, RunStore, SnapshotStore, SqlFileStore, TargetStore, ValidationStore}
+import com.sslproxy.schema.store.{
+  AuditStore,
+  PatchStore,
+  RepoSyncStore,
+  RunStore,
+  SnapshotStore,
+  SqlFileStore,
+  TargetStore,
+  ValidationStore
+}
 import org.http4s.HttpRoutes
 
 object Routes:
@@ -93,11 +102,28 @@ object Routes:
   ): HttpRoutes[IO] =
     HealthRoute.routes <+>
       AuthRoutes.routes(config.server) <+>
-      TargetRoutes.routes(config.server, targetStore, patchStore, runStore, validationStore, auditStore, repoSyncStore) <+>
+      TargetRoutes.routes(
+        config.server,
+        targetStore,
+        patchStore,
+        runStore,
+        validationStore,
+        auditStore,
+        repoSyncStore
+      ) <+>
       SchemaRoutes.routes(config, targetStore, sqlFileStore, patchStore, runStore, auditStore, runExecutor) <+>
       PatchRoutes.routes(targetStore, patchStore, auditStore) <+>
       RunRoutes.routes(config, targetStore, patchStore, runStore, validationStore, auditStore, runExecutor) <+>
       ValidationRoutes.routes(targetStore, patchStore, runStore, validationStore, auditStore) <+>
-      SnapshotRoutes.routes(config, targetStore, patchStore, runStore, sqlFileStore, snapshotStore, auditStore, runExecutor) <+>
+      SnapshotRoutes.routes(
+        config,
+        targetStore,
+        patchStore,
+        runStore,
+        sqlFileStore,
+        snapshotStore,
+        auditStore,
+        runExecutor
+      ) <+>
       AuditRoutes.routes(auditStore) <+>
       SqlFileRoutes.routes(sqlFileStore, targetStore, repoSyncStore, repoSyncService, gitRepoLoader)

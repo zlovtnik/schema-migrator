@@ -57,6 +57,7 @@ export const semanticDarkTokens = {
   "--color-staged": "var(--color-info)",
   "--color-overlay": "rgb(8 7 6 / 78%)",
   "--shadow-sm": "0 1px 2px rgb(0 0 0 / 24%)",
+  "--shadow-inset-highlight": "inset 0 1px 0 rgb(255 255 255 / 8%)",
   "--shadow-md": "0 8px 18px rgb(0 0 0 / 20%)",
   "--shadow-lg": "0 16px 36px rgb(0 0 0 / 28%)"
 } satisfies TokenMap;
@@ -96,13 +97,16 @@ export const semanticLightTokens = {
   "--color-staged": "var(--color-info)",
   "--color-overlay": "rgb(32 26 19 / 42%)",
   "--shadow-sm": "0 1px 2px rgb(58 45 27 / 8%)",
+  "--shadow-inset-highlight": "inset 0 1px 0 rgb(255 255 255 / 70%)",
   "--shadow-md": "0 6px 14px rgb(58 45 27 / 10%)",
   "--shadow-lg": "0 10px 24px rgb(58 45 27 / 12%)"
 } satisfies TokenMap;
 
 export const scaleTokens = {
-  "--font-sans": "\"Inter Variable\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
-  "--font-mono": "\"JetBrains Mono Variable\", \"JetBrains Mono\", \"SFMono-Regular\", Consolas, \"Liberation Mono\", monospace",
+  "--font-sans":
+    '"Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  "--font-mono":
+    '"JetBrains Mono Variable", "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
   "--font-size-11": "11px",
   "--font-size-12": "12px",
   "--font-size-13": "13px",
@@ -116,6 +120,7 @@ export const scaleTokens = {
   "--space-2": "8px",
   "--space-3": "12px",
   "--space-4": "16px",
+  "--space-5": "20px",
   "--space-6": "24px",
   "--space-8": "32px",
   "--space-12": "48px",

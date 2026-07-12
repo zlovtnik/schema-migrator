@@ -73,11 +73,10 @@ export const SnapshotDetailPage = () => {
             hash={file.sha256}
             copied={copiedHash === file.sha256}
             onCopy={() => {
-              const copy = navigator.clipboard?.writeText(file.sha256);
-              if (!copy) {
+              if (!navigator.clipboard) {
                 return;
               }
-              void copy.then(() => {
+              void navigator.clipboard.writeText(file.sha256).then(() => {
                 setCopiedHash(file.sha256);
                 window.setTimeout(() => setCopiedHash((current) => (current === file.sha256 ? null : current)), 1600);
               });
@@ -90,7 +89,11 @@ export const SnapshotDetailPage = () => {
   );
 
   if (isLoading) {
-    return <div className="page"><Skeleton rows={6} label="Loading snapshot" /></div>;
+    return (
+      <div className="page">
+        <Skeleton rows={6} label="Loading snapshot" />
+      </div>
+    );
   }
 
   if (error || !snapshot) {
@@ -189,7 +192,9 @@ export const SnapshotDetailPage = () => {
             columns={columns}
             rows={filteredFiles}
             rowKey={(file) => file.path}
-            empty={pathFilter ? "No snapshot files match this path filter." : "No files were captured in this snapshot."}
+            empty={
+              pathFilter ? "No snapshot files match this path filter." : "No files were captured in this snapshot."
+            }
             groupBy={groupFileByFolder}
             groupSummary={(count) => `${count} ${count === 1 ? "file" : "files"}`}
             toolbar={
@@ -208,7 +213,9 @@ export const SnapshotDetailPage = () => {
                   />
                 </label>
                 <span className="snapshot-file-count">
-                  {filteredFiles.length === files.length ? `${files.length} files` : `${filteredFiles.length} of ${files.length} files`}
+                  {filteredFiles.length === files.length
+                    ? `${files.length} files`
+                    : `${filteredFiles.length} of ${files.length} files`}
                 </span>
               </>
             }

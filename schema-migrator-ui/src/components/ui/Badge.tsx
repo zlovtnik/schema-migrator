@@ -10,7 +10,10 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 export const Badge = ({ children, className, icon, mono = false, tone = "neutral", ...props }: BadgeProps) => (
-  <span {...props} className={[styles.badge, styles[tone], mono ? styles.mono : "", className].filter(Boolean).join(" ")}>
+  <span
+    {...props}
+    className={[styles.badge, styles[tone], mono ? styles.mono : "", className].filter(Boolean).join(" ")}
+  >
     {icon}
     {children}
   </span>

@@ -86,7 +86,10 @@ export const SnapshotListPage = () => {
                 ))}
               </select>
               {selectedOther ? (
-                <Link className="button button--secondary button--small" to={`/snapshots/${snapshot.id}/diff/${selectedOther}`}>
+                <Link
+                  className="button button--secondary button--small"
+                  to={`/snapshots/${snapshot.id}/diff/${selectedOther}`}
+                >
                   <Icon source={GitDiffIcon} size={16} />
                   Diff
                 </Link>

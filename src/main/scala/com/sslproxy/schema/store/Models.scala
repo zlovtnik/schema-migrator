@@ -53,14 +53,12 @@ object TargetPayload:
 
   def rejectInlineRepoCredentials(repoUrl: String): Either[String, Unit] =
     val trimmed = repoUrl.trim
-    if !trimmed.startsWith("https://") then
-      Left("Repository URL must start with https://")
+    if !trimmed.startsWith("https://") then Left("Repository URL must start with https://")
     else
       val normalized = trimmed.split("[?#]", 2)(0)
       val authority = normalized.drop("https://".length)
       val hasUserinfo = authority.takeWhile(_ != '/').contains('@')
-      if hasUserinfo then
-        Left("Repository URL must not contain inline credentials")
+      if hasUserinfo then Left("Repository URL must not contain inline credentials")
       else Right(())
 
   private def containsInlineCredentials(jdbcUrl: String): Boolean =
