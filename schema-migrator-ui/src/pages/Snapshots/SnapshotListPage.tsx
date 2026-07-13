@@ -133,9 +133,9 @@ export const SnapshotListPage = () => {
                   ? createGuard.title
                   : oracleTarget
                     ? "Snapshots are Postgres only for schema targets"
-                  : !selectedTarget
-                    ? "Select a target before creating a snapshot"
-                    : undefined
+                    : !selectedTarget
+                      ? "Select a target before creating a snapshot"
+                      : undefined
               }
             >
               <Icon source={GitBranchIcon} size={16} weight="bold" />

@@ -16,6 +16,8 @@ import com.sslproxy.schema.store.{
   PatchUpload,
   RunStore,
   SchemaCatalogResponse,
+  SchemaObjectListItem,
+  SchemaObjectListResponse,
   SqlFileStore,
   StoredSqlFile,
   StoredTarget,
@@ -53,6 +55,23 @@ object SchemaRoutes:
     runExecutor: RunExecutor
   ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
+      case request @ GET -> Root / "schema" / "objects" =>
+        targetId(request).fold(RouteJson.badRequest("target_id is required")) { id =>
+          targetStore.getStored(id).flatMap {
+            case None => RouteJson.notFound(s"target '$id' was not found")
+            case Some(target) =>
+              TargetRoutes.withDbAccessAllowed(
+                config.server,
+                target.target.jdbc_url,
+                "database schema access is not allowed for this target"
+              ) {
+                catalog(config, target, sqlFileStore).flatMap { response =>
+                  RouteJson.ok(schemaObjects(response).asJson)
+                }
+              }
+          }
+        }
+
       case request @ GET -> Root / "schema" =>
         targetId(request).fold(RouteJson.badRequest("target_id is required")) { id =>
           targetStore.getStored(id).flatMap {
@@ -112,6 +131,31 @@ object SchemaRoutes:
         }
     }
 
+  private[schema] def schemaObjects(catalog: SchemaCatalogResponse): SchemaObjectListResponse =
+    val objects = catalog.objects.flatMap { item =>
+      item.source_file.map { sourceFile =>
+        val normalizedPath = sourceFile.replace('\\', '/')
+        val folder = normalizedPath.split('/').dropRight(1).mkString("/") match
+          case "" => "uncategorized"
+          case value => value
+        SchemaObjectListItem(
+          folder = folder,
+          path = normalizedPath,
+          object_type = item.object_type,
+          status = item.status,
+          source_file = normalizedPath
+        )
+      }
+    }
+    SchemaObjectListResponse(
+      target_id = catalog.target_id,
+      db_kind = catalog.db_kind,
+      supported = catalog.supported,
+      checked_at = catalog.checked_at,
+      objects = objects.sortBy(item => (item.folder, item.path, item.object_type)),
+      warnings = catalog.warnings
+    )
+
   private def catalog(
     config: MigratorConfig,
     target: StoredTarget,
@@ -135,9 +179,9 @@ object SchemaRoutes:
             )
           )
         case DbKind.Postgres =>
-          postgresSnapshot(target).attempt.map {
+          postgresSnapshot(target, expected.objects).attempt.map {
             case Right(snapshot) =>
-              val objects = mergeCatalog(now, expected.objects, snapshot.objects, snapshot.control)
+              val objects = mergeCatalog(now, snapshot.expected, snapshot.objects, snapshot.control)
               SchemaCatalogResponse(
                 target_id = target.target.id,
                 db_kind = "postgres",
@@ -191,7 +235,7 @@ object SchemaRoutes:
             )
           )
         case DbKind.Postgres =>
-          postgresSnapshot(target).attempt.map {
+          postgresSnapshot(target, expected.objects).attempt.map {
             case Right(snapshot) =>
               DriftResponse(
                 target_id = target.target.id,
@@ -200,7 +244,7 @@ object SchemaRoutes:
                 checked_at = now,
                 control_summary = snapshot.control.summary,
                 control_objects = snapshot.control.rows,
-                items = driftItems(now, expected.objects, snapshot.objects, snapshot.control),
+                items = driftItems(now, snapshot.expected, snapshot.objects, snapshot.control),
                 warnings = expected.warnings ++ snapshot.control.warnings
               )
             case Left(error) =>
@@ -251,8 +295,8 @@ object SchemaRoutes:
           case DbKind.Postgres =>
             (for
               expected <- expectedObjects(config, kind, now, targetId, sqlFileStore)
-              snapshot <- postgresSnapshot(target)
-              drift = driftItems(now, expected.objects, snapshot.objects, snapshot.control)
+              snapshot <- postgresSnapshot(target, expected.objects)
+              drift = driftItems(now, snapshot.expected, snapshot.objects, snapshot.control)
               runnableSourceFiles = orderedRunnableSources(expected.objects, drift)
               selectedSourceFiles = selectedRunnableSources(payload.source_files, runnableSourceFiles)
               result <-
@@ -424,12 +468,15 @@ object SchemaRoutes:
       content = Some(String(bytes, StandardCharsets.UTF_8))
     )
 
-  private def postgresSnapshot(target: StoredTarget): IO[PostgresCatalogReader.Snapshot] =
+  private def postgresSnapshot(
+    target: StoredTarget,
+    expected: List[ExpectedObject]
+  ): IO[PostgresCatalogReader.Snapshot] =
     IO.blocking {
       Class.forName("org.postgresql.Driver")
       val connection = connect(target)
       try
-        PostgresCatalogReader.readSnapshot(connection)
+        PostgresCatalogReader.readSnapshot(connection, expected)
       finally connection.close()
     }
 

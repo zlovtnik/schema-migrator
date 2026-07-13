@@ -85,7 +85,9 @@ export const TargetDetailPage = () => {
             role="tab"
             aria-selected={activeTab === tab.id}
             disabled={oracleTarget && tab.id === "snapshots"}
-            title={oracleTarget && tab.id === "snapshots" ? "Snapshots are Postgres only for schema targets" : undefined}
+            title={
+              oracleTarget && tab.id === "snapshots" ? "Snapshots are Postgres only for schema targets" : undefined
+            }
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
           >

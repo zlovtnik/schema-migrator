@@ -43,9 +43,10 @@ private[schema] object PostgresDriftCheck:
       discovery <- DiscoveryService[IO]().discover(config.sqlDir, DbKind.Postgres, config.customer)
       manifest <- ManifestBuilder[IO](SqlDialect.Postgres).build(discovery.files)
       expected = manifest.flatMap(expectedFromManifest)
-      snapshot <- PostgresCatalogReader.snapshot(jdbc)
-      catalog = mergeCatalog(now, expected, snapshot.objects, snapshot.control)
-      items = driftItems(now, expected, snapshot.objects, snapshot.control)
+      snapshot <- PostgresCatalogReader.snapshot(jdbc, expected)
+      comparableExpected = snapshot.expected
+      catalog = mergeCatalog(now, comparableExpected, snapshot.objects, snapshot.control)
+      items = driftItems(now, comparableExpected, snapshot.objects, snapshot.control)
       _ <- PostgresDriftRegistry.record(jdbc, customerName(config), catalog, items)
     yield DriftResponse(
       target_id = targetId(config),

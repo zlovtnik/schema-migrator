@@ -9,4 +9,5 @@ export const dbKindForJdbcUrl = (jdbcUrl: string): DbKind | null => {
   return null;
 };
 
-export const isOracleTarget = (jdbcUrl?: string | null): boolean => (jdbcUrl ? dbKindForJdbcUrl(jdbcUrl) === "oracle" : false);
+export const isOracleTarget = (jdbcUrl?: string | null): boolean =>
+  jdbcUrl ? dbKindForJdbcUrl(jdbcUrl) === "oracle" : false;

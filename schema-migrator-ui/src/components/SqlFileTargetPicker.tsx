@@ -41,7 +41,10 @@ export const SqlFileTargetPicker = ({
   const groupedFiles = useMemo(() => groupSqlFiles(files), [files]);
   const filteredGroups = useMemo(() => filterGroups(groupedFiles, query), [groupedFiles, query]);
   const visibleFolders = useMemo(() => filteredGroups.map((group) => group.folder), [filteredGroups]);
-  const visiblePaths = useMemo(() => filteredGroups.flatMap((group) => group.files.map((file) => file.path)), [filteredGroups]);
+  const visiblePaths = useMemo(
+    () => filteredGroups.flatMap((group) => group.files.map((file) => file.path)),
+    [filteredGroups]
+  );
   const visibleFileCount = visiblePaths.length;
   const hasQuery = query.trim().length > 0;
   const allVisibleExpanded =

@@ -25,6 +25,8 @@ This file governs this `schema-migrator` repository checkout.
   `services/zig-coordinator`; do not add Oracle access to proxy, sync-plane, or
   sensor code.
 - Keep validation useful without requiring a live database where possible.
+- Build every new dialog on `components/ui/Modal.tsx`; do not add another portal or focus trap.
+- Leave `ConnectionForm.tsx` and `TargetFormPage.tsx` as single-step forms until a second real wizard flow justifies extracting them.
 
 ## Commands
 - Run tests: `sbt test`

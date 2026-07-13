@@ -455,6 +455,35 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     assert(!warnings.exists(_.contains("has no files in store")))
   }
 
+  test("schema objects route merges source folders with catalog status") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          targetResponse <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/targets",
+              targetPayload("Target", jdbcUrl = "jdbc:postgresql://127.0.0.1:1/app?user=app&connectTimeout=1")
+            )
+          )
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/schema/objects?target_id=$targetId")))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    val first = json.hcursor.downField("objects").downArray
+    assertEquals(status, Status.Ok)
+    assertEquals(first.get[String]("folder"), Right("tables"))
+    assertEquals(first.get[String]("path"), Right("tables/001_devices.sql"))
+    assertEquals(first.get[String]("object_type"), Right("table"))
+    assertEquals(first.get[String]("status"), Right("defined"))
+    assertEquals(first.get[String]("source_file"), Right("tables/001_devices.sql"))
+  }
+
   test("drift route returns warnings instead of failing when Postgres live catalog is unavailable") {
     val result = routeFixture
       .use { routes =>
@@ -679,6 +708,59 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     assertEquals(validationStatus, Right("errors"))
     assertEquals(invalidCount.exists(_ > 0), true)
     assertEquals(hasRunId, false)
+  }
+
+  test("standalone SQL file validation checks only selected source files") {
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        val routes = fixture.app
+        val baseView =
+          """-- object: base_view
+            |-- folder: views
+            |-- depends_on: -
+            |create or replace view base_view as select 1 as id;
+            |""".stripMargin
+        val dependentView =
+          """-- object: dependent_view
+            |-- folder: views
+            |-- depends_on: base_view
+            |create or replace view dependent_view as select 1 as id;
+            |""".stripMargin
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List(
+              "views/001_base_view.sql" -> baseView,
+              "views/002_dependent_view.sql" -> dependentView
+            )
+          )
+          response <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/validation/sql-files",
+              Json.obj(
+                "target_id" -> Json.fromString(targetId),
+                "source_files" -> Json.arr(Json.fromString("views/002_dependent_view.sql"))
+              )
+            )
+          )
+          json <- bodyJson(response)
+        yield (
+          response.status,
+          json.hcursor.get[Int]("file_count"),
+          json.hcursor.get[String]("status")
+        )
+      }
+      .unsafeRunSync()
+
+    val (status, fileCount, validationStatus) = result
+    assertEquals(status, Status.Ok)
+    assertEquals(fileCount, Right(1))
+    assertEquals(validationStatus, Right("errors"))
   }
 
   test("snapshot routes capture stored SQL files without returning content") {

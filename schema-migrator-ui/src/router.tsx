@@ -7,6 +7,9 @@ const OverviewPage = lazy(() =>
   import("./pages/Overview/OverviewPage").then((module) => ({ default: module.OverviewPage }))
 );
 const SchemaPage = lazy(() => import("./pages/Schema/SchemaPage").then((module) => ({ default: module.SchemaPage })));
+const SchemaUpgradeWizard = lazy(() =>
+  import("./pages/SchemaUpgrade/SchemaUpgradeWizard").then((module) => ({ default: module.SchemaUpgradeWizard }))
+);
 const TargetListPage = lazy(() =>
   import("./pages/Targets/TargetListPage").then((module) => ({ default: module.TargetListPage }))
 );
@@ -91,6 +94,11 @@ export const router = createBrowserRouter([
             path: "schema",
             element: routeElement(SchemaPage),
             handle: { breadcrumb: "Schema", targetAware: true, title: "Schema" }
+          },
+          {
+            path: "schema-upgrade",
+            element: routeElement(SchemaUpgradeWizard),
+            handle: { breadcrumb: "Schema Upgrade", targetAware: true, title: "Schema Upgrade" }
           },
           {
             path: "targets",

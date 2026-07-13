@@ -46,10 +46,7 @@ const PatchList = () => {
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
   const [message, setMessage] = useState<PatchMessage | null>(null);
 
-  const sortedPatches = useMemo(
-    () => [...patches].sort((a, b) => b.version.localeCompare(a.version)),
-    [patches]
-  );
+  const sortedPatches = useMemo(() => [...patches].sort((a, b) => b.version.localeCompare(a.version)), [patches]);
   const activeRun = runs.some((run) => run.status === "running" || run.status === "pending");
   const createGuard = mutationGuard(
     "Viewer role cannot create patches",
@@ -75,14 +72,17 @@ const PatchList = () => {
     );
   };
 
-  const runDisabledReason = useCallback((patch: Patch): string | undefined => {
-    if (!canMutate) return "Viewer role cannot run patches";
-    if (patch.status !== "pending") return "Only pending patches can be run";
-    if (isGateBlocked) return `Resolve failed run ${failedRun?.id ?? ""} before starting another run`;
-    if (activeRun) return "This target already has an active run";
-    if (runPatch.isPending) return "A run is already starting";
-    return undefined;
-  }, [activeRun, canMutate, failedRun?.id, isGateBlocked, runPatch.isPending]);
+  const runDisabledReason = useCallback(
+    (patch: Patch): string | undefined => {
+      if (!canMutate) return "Viewer role cannot run patches";
+      if (patch.status !== "pending") return "Only pending patches can be run";
+      if (isGateBlocked) return `Resolve failed run ${failedRun?.id ?? ""} before starting another run`;
+      if (activeRun) return "This target already has an active run";
+      if (runPatch.isPending) return "A run is already starting";
+      return undefined;
+    },
+    [activeRun, canMutate, failedRun?.id, isGateBlocked, runPatch.isPending]
+  );
 
   const columns = useMemo<DataTableColumn<Patch>[]>(
     () => [
@@ -171,7 +171,9 @@ const PatchList = () => {
           Patch runs are disabled by failed run {failedRun?.id}. Resolve it before starting another run.
         </div>
       ) : null}
-      {activeRun ? <div className="status-banner">Patch runs are disabled while this target has an active run.</div> : null}
+      {activeRun ? (
+        <div className="status-banner">Patch runs are disabled while this target has an active run.</div>
+      ) : null}
 
       {selectedTarget ? (
         <section className="section-block">
@@ -185,11 +187,7 @@ const PatchList = () => {
               type="button"
               disabled={createGuard.disabled}
               title={
-                !canMutate
-                  ? createGuard.title
-                  : selectedPaths.length === 0
-                    ? "Select at least one SQL file"
-                    : undefined
+                !canMutate ? createGuard.title : selectedPaths.length === 0 ? "Select at least one SQL file" : undefined
               }
               onClick={create}
             >
@@ -198,7 +196,9 @@ const PatchList = () => {
             </button>
           </div>
           {filesQuery.isLoading ? <Skeleton rows={5} label="Loading SQL files" /> : null}
-          {filesQuery.error ? <div className="status-banner status-banner--error">SQL files could not be loaded.</div> : null}
+          {filesQuery.error ? (
+            <div className="status-banner status-banner--error">SQL files could not be loaded.</div>
+          ) : null}
           {filesQuery.data?.files.length ? (
             <SqlFileTargetPicker
               files={filesQuery.data.files}
@@ -277,7 +277,12 @@ const PatchDetail = ({ patchId }: { patchId: string }) => {
     []
   );
 
-  if (isLoading) return <div className="page"><Skeleton rows={6} label="Loading patch" /></div>;
+  if (isLoading)
+    return (
+      <div className="page">
+        <Skeleton rows={6} label="Loading patch" />
+      </div>
+    );
   if (error || !patch) return <div className="page status-banner status-banner--error">Patch could not be loaded.</div>;
 
   return (

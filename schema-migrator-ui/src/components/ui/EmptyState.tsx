@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import styles from "./EmptyState.module.css";
 
 interface EmptyStateProps {
   icon?: ReactNode;
@@ -9,10 +8,10 @@ interface EmptyStateProps {
 }
 
 export const EmptyState = ({ action, children, icon, title }: EmptyStateProps) => (
-  <div className={styles.emptyState}>
-    {icon ? <div className={styles.icon}>{icon}</div> : null}
-    <strong className={styles.title}>{title}</strong>
-    {children ? <div className={styles.body}>{children}</div> : null}
+  <div className="ui-empty-state">
+    {icon ? <div className="ui-empty-state__icon">{icon}</div> : null}
+    <strong className="ui-empty-state__title">{title}</strong>
+    {children ? <div className="ui-empty-state__body">{children}</div> : null}
     {action}
   </div>
 );

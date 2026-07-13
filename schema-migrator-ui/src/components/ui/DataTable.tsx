@@ -213,6 +213,7 @@ export const DataTable = <T,>({
                 }
                 if (item.type === "group") {
                   const expanded = !collapsedGroups.has(item.group.id);
+                  const summary = groupSummary(item.rowCount);
                   return (
                     <tr
                       className="data-table__group-row"
@@ -223,13 +224,18 @@ export const DataTable = <T,>({
                       <th colSpan={columns.length} scope="colgroup">
                         <button
                           aria-expanded={expanded}
+                          aria-label={
+                            typeof summary === "string" || typeof summary === "number"
+                              ? `${item.group.sortLabel ?? item.group.id} ${summary}`
+                              : undefined
+                          }
                           className="data-table__group-toggle"
                           type="button"
                           onClick={() => toggleGroup(item.group.id)}
                         >
                           <Icon source={expanded ? CaretDownIcon : CaretRightIcon} size={16} weight="bold" />
                           <span>{item.group.label}</span>
-                          <strong>{groupSummary(item.rowCount)}</strong>
+                          <strong>{summary}</strong>
                         </button>
                       </th>
                     </tr>

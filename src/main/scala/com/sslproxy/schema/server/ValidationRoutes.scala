@@ -3,7 +3,7 @@ package com.sslproxy.schema.server
 import cats.effect.{Clock, IO}
 import cats.syntax.all.*
 import com.sslproxy.schema.config.{DbKind, MigratorConfig}
-import com.sslproxy.schema.discovery.DiscoveryService
+import com.sslproxy.schema.discovery.{DiscoveryService, SqlFile}
 import com.sslproxy.schema.validation.ValidationReport
 import com.sslproxy.schema.validation.Validator
 import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
@@ -77,30 +77,34 @@ object ValidationRoutes:
                     sqlFileStore.toSqlFiles(payload.target_id).flatMap {
                       case Nil => RouteJson.badRequest("no synced SQL files are available for validation")
                       case files =>
-                        val discovery = DiscoveryService[IO]().discoverFromFiles(files, dbKind)
-                        Validator[IO](dbKind).validate(discovery.files).flatMap { report =>
-                          for
-                            checkedAt <- Clock[IO].realTimeInstant.map(_.toString)
-                            reportWithDiscoveryWarnings = report.copy(warnings = discovery.warnings ++ report.warnings)
-                            result = sqlFilesValidationResult(
-                              payload.target_id,
-                              dbKind.toString.toLowerCase,
-                              checkedAt,
-                              discovery.files.length,
-                              reportWithDiscoveryWarnings
-                            )
-                            _ <- auditStore.record(
-                              claims.subject,
-                              claims.role,
-                              "validation.sql_files",
-                              "validation",
-                              payload.target_id,
-                              Some(payload.target_id),
-                              Some(Json.obj("status" -> Json.fromString(result.status)))
-                            )
-                            response <- RouteJson.ok(result.asJson)
-                          yield response
-                        }
+                        selectSourceFiles(payload.source_files, files) match
+                          case Left(message) => RouteJson.badRequest(message)
+                          case Right(selectedFiles) =>
+                            val discovery = DiscoveryService[IO]().discoverFromFiles(selectedFiles, dbKind)
+                            Validator[IO](dbKind).validate(discovery.files).flatMap { report =>
+                              for
+                                checkedAt <- Clock[IO].realTimeInstant.map(_.toString)
+                                reportWithDiscoveryWarnings =
+                                  report.copy(warnings = discovery.warnings ++ report.warnings)
+                                result = sqlFilesValidationResult(
+                                  payload.target_id,
+                                  dbKind.toString.toLowerCase,
+                                  checkedAt,
+                                  discovery.files.length,
+                                  reportWithDiscoveryWarnings
+                                )
+                                _ <- auditStore.record(
+                                  claims.subject,
+                                  claims.role,
+                                  "validation.sql_files",
+                                  "validation",
+                                  payload.target_id,
+                                  Some(payload.target_id),
+                                  Some(Json.obj("status" -> Json.fromString(result.status)))
+                                )
+                                response <- RouteJson.ok(result.asJson)
+                              yield response
+                            }
                     }
             }
           }
@@ -134,11 +138,25 @@ object ValidationRoutes:
         }
     }
 
-  final case class SqlFilesValidationPayload(target_id: String)
+  final case class SqlFilesValidationPayload(target_id: String, source_files: Option[List[String]])
   final case class ValidateSqlPayload(sql_dir: String, db_kind: String, customer: Option[String])
 
   private given io.circe.Decoder[SqlFilesValidationPayload] = io.circe.generic.semiauto.deriveDecoder
   private given io.circe.Decoder[ValidateSqlPayload] = io.circe.generic.semiauto.deriveDecoder
+
+  private def selectSourceFiles(requested: Option[List[String]], files: List[SqlFile]): Either[String, List[SqlFile]] =
+    requested match
+      case None => Right(files)
+      case Some(sourceFiles) =>
+        val selected = sourceFiles.map(_.trim).filter(_.nonEmpty).distinct
+        if selected.isEmpty then Left("at least one source file is required")
+        else
+          val available = files.map(file => file.relativePath -> file).toMap
+          val missing = selected.filterNot(available.contains)
+          if missing.nonEmpty then Left(s"source_files were not found: ${missing.mkString(", ")}")
+          else
+            val selectedSet = selected.toSet
+            Right(files.filter(file => selectedSet.contains(file.relativePath)))
 
   private def validateSqlDirectory(
     payload: ValidateSqlPayload,

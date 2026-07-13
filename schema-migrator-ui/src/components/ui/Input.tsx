@@ -1,7 +1,6 @@
 import { forwardRef, type InputHTMLAttributes, type ReactNode, useId } from "react";
 import { XIcon } from "@phosphor-icons/react";
 import { Icon } from "./Icon";
-import styles from "./Input.module.css";
 
 interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "prefix"> {
   label: string;
@@ -34,30 +33,30 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const describedBy = [ariaDescribedBy, errorId].filter(Boolean).join(" ") || undefined;
 
     return (
-      <label className={[styles.field, className].filter(Boolean).join(" ")} htmlFor={inputId}>
+      <label className={["ui-input-field", className].filter(Boolean).join(" ")} htmlFor={inputId}>
         {label}
-        <span className={styles.control}>
-          {prefix ? <span className={styles.slot}>{prefix}</span> : null}
+        <span className="ui-input-control">
+          {prefix ? <span className="ui-input-slot">{prefix}</span> : null}
           <input
             {...props}
             aria-describedby={describedBy}
             aria-invalid={Boolean(error) || undefined}
-            className={styles.input}
+            className="ui-input"
             id={inputId}
             name={name}
             ref={ref}
             value={value}
           />
           {onClear && value ? (
-            <button aria-label={`Clear ${label}`} className={styles.clear} onClick={onClear} type="button">
+            <button aria-label={`Clear ${label}`} className="ui-input-clear" onClick={onClear} type="button">
               <Icon source={XIcon} size={16} />
             </button>
           ) : suffix ? (
-            <span className={styles.slot}>{suffix}</span>
+            <span className="ui-input-slot">{suffix}</span>
           ) : null}
         </span>
         {error ? (
-          <span className={styles.error} id={errorId} role="alert">
+          <span className="ui-input-error" id={errorId} role="alert">
             {error}
           </span>
         ) : null}

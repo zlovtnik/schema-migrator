@@ -189,6 +189,23 @@ export interface SchemaCatalogResponse {
   warnings: string[];
 }
 
+export interface SchemaObjectListItem {
+  folder: string;
+  path: string;
+  object_type: ObjectType;
+  status: SchemaObjectStatus;
+  source_file: string;
+}
+
+export interface SchemaObjectListResponse {
+  target_id: string;
+  db_kind: DbKind;
+  supported: boolean;
+  checked_at: Rfc3339Timestamp;
+  objects: SchemaObjectListItem[];
+  warnings: string[];
+}
+
 export interface DriftItem {
   schema: string;
   name: string;
@@ -409,6 +426,23 @@ export const schemaCatalogResponseSchema = z.object({
   warnings: z.array(z.string())
 });
 
+export const schemaObjectListItemSchema = z.object({
+  folder: z.string(),
+  path: z.string().min(1),
+  object_type: objectTypeSchema.catch("other"),
+  status: schemaObjectStatusSchema.catch("unknown"),
+  source_file: z.string().min(1)
+});
+
+export const schemaObjectListResponseSchema = z.object({
+  target_id: z.string().min(1),
+  db_kind: dbKindSchema,
+  supported: z.boolean(),
+  checked_at: rfc3339TimestampSchema,
+  objects: z.array(schemaObjectListItemSchema),
+  warnings: z.array(z.string())
+});
+
 export const driftItemSchema = z.object({
   schema: z.string(),
   name: z.string(),
@@ -502,7 +536,7 @@ export const auditEventSchema = z.object({
   entity_id: z.string().min(1),
   at: rfc3339TimestampSchema,
   target_id: nullableOptionalStringSchema,
-  metadata: z.record(z.unknown()).nullish()
+  metadata: z.record(z.string(), z.unknown()).nullish()
 });
 
 export const parseTarget = (value: unknown): Target => targetSchema.parse(value) as Target;
@@ -528,6 +562,8 @@ export const parseSqlFilesValidationResult = (value: unknown): SqlFilesValidatio
   sqlFilesValidationResultSchema.parse(value) as SqlFilesValidationResult;
 export const parseSchemaCatalogResponse = (value: unknown): SchemaCatalogResponse =>
   schemaCatalogResponseSchema.parse(value) as SchemaCatalogResponse;
+export const parseSchemaObjectListResponse = (value: unknown): SchemaObjectListResponse =>
+  schemaObjectListResponseSchema.parse(value) as SchemaObjectListResponse;
 export const parseDriftResponse = (value: unknown): DriftResponse => driftResponseSchema.parse(value) as DriftResponse;
 export const parseSnapshot = (value: unknown): Snapshot => snapshotSchema.parse(value) as Snapshot;
 export const parseSnapshotList = (value: unknown): Snapshot[] => {
@@ -576,7 +612,7 @@ export const targetFormSchema = z.object({
     .url("Repository URL must be a valid URL")
     .refine((value) => value.startsWith("https://"), "Repository URL must start with https://")
     .refine((value) => !/^https:\/\/[^/?#\s]*@/iu.test(value), "Repository URL must not include credentials"),
-  repo_branch: z.string().trim().min(1, "Branch is required").default("main"),
+  repo_branch: z.string().trim().min(1, "Branch is required"),
   repo_sql_path: z
     .string()
     .trim()
@@ -585,7 +621,6 @@ export const targetFormSchema = z.object({
       (value) => !value.startsWith("/") && !value.includes("..") && !value.includes("\\"),
       "SQL path must stay inside the repository"
     )
-    .default("sql")
 });
 
 export type TargetFormValues = z.infer<typeof targetFormSchema>;
@@ -630,6 +665,7 @@ export interface UploadPatchPayload {
 
 export interface ValidateSqlFilesPayload {
   target_id: string;
+  source_files?: string[];
 }
 
 export interface ValidateSqlDirectoryPayload {

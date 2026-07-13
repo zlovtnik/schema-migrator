@@ -43,11 +43,16 @@ private[schema] object PostgresDriftDdlParser:
   def definitionHash(key: ObjectKey, value: String): String =
     sha256Hex(comparableDefinition(key, value))
 
+  def viewQuery(value: String): Option[String] =
+    catalogDefinitions(value)
+      .find(definition => isViewType(definition.key.objectType))
+      .map(definition => stripViewCreateWrapper(definition.ddl).stripSuffix(";").trim)
+
   private def definitionsEquivalent(key: ObjectKey, expected: String, actual: String): Boolean =
     val expectedComparable = comparableDefinition(key, expected)
     val actualComparable = comparableDefinition(key, actual)
     expectedComparable == actualComparable ||
-      (isViewType(key.objectType) && starExpansionEquivalent(expectedComparable, actualComparable))
+    (isViewType(key.objectType) && starExpansionEquivalent(expectedComparable, actualComparable))
 
   private def comparableDefinition(key: ObjectKey, value: String): String =
     if isRoutineType(key.objectType) then routineComparableDdl(key, value).getOrElse(comparableDdl(key, value))
@@ -56,13 +61,14 @@ private[schema] object PostgresDriftDdlParser:
     else comparableDdl(key, value)
 
   private def indexComparableDdl(key: ObjectKey, value: String): String =
-    compactSqlSurface(
+    val normalized = compactSqlSurface(
       transformUnquotedSql(comparableDdl(key, value)) { text =>
         text
           .replaceAll("\\bcreate\\s+(unique\\s+)?index\\s+if\\s+not\\s+exists\\b", "create $1index")
           .replaceAll("\\s+using\\s+btree\\s+(?=\\()", " ")
       }
     )
+    normalizeIndexDefinition(normalizeTextLiteralCasts(normalized))
 
   private def routineComparableDdl(key: ObjectKey, value: String): Option[String] =
     routineDefinitions(value)
@@ -276,7 +282,162 @@ private[schema] object PostgresDriftDdlParser:
     compactSqlSurface(normalizeSqlTypeAliases(lowerUnquotedSql(withoutDefaultPublic)))
 
   private def viewComparableDdl(key: ObjectKey, value: String): String =
-    compactViewExpression(stripViewCreateWrapper(comparableDdl(key, value)))
+    normalizeTextLiteralCasts(compactViewExpression(stripViewCreateWrapper(comparableDdl(key, value))))
+
+  private def normalizeTextLiteralCasts(value: String): String =
+    value.replaceAll("(?i)('(?:''|[^'])*')::text\\b", "$1")
+
+  private def normalizeIndexDefinition(value: String): String =
+    val onIndex = value.indexOf(" on ")
+    val keysStart = if onIndex < 0 then -1 else value.indexOf('(', onIndex + 4)
+    if keysStart < 0 then value
+    else
+      matchingParen(value, keysStart) match
+        case None => value
+        case Some(keysEnd) =>
+          val keys = splitTopLevel(value.substring(keysStart + 1, keysEnd), ',')
+            .map(normalizeIndexKey)
+            .mkString(", ")
+          val suffix = value.substring(keysEnd + 1).trim
+          val normalizedSuffix =
+            topLevelKeywordStart(suffix, "where") match
+              case None => suffix
+              case Some(whereStart) =>
+                val beforeWhere = suffix.substring(0, whereStart).trim
+                val predicate = suffix.substring(whereStart + "where".length).trim
+                List(beforeWhere, s"where ${normalizeBooleanExpression(predicate)}").filter(_.nonEmpty).mkString(" ")
+          List(s"${value.substring(0, keysStart).trim} ($keys)", normalizedSuffix).filter(_.nonEmpty).mkString(" ")
+
+  private def normalizeIndexKey(value: String): String =
+    val trimmed = stripEnclosingParentheses(value.trim)
+    if trimmed.startsWith("(") then
+      matchingParen(trimmed, 0) match
+        case Some(closeParen) =>
+          val expression = normalizeScalarExpression(trimmed.substring(0, closeParen + 1))
+          val suffix = trimmed.substring(closeParen + 1).trim
+          List(expression, suffix).filter(_.nonEmpty).mkString(" ")
+        case None => normalizeScalarExpression(trimmed)
+    else normalizeScalarExpression(trimmed)
+
+  private def normalizeBooleanExpression(value: String): String =
+    val stripped = stripEnclosingParentheses(value.trim)
+    val disjunction = splitTopLevelKeyword(stripped, "or")
+    if disjunction.lengthCompare(1) > 0 then disjunction.map(normalizeBooleanExpression).mkString("or(", ",", ")")
+    else
+      val conjunction = splitTopLevelKeyword(stripped, "and")
+      if conjunction.lengthCompare(1) > 0 then conjunction.map(normalizeBooleanExpression).mkString("and(", ",", ")")
+      else normalizeScalarExpression(stripped)
+
+  private def normalizeScalarExpression(value: String): String =
+    val stripped = stripEnclosingParentheses(
+      value.trim
+        .replaceAll("(?i)=\\s*any\\s*\\(array\\[([^]]*)]\\)", "in ($1)")
+        .replaceAll("\\(([a-z_][a-z0-9_$.]*)\\)::", "$1::")
+    )
+    val withoutRedundantPredicateOperand =
+      if stripped.startsWith("(") then
+        matchingParen(stripped, 0) match
+          case Some(closeParen) if closeParen < stripped.length - 1 =>
+            val suffix = stripped.substring(closeParen + 1).trim
+            if predicateOperandSuffix(suffix) then
+              s"${normalizeScalarExpression(stripped.substring(1, closeParen))} $suffix"
+            else stripped
+          case _ => stripped
+      else stripped
+    val concatenation = splitTopLevelOperator(withoutRedundantPredicateOperand, "||")
+    if concatenation.lengthCompare(1) > 0 then
+      concatenation.flatMap(concatenationOperands).mkString("concat(", ",", ")")
+    else withoutRedundantPredicateOperand
+
+  private def concatenationOperands(value: String): List[String] =
+    val stripped = stripEnclosingParentheses(value.trim)
+    val parts = splitTopLevelOperator(stripped, "||")
+    if parts.lengthCompare(1) > 0 then parts.flatMap(concatenationOperands)
+    else List(normalizeScalarExpression(stripped))
+
+  private def predicateOperandSuffix(value: String): Boolean =
+    value.startsWith("is ") ||
+      value.startsWith("=") ||
+      value.startsWith("<") ||
+      value.startsWith(">") ||
+      value.startsWith("!=") ||
+      value.startsWith("?")
+
+  private def stripEnclosingParentheses(value: String): String =
+    var current = value.trim
+    var continue = true
+    while continue && current.startsWith("(") do
+      matchingParen(current, 0) match
+        case Some(closeParen) if closeParen == current.length - 1 =>
+          current = current.substring(1, closeParen).trim
+        case _ => continue = false
+    current
+
+  private def splitTopLevelKeyword(value: String, keyword: String): List[String] =
+    val starts = topLevelKeywordStarts(value, keyword)
+    if starts.isEmpty then List(value)
+    else
+      val parts = ListBuffer.empty[String]
+      var start = 0
+      starts.foreach { index =>
+        parts += value.substring(start, index).trim
+        start = index + keyword.length
+      }
+      parts += value.substring(start).trim
+      parts.toList
+
+  private def topLevelKeywordStart(value: String, keyword: String): Option[Int] =
+    topLevelKeywordStarts(value, keyword).headOption
+
+  private def topLevelKeywordStarts(value: String, keyword: String): List[Int] =
+    val starts = ListBuffer.empty[Int]
+    var index = 0
+    var depth = 0
+    while index < value.length do
+      val current = value.charAt(index)
+      if current == '\'' then index = skipSingleQuoted(value, index)
+      else if current == '"' then index = skipDoubleQuoted(value, index)
+      else if current == '(' then
+        depth += 1
+        index += 1
+      else if current == ')' then
+        depth = (depth - 1).max(0)
+        index += 1
+      else if depth == 0 && keywordAt(value, index, keyword) then
+        starts += index
+        index += keyword.length
+      else index += 1
+    starts.toList
+
+  private def keywordAt(value: String, index: Int, keyword: String): Boolean =
+    val end = index + keyword.length
+    end <= value.length &&
+    value.regionMatches(true, index, keyword, 0, keyword.length) &&
+    (index == 0 || !isIdentifierPart(value.charAt(index - 1))) &&
+    (end == value.length || !isIdentifierPart(value.charAt(end)))
+
+  private def splitTopLevelOperator(value: String, operator: String): List[String] =
+    val parts = ListBuffer.empty[String]
+    var index = 0
+    var start = 0
+    var depth = 0
+    while index < value.length do
+      val current = value.charAt(index)
+      if current == '\'' then index = skipSingleQuoted(value, index)
+      else if current == '"' then index = skipDoubleQuoted(value, index)
+      else if current == '(' then
+        depth += 1
+        index += 1
+      else if current == ')' then
+        depth = (depth - 1).max(0)
+        index += 1
+      else if depth == 0 && value.startsWith(operator, index) then
+        parts += value.substring(start, index).trim
+        index += operator.length
+        start = index
+      else index += 1
+    parts += value.substring(start).trim
+    parts.toList
 
   private def stripViewCreateWrapper(value: String): String =
     val tokens = tokenize(value)
@@ -345,6 +506,7 @@ private[schema] object PostgresDriftDdlParser:
         .replaceAll("\\s+\\)", ")")
         .replaceAll("\\s*,\\s*", ", ")
         .replaceAll("\\s*::\\s*", "::")
+        .replaceAll("\\s*(->>|->)\\s*", "$1")
         .replaceAll("\\s*\\.\\s*", ".")
         .replaceAll("\\s+", " ")
     }.trim

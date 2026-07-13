@@ -891,6 +891,98 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
     assertEquals(catalog.map(item => (item.object_type, item.status)), List(("index", "in_sync")))
   }
 
+  test("index comparison ignores Postgres deparser casts and redundant expression parentheses") {
+    val definitions = List(
+      (
+        "idx_vec_alerts_metadata_bssid",
+        "create index if not exists idx_vec_alerts_metadata_bssid on vec_alerts ((metadata->>'bssid')) where metadata->>'bssid' is not null;",
+        "CREATE INDEX idx_vec_alerts_metadata_bssid ON public.vec_alerts USING btree (((metadata ->> 'bssid'::text))) WHERE ((metadata ->> 'bssid'::text) IS NOT NULL)"
+      ),
+      (
+        "sync_backlog_retry_ready_idx",
+        "create index if not exists sync_backlog_retry_ready_idx on sync_backlog (status, updated_at) where status = 'pending' and attempt_count < max_attempts;",
+        "CREATE INDEX sync_backlog_retry_ready_idx ON public.sync_backlog USING btree (status, updated_at) WHERE ((status = 'pending'::text) AND (attempt_count < max_attempts))"
+      ),
+      (
+        "sync_events_ready_idx",
+        "create index if not exists sync_events_ready_idx on sync_events (status, observed_at) where status in ('pending', 'failed');",
+        "CREATE INDEX sync_events_ready_idx ON public.sync_events USING btree (status, observed_at) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text]))"
+      ),
+      (
+        "vec_embeddings_event_hnsw_768_idx",
+        "create index if not exists vec_embeddings_event_hnsw_768_idx on vec_embeddings using hnsw ((embedding::vector(768)) vector_cosine_ops) where embedding_kind = 'event';",
+        "CREATE INDEX vec_embeddings_event_hnsw_768_idx ON public.vec_embeddings USING hnsw (((embedding)::vector(768)) vector_cosine_ops) WHERE (embedding_kind = 'event'::text)"
+      ),
+      (
+        "wireless_frames_common_search_idx",
+        "create index if not exists wireless_frames_common_search_idx on wireless_frames using gin ((lower(coalesce(sensor_id, '')) || ' ' || lower(coalesce(source_mac, '')) || ' ' || lower(coalesce(ssid, ''))) gin_trgm_ops);",
+        "CREATE INDEX wireless_frames_common_search_idx ON public.wireless_frames USING gin ((((((lower(COALESCE(sensor_id, ''::text)) || ' '::text) || lower(COALESCE(source_mac, ''::text))) || ' '::text) || lower(COALESCE(ssid, ''::text)))) gin_trgm_ops)"
+      )
+    )
+
+    definitions.foreach { case (name, expectedSql, actualSql) =>
+      val key = ObjectKey("public", name, "index")
+      assertEquals(
+        driftItems(
+          now,
+          List(expected(key, sourceFile = s"indexes/$name.sql", expectedDdl = Some(expectedSql))),
+          List(LiveObject(key, Some(actualSql))),
+          ControlSnapshot(Nil, None, Nil)
+        ),
+        Nil
+      )
+    }
+  }
+
+  test("view comparison ignores Postgres implicit text casts on string literals") {
+    val expectedSql =
+      "create or replace view v_demo as select event.id from sync_events event where event.status = 'pending';"
+    val actualSql =
+      "create view public.v_demo as select event.id from sync_events event where event.status = 'pending'::text;"
+    val key = ObjectKey("public", "v_demo", "view")
+
+    assertEquals(
+      driftItems(
+        now,
+        List(expected(key, sourceFile = "views/v_demo.sql", expectedDdl = Some(expectedSql))),
+        List(LiveObject(key, Some(actualSql))),
+        ControlSnapshot(Nil, None, Nil)
+      ),
+      Nil
+    )
+  }
+
+  test("isolates view queries for Postgres parser canonicalization") {
+    assertEquals(
+      PostgresDriftDdlParser.viewQuery(
+        "create or replace view public.v_demo as select id, status from public.events where status = 'pending';"
+      ),
+      Some("select id, status from public.events where status = 'pending'")
+    )
+  }
+
+  test("index comparison preserves predicate logic and expression values") {
+    val key = ObjectKey("public", "events_ready_idx", "index")
+    val expectedSql =
+      "create index events_ready_idx on events (status) where status = 'pending' and (attempts < 3 or priority > 10);"
+    val changedPredicate =
+      "create index events_ready_idx on events (status) where (status = 'pending' and attempts < 3) or priority > 10;"
+    val changedValue =
+      "create index events_ready_idx on events (status) where status = 'failed' and (attempts < 3 or priority > 10);"
+
+    List(changedPredicate, changedValue).foreach { actualSql =>
+      assertEquals(
+        driftItems(
+          now,
+          List(expected(key, expectedDdl = Some(expectedSql))),
+          List(LiveObject(key, Some(actualSql))),
+          ControlSnapshot(Nil, None, Nil)
+        ).map(_.drift_type),
+        List("definition_changed")
+      )
+    }
+  }
+
   test("known built-in untracked catalog objects are hidden while user objects remain visible") {
     val actualObjects = List(
       LiveObject(ObjectKey("public", "public", "schema"), Some("create schema public")),
