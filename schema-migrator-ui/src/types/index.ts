@@ -502,7 +502,7 @@ export const auditEventSchema = z.object({
   entity_id: z.string().min(1),
   at: rfc3339TimestampSchema,
   target_id: nullableOptionalStringSchema,
-  metadata: z.record(z.unknown()).nullish()
+  metadata: z.record(z.string(), z.unknown()).nullish()
 });
 
 export const parseTarget = (value: unknown): Target => targetSchema.parse(value) as Target;
@@ -576,7 +576,7 @@ export const targetFormSchema = z.object({
     .url("Repository URL must be a valid URL")
     .refine((value) => value.startsWith("https://"), "Repository URL must start with https://")
     .refine((value) => !/^https:\/\/[^/?#\s]*@/iu.test(value), "Repository URL must not include credentials"),
-  repo_branch: z.string().trim().min(1, "Branch is required").default("main"),
+  repo_branch: z.string().trim().min(1, "Branch is required"),
   repo_sql_path: z
     .string()
     .trim()
@@ -585,7 +585,6 @@ export const targetFormSchema = z.object({
       (value) => !value.startsWith("/") && !value.includes("..") && !value.includes("\\"),
       "SQL path must stay inside the repository"
     )
-    .default("sql")
 });
 
 export type TargetFormValues = z.infer<typeof targetFormSchema>;
