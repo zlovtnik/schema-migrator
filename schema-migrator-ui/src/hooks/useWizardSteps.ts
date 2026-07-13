@@ -1,9 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export const useWizardSteps = <T>(steps: readonly T[], initialIndex = 0) => {
   const lastIndex = Math.max(0, steps.length - 1);
   const clamp = useCallback((index: number) => Math.min(Math.max(0, index), lastIndex), [lastIndex]);
   const [currentIndex, setCurrentIndex] = useState(() => clamp(initialIndex));
+
+  useEffect(() => setCurrentIndex((current) => clamp(current)), [clamp]);
 
   const goTo = useCallback(
     (index: number, allowed = true) => {

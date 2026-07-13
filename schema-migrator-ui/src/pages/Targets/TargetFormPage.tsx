@@ -126,7 +126,12 @@ export const TargetFormPage = () => {
           {activityLoading ? (
             <div className="empty-state">Loading activity...</div>
           ) : (
-            <ActivityTable events={activity} empty="No audit events recorded for this target." />
+            <ActivityTable
+              events={activity}
+              runs={runs}
+              targets={[target]}
+              empty="No audit events recorded for this target."
+            />
           )}
         </section>
       ) : null}

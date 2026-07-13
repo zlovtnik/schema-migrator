@@ -21,7 +21,7 @@ export interface DataTableRowState {
 
 export interface DataTableGroup {
   id: string;
-  label: ReactNode;
+  label: string | number;
   sortLabel?: string | undefined;
 }
 
@@ -226,7 +226,7 @@ export const DataTable = <T,>({
                           aria-expanded={expanded}
                           aria-label={
                             typeof summary === "string" || typeof summary === "number"
-                              ? `${item.group.sortLabel ?? item.group.id} ${summary}`
+                              ? `${item.group.label} ${summary}`
                               : undefined
                           }
                           className="data-table__group-toggle"

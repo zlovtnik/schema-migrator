@@ -75,6 +75,21 @@ describe("DataTable", () => {
     expect(table.getByText("beta")).toBeInTheDocument();
   });
 
+  it("labels group toggles with the visible group label", () => {
+    renderApp(
+      <DataTable
+        caption="Objects"
+        columns={columns}
+        rows={[{ id: "1", name: "alpha" }]}
+        rowKey={(row) => row.id}
+        empty="No objects"
+        groupBy={() => ({ id: "cron", label: "Scheduled jobs", sortLabel: "cron" })}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Scheduled jobs 1 row" })).toBeInTheDocument();
+  });
+
   it("keeps toolbar controls visible with an empty table result", () => {
     const view = renderApp(
       <DataTable

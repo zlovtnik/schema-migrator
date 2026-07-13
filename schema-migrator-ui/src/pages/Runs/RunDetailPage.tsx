@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircleIcon } from "@phosphor-icons/react/dist/csr/CheckCircle";
 import { DownloadIcon } from "@phosphor-icons/react/dist/csr/Download";
 import { SquareIcon } from "@phosphor-icons/react/dist/csr/Square";
+import { WarningIcon } from "@phosphor-icons/react/dist/csr/Warning";
 import { ActivitySection } from "../../components/ActivitySection";
 import { LogViewer } from "../../components/LogViewer";
 import { ScriptProgressList } from "../../components/ScriptProgressList";
@@ -11,18 +12,23 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { Icon } from "../../components/ui/Icon";
 import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { useAuditEvents } from "../../hooks/useAudit";
+import { usePatch } from "../../hooks/usePatches";
 import { useRunStream } from "../../hooks/useRunStream";
 import { runKeys, useAbortRun, useResolveRun, useRun } from "../../hooks/useRuns";
 import { useDrift } from "../../hooks/useSchema";
 import { useSession } from "../../hooks/useSession";
+import { useTarget } from "../../hooks/useTargets";
 import type { Run, SchemaControlObject } from "../../types";
 import { formatOptionalDate } from "../../utils/format";
+import { formatRunSource, runFailureReason } from "../../utils/runPresentation";
 
 export const RunDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: run, isLoading, error } = useRun(id);
+  const { data: patch } = usePatch(run?.patch_id);
+  const { data: target } = useTarget(run?.target_id);
   const { data: drift } = useDrift(run?.target_id);
   const { canMutate, canViewAudit } = useSession();
   const { data: activity = [], isLoading: activityLoading } = useAuditEvents(
@@ -84,15 +90,17 @@ export const RunDetailPage = () => {
       : "-";
   const canAbort = stream.runStatus === "running" || stream.runStatus === "pending";
   const canResolve = stream.runStatus === "failed";
+  const failureReason = runFailureReason({ ...run, status: stream.runStatus });
+  const runSource = formatRunSource(run, patch, activity);
 
   return (
     <section className="page">
       <header className="page-header">
         <div>
           <span className="eyebrow">Run detail</span>
-          <h1>{run.patch_id}</h1>
+          <h1 title={`Patch ID: ${run.patch_id}`}>{runSource}</h1>
           <p>
-            Target {run.target_id} · duration {duration}
+            <span title={`Target ID: ${run.target_id}`}>{target?.label ?? "Removed target"}</span> · duration {duration}
           </p>
         </div>
         <div className="row-actions">
@@ -137,6 +145,22 @@ export const RunDetailPage = () => {
           ) : null}
         </div>
       </header>
+
+      {failureReason ? (
+        <section
+          className={stream.runStatus === "failed" ? "run-failure run-failure--error" : "run-failure"}
+          id="failure-reason"
+          aria-labelledby="failure-reason-title"
+        >
+          <Icon source={WarningIcon} size={20} weight="bold" />
+          <div>
+            <strong id="failure-reason-title">
+              {stream.runStatus === "failed" ? "Run failed" : "Run stopped before completion"}
+            </strong>
+            <p>{failureReason}</p>
+          </div>
+        </section>
+      ) : null}
 
       <section className="section-block">
         <h2>Script progress</h2>

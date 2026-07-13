@@ -7,6 +7,9 @@ import { Icon } from "./ui/Icon";
 export const AppBreadcrumbs = () => {
   const selectedTargetId = useSelectedTargetId();
   const matches = useMatches();
+  if (matches.some((match) => (match.handle as RouteHandle | undefined)?.hideBreadcrumb)) {
+    return null;
+  }
   const crumbs = matches
     .flatMap((match) => {
       const handle = match.handle as RouteHandle | undefined;
