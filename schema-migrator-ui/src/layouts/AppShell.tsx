@@ -11,6 +11,7 @@ import { ListIcon } from "@phosphor-icons/react/dist/csr/List";
 import { ListBulletsIcon } from "@phosphor-icons/react/dist/csr/ListBullets";
 import { PlugsConnectedIcon } from "@phosphor-icons/react/dist/csr/PlugsConnected";
 import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
+import { StepsIcon } from "@phosphor-icons/react/dist/csr/Steps";
 import { SidebarSimpleIcon } from "@phosphor-icons/react/dist/csr/SidebarSimple";
 import { SignOutIcon } from "@phosphor-icons/react/dist/csr/SignOut";
 import { XIcon } from "@phosphor-icons/react/dist/csr/X";
@@ -39,6 +40,7 @@ const baseNavSections = [
       { to: "/overview", label: "Overview", icon: ShieldCheckIcon },
       { to: "/targets", label: "Targets", icon: PlugsConnectedIcon },
       { to: "/schema", label: "Schema", icon: DatabaseIcon, postgresOnly: true },
+      { to: "/schema-upgrade", label: "Schema Upgrade", icon: StepsIcon, postgresOnly: true },
       { to: "/sql-files", label: "SQL Files", icon: FileSqlIcon }
     ]
   },

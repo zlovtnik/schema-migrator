@@ -231,6 +231,23 @@ final case class SchemaCatalogResponse(
   warnings: List[String]
 )
 
+final case class SchemaObjectListItem(
+  folder: String,
+  path: String,
+  object_type: String,
+  status: String,
+  source_file: String
+)
+
+final case class SchemaObjectListResponse(
+  target_id: String,
+  db_kind: String,
+  supported: Boolean,
+  checked_at: String,
+  objects: List[SchemaObjectListItem],
+  warnings: List[String]
+)
+
 final case class DriftItem(
   schema: String,
   name: String,
@@ -313,6 +330,8 @@ object Models:
   given Encoder[SqlFilesValidationResult] = deriveEncoder
   given Encoder[SchemaCatalogObject] = deriveEncoder
   given Encoder[SchemaCatalogResponse] = deriveEncoder
+  given Encoder[SchemaObjectListItem] = deriveEncoder
+  given Encoder[SchemaObjectListResponse] = deriveEncoder
   given Encoder[DriftItem] = deriveEncoder
   given Encoder[SchemaControlSummary] = deriveEncoder
   given Encoder[SchemaControlObject] = deriveEncoder

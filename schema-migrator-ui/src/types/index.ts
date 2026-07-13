@@ -189,6 +189,23 @@ export interface SchemaCatalogResponse {
   warnings: string[];
 }
 
+export interface SchemaObjectListItem {
+  folder: string;
+  path: string;
+  object_type: ObjectType;
+  status: SchemaObjectStatus;
+  source_file: string;
+}
+
+export interface SchemaObjectListResponse {
+  target_id: string;
+  db_kind: DbKind;
+  supported: boolean;
+  checked_at: Rfc3339Timestamp;
+  objects: SchemaObjectListItem[];
+  warnings: string[];
+}
+
 export interface DriftItem {
   schema: string;
   name: string;
@@ -409,6 +426,23 @@ export const schemaCatalogResponseSchema = z.object({
   warnings: z.array(z.string())
 });
 
+export const schemaObjectListItemSchema = z.object({
+  folder: z.string(),
+  path: z.string().min(1),
+  object_type: objectTypeSchema.catch("other"),
+  status: schemaObjectStatusSchema.catch("unknown"),
+  source_file: z.string().min(1)
+});
+
+export const schemaObjectListResponseSchema = z.object({
+  target_id: z.string().min(1),
+  db_kind: dbKindSchema,
+  supported: z.boolean(),
+  checked_at: rfc3339TimestampSchema,
+  objects: z.array(schemaObjectListItemSchema),
+  warnings: z.array(z.string())
+});
+
 export const driftItemSchema = z.object({
   schema: z.string(),
   name: z.string(),
@@ -528,6 +562,8 @@ export const parseSqlFilesValidationResult = (value: unknown): SqlFilesValidatio
   sqlFilesValidationResultSchema.parse(value) as SqlFilesValidationResult;
 export const parseSchemaCatalogResponse = (value: unknown): SchemaCatalogResponse =>
   schemaCatalogResponseSchema.parse(value) as SchemaCatalogResponse;
+export const parseSchemaObjectListResponse = (value: unknown): SchemaObjectListResponse =>
+  schemaObjectListResponseSchema.parse(value) as SchemaObjectListResponse;
 export const parseDriftResponse = (value: unknown): DriftResponse => driftResponseSchema.parse(value) as DriftResponse;
 export const parseSnapshot = (value: unknown): Snapshot => snapshotSchema.parse(value) as Snapshot;
 export const parseSnapshotList = (value: unknown): Snapshot[] => {

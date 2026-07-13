@@ -455,6 +455,35 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     assert(!warnings.exists(_.contains("has no files in store")))
   }
 
+  test("schema objects route merges source folders with catalog status") {
+    val result = routeFixture
+      .use { routes =>
+        for
+          targetResponse <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/targets",
+              targetPayload("Target", jdbcUrl = "jdbc:postgresql://127.0.0.1:1/app?user=app&connectTimeout=1")
+            )
+          )
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/schema/objects?target_id=$targetId")))
+          json <- bodyJson(response)
+        yield response.status -> json
+      }
+      .unsafeRunSync()
+
+    val (status, json) = result
+    val first = json.hcursor.downField("objects").downArray
+    assertEquals(status, Status.Ok)
+    assertEquals(first.get[String]("folder"), Right("tables"))
+    assertEquals(first.get[String]("path"), Right("tables/001_devices.sql"))
+    assertEquals(first.get[String]("object_type"), Right("table"))
+    assertEquals(first.get[String]("status"), Right("defined"))
+    assertEquals(first.get[String]("source_file"), Right("tables/001_devices.sql"))
+  }
+
   test("drift route returns warnings instead of failing when Postgres live catalog is unavailable") {
     val result = routeFixture
       .use { routes =>
