@@ -54,28 +54,24 @@ export const SchemaUpgradeWizard = () => {
   });
   const runQuery = useRun(runId);
 
-  useEffect(() => {
-    if (!selectedTargetId || !objectsQuery.data || initializedTarget.current === selectedTargetId) return;
-    initializedTarget.current = selectedTargetId;
-    setSelectedFiles(new Set(objectsQuery.data.objects.map((item) => item.source_file)));
-  }, [objectsQuery.data, selectedTargetId]);
-
   const resetForTarget = (targetId: string) => {
-    initializedTarget.current = undefined;
     setSelectedTargetId(targetId);
     const nextSearchParams = new URLSearchParams(searchParams);
     if (targetId) nextSearchParams.set("target", targetId);
     else nextSearchParams.delete("target");
     setSearchParams(nextSearchParams, { replace: true });
-    setStep(0);
-    setSelectedFiles(new Set());
+  };
+
+  const updateSelectedFiles = (files: Set<string>) => {
+    setSelectedFiles(files);
     setPrecheck(undefined);
-    setRunId(undefined);
-    setPostcheck(undefined);
   };
 
   const validation = useMutation({
-    mutationFn: () => validateSqlFiles({ target_id: selectedTargetId as string }),
+    mutationFn: () => {
+      if (!selectedTargetId) throw new Error("Select a target before validating.");
+      return validateSqlFiles({ target_id: selectedTargetId, source_files: [...selectedFiles] });
+    },
     onSuccess: (result) => setPrecheck(result)
   });
   const execution = useMutation({
@@ -123,6 +119,28 @@ export const SchemaUpgradeWizard = () => {
     mutationFn: () => rerunValidation(runId as string),
     onSuccess: (result) => setPostcheck(result)
   });
+
+  const resetValidation = validation.reset;
+  const resetExecution = execution.reset;
+  const resetRecheck = recheck.reset;
+
+  useEffect(() => {
+    initializedTarget.current = undefined;
+    setStep(0);
+    setSelectedFiles(new Set());
+    setPrecheck(undefined);
+    setRunId(undefined);
+    setPostcheck(undefined);
+    resetValidation();
+    resetExecution();
+    resetRecheck();
+  }, [resetExecution, resetRecheck, resetValidation, selectedTargetId]);
+
+  useEffect(() => {
+    if (!selectedTargetId || !objectsQuery.data || initializedTarget.current === selectedTargetId) return;
+    initializedTarget.current = selectedTargetId;
+    setSelectedFiles(new Set(objectsQuery.data.objects.map((item) => item.source_file)));
+  }, [objectsQuery.data, selectedTargetId]);
 
   const objects = useMemo(() => objectsQuery.data?.objects ?? [], [objectsQuery.data?.objects]);
   const groups = useMemo(() => groupObjects(objects), [objects]);
@@ -208,11 +226,11 @@ export const SchemaUpgradeWizard = () => {
               <button
                 className="button button--secondary"
                 type="button"
-                onClick={() => setSelectedFiles(new Set(objects.map((item) => item.source_file)))}
+                onClick={() => updateSelectedFiles(new Set(objects.map((item) => item.source_file)))}
               >
                 Select all
               </button>
-              <button className="button button--ghost" type="button" onClick={() => setSelectedFiles(new Set())}>
+              <button className="button button--ghost" type="button" onClick={() => updateSelectedFiles(new Set())}>
                 Clear
               </button>
             </div>
@@ -221,14 +239,14 @@ export const SchemaUpgradeWizard = () => {
           {objectsQuery.error ? (
             <div className="status-banner status-banner--error">Schema objects could not be loaded.</div>
           ) : null}
-          {!objectsQuery.isLoading && groups.length === 0 ? (
+          {selectedTargetId && !objectsQuery.isLoading && groups.length === 0 ? (
             <div className="empty-state">No schema objects were discovered for this target.</div>
           ) : null}
           <ObjectTree
             groups={groups}
             selectedFiles={selectedFiles}
             invalid={precheck?.invalid.map((item) => item.name) ?? []}
-            onToggle={(path) => setSelectedFiles(toggleSelection(selectedFiles, path))}
+            onToggle={(path) => updateSelectedFiles(toggleSelection(selectedFiles, path))}
           />
           <div className="upgrade-actions">
             <span>

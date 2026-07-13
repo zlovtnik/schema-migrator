@@ -665,6 +665,7 @@ export interface UploadPatchPayload {
 
 export interface ValidateSqlFilesPayload {
   target_id: string;
+  source_files?: string[];
 }
 
 export interface ValidateSqlDirectoryPayload {

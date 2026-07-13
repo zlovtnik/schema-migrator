@@ -710,6 +710,59 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
     assertEquals(hasRunId, false)
   }
 
+  test("standalone SQL file validation checks only selected source files") {
+    val result = routeFixtureWithStore()
+      .use { fixture =>
+        val routes = fixture.app
+        val baseView =
+          """-- object: base_view
+            |-- folder: views
+            |-- depends_on: -
+            |create or replace view base_view as select 1 as id;
+            |""".stripMargin
+        val dependentView =
+          """-- object: dependent_view
+            |-- folder: views
+            |-- depends_on: base_view
+            |create or replace view dependent_view as select 1 as id;
+            |""".stripMargin
+        for
+          targetResponse <- routes.run(jsonRequest(Method.POST, "/targets", targetPayload("Target")))
+          targetJson <- bodyJson(targetResponse)
+          targetId <- IO.fromEither(targetJson.hcursor.get[String]("id"))
+          _ <- replaceSqlFiles(
+            fixture.sqlFileStore,
+            targetId,
+            List(
+              "views/001_base_view.sql" -> baseView,
+              "views/002_dependent_view.sql" -> dependentView
+            )
+          )
+          response <- routes.run(
+            jsonRequest(
+              Method.POST,
+              "/validation/sql-files",
+              Json.obj(
+                "target_id" -> Json.fromString(targetId),
+                "source_files" -> Json.arr(Json.fromString("views/002_dependent_view.sql"))
+              )
+            )
+          )
+          json <- bodyJson(response)
+        yield (
+          response.status,
+          json.hcursor.get[Int]("file_count"),
+          json.hcursor.get[String]("status")
+        )
+      }
+      .unsafeRunSync()
+
+    val (status, fileCount, validationStatus) = result
+    assertEquals(status, Status.Ok)
+    assertEquals(fileCount, Right(1))
+    assertEquals(validationStatus, Right("errors"))
+  }
+
   test("snapshot routes capture stored SQL files without returning content") {
     val result = routeFixtureWithStore()
       .use { fixture =>
