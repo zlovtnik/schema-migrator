@@ -1,5 +1,4 @@
 import type { CSSProperties } from "react";
-import styles from "./Spinner.module.css";
 
 interface SpinnerProps {
   size?: 16 | 20 | 24;
@@ -9,10 +8,10 @@ interface SpinnerProps {
 export const Spinner = ({ size = 16, label = "Loading" }: SpinnerProps) => (
   <span
     aria-label={label}
-    className={styles.spinner}
+    className="ui-spinner"
     role="status"
     style={{ "--spinner-size": `${size}px` } as CSSProperties}
   >
-    <span className={styles.srOnly}>{label}</span>
+    <span className="sr-only">{label}</span>
   </span>
 );

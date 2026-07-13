@@ -1,6 +1,8 @@
 package com.sslproxy.schema.db.oracle
 
-object OracleStatements:
+import com.sslproxy.schema.db.DialectStatements
+
+object OracleStatements extends DialectStatements:
   private def ignoreOracleErrorsBlock(errorCodes: List[Int], sql: String): String =
     val declarations = errorCodes.zipWithIndex.map { case (errorCode, index) =>
       s"""
@@ -151,6 +153,13 @@ ${sql.trim}
       case when source.apply_status = 'pending' then null else systimestamp end,
       source.apply_status, null, systimestamp
     )
+    """
+
+  val lookupExistingSql: String =
+    """
+    select content_sha256, apply_status
+      from schema_control.schema_objects
+     where kind = ? and object_name = ?
     """
 
   val applyLogSql: String =

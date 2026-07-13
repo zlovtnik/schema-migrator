@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { ArrowClockwiseIcon } from "@phosphor-icons/react/dist/csr/ArrowClockwise";
-import { CheckIcon } from "@phosphor-icons/react/dist/csr/Check";
 import { CheckCircleIcon } from "@phosphor-icons/react/dist/csr/CheckCircle";
 import { GitBranchIcon } from "@phosphor-icons/react/dist/csr/GitBranch";
 import { WarningIcon } from "@phosphor-icons/react/dist/csr/Warning";
@@ -17,11 +16,13 @@ import { StatusBadge } from "../../components/StatusBadge";
 import { ValidationTable } from "../../components/ValidationTable";
 import { folderIconSource } from "../../components/sqlFileTree";
 import { Icon } from "../../components/ui/Icon";
+import { Stepper } from "../../components/ui/Stepper";
 import { useRunStream } from "../../hooks/useRunStream";
 import { runKeys, useRun } from "../../hooks/useRuns";
 import { useSelectedTarget, useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useTargets } from "../../hooks/useTargets";
+import { useWizardSteps } from "../../hooks/useWizardSteps";
 import type { Run, SchemaObjectListItem, SqlFilesValidationResult, ValidationResult } from "../../types";
 import { UpgradeSummary } from "./UpgradeSummary";
 
@@ -35,7 +36,13 @@ export const SchemaUpgradeWizard = () => {
   const { canMutate } = useSession();
   const targets = useTargets();
   const queryClient = useQueryClient();
-  const [step, setStep] = useState(0);
+  const {
+    currentIndex: step,
+    goTo: goToStep,
+    next: nextStep,
+    back: previousStep,
+    reset: resetSteps
+  } = useWizardSteps(steps);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [precheck, setPrecheck] = useState<SqlFilesValidationResult>();
   const [runId, setRunId] = useState<string>();
@@ -95,11 +102,11 @@ export const SchemaUpgradeWizard = () => {
     enabled: Boolean(runId && !terminalStatuses.has(runQuery.data?.status ?? "pending")),
     onRunComplete: () => {
       if (runId) void queryClient.invalidateQueries({ queryKey: runKeys.detail(runId) });
-      setStep(3);
+      goToStep(3);
     },
     onRunFailed: () => {
       if (runId) void queryClient.invalidateQueries({ queryKey: runKeys.detail(runId) });
-      setStep(3);
+      goToStep(3);
     }
   });
 
@@ -126,7 +133,7 @@ export const SchemaUpgradeWizard = () => {
 
   useEffect(() => {
     initializedTarget.current = undefined;
-    setStep(0);
+    resetSteps();
     setSelectedFiles(new Set());
     setPrecheck(undefined);
     setRunId(undefined);
@@ -134,7 +141,7 @@ export const SchemaUpgradeWizard = () => {
     resetValidation();
     resetExecution();
     resetRecheck();
-  }, [resetExecution, resetRecheck, resetValidation, selectedTargetId]);
+  }, [resetExecution, resetRecheck, resetSteps, resetValidation, selectedTargetId]);
 
   useEffect(() => {
     if (!selectedTargetId || !objectsQuery.data || initializedTarget.current === selectedTargetId) return;
@@ -143,7 +150,7 @@ export const SchemaUpgradeWizard = () => {
   }, [objectsQuery.data, selectedTargetId]);
 
   const objects = useMemo(() => objectsQuery.data?.objects ?? [], [objectsQuery.data?.objects]);
-  const groups = useMemo(() => groupObjects(objects), [objects]);
+  const groups = useMemo(() => groupFiles(objects), [objects]);
   const selectedObjects = objects.filter((item) => selectedFiles.has(item.source_file));
   const currentRun = useMemo<Run | undefined>(() => {
     if (!runQuery.data) return undefined;
@@ -173,41 +180,7 @@ export const SchemaUpgradeWizard = () => {
         </label>
       </header>
 
-      <nav className="upgrade-progress" aria-label="Schema upgrade progress">
-        <div className="upgrade-progress__summary">
-          <span>Upgrade progress</span>
-          <strong>
-            Phase {step + 1} of {steps.length} · {steps[step]}
-          </strong>
-        </div>
-        <ol className="upgrade-stepper">
-          {steps.map((label, index) => {
-            const state = index === step ? "Current" : index < step ? "Complete" : "Upcoming";
-
-            return (
-              <li
-                key={label}
-                className={
-                  index === step
-                    ? "upgrade-step upgrade-step--active"
-                    : index < step
-                      ? "upgrade-step upgrade-step--done"
-                      : "upgrade-step"
-                }
-                aria-current={index === step ? "step" : undefined}
-              >
-                <span className="upgrade-step__marker" aria-hidden="true">
-                  {index < step ? <Icon source={CheckIcon} size={16} weight="bold" /> : index + 1}
-                </span>
-                <span className="upgrade-step__copy">
-                  <strong>{label}</strong>
-                  <small>{state}</small>
-                </span>
-              </li>
-            );
-          })}
-        </ol>
-      </nav>
+      <Stepper steps={steps} currentIndex={step} label="Upgrade progress" />
 
       {errorMessage ? (
         <div className="status-banner status-banner--error" role="alert">
@@ -219,7 +192,7 @@ export const SchemaUpgradeWizard = () => {
         <section className="upgrade-pane">
           <div className="section-block__header">
             <div>
-              <h2>Choose repository objects</h2>
+              <h2>Choose repository files</h2>
               <p>Selection is carried into validation and patch creation.</p>
             </div>
             <div className="row-actions">
@@ -256,7 +229,7 @@ export const SchemaUpgradeWizard = () => {
               className="button button--primary"
               type="button"
               disabled={selectedFiles.size === 0}
-              onClick={() => setStep(1)}
+              onClick={() => nextStep(selectedFiles.size > 0)}
             >
               Continue to pre-check
             </button>
@@ -293,14 +266,14 @@ export const SchemaUpgradeWizard = () => {
             </div>
           ) : null}
           <div className="upgrade-actions">
-            <button className="button button--secondary" type="button" onClick={() => setStep(0)}>
+            <button className="button button--secondary" type="button" onClick={previousStep}>
               Back
             </button>
             <button
               className="button button--primary"
               type="button"
               disabled={!canAdvanceFromPrecheck}
-              onClick={() => setStep(2)}
+              onClick={() => nextStep(canAdvanceFromPrecheck)}
             >
               Continue to execute
             </button>
@@ -355,15 +328,15 @@ export const SchemaUpgradeWizard = () => {
             </>
           )}
           <div className="upgrade-actions">
-            <button
-              className="button button--secondary"
-              type="button"
-              disabled={Boolean(runId)}
-              onClick={() => setStep(1)}
-            >
+            <button className="button button--secondary" type="button" disabled={Boolean(runId)} onClick={previousStep}>
               Back
             </button>
-            <button className="button button--primary" type="button" disabled={!terminal} onClick={() => setStep(3)}>
+            <button
+              className="button button--primary"
+              type="button"
+              disabled={!terminal}
+              onClick={() => nextStep(terminal)}
+            >
               View summary
             </button>
           </div>
@@ -400,13 +373,21 @@ export const SchemaUpgradeWizard = () => {
   );
 };
 
+interface UpgradeFileListItem {
+  folder: string;
+  path: string;
+  sourceFile: string;
+  objectTypes: SchemaObjectListItem["object_type"][];
+  statuses: SchemaObjectListItem["status"][];
+}
+
 const ObjectTree = ({
   groups,
   selectedFiles,
   invalid,
   onToggle
 }: {
-  groups: Array<{ folder: string; objects: SchemaObjectListItem[] }>;
+  groups: Array<{ folder: string; files: UpgradeFileListItem[] }>;
   selectedFiles: Set<string>;
   invalid: string[];
   onToggle: (path: string) => void;
@@ -419,34 +400,38 @@ const ObjectTree = ({
             <Icon source={folderIconSource(group.folder)} size={16} />
             <strong>{group.folder}</strong>
           </span>
-          <span className="file-count">{group.objects.length} objects</span>
+          <span className="file-count">{group.files.length} files</span>
         </summary>
         <ul className="sql-file-list">
-          {group.objects.map((item, index) => {
+          {group.files.map((item) => {
             const hasError = invalid.some((name) => item.path.toLowerCase().includes(name.toLowerCase()));
             return (
               <li
                 className={
                   hasError ? "sql-file-item upgrade-object upgrade-object--invalid" : "sql-file-item upgrade-object"
                 }
-                key={`${item.path}:${item.object_type}:${index}`}
+                key={item.sourceFile}
               >
                 <label className="upgrade-object__label">
                   <input
                     className="upgrade-object__checkbox"
                     type="checkbox"
-                    checked={selectedFiles.has(item.source_file)}
-                    onChange={() => onToggle(item.source_file)}
+                    checked={selectedFiles.has(item.sourceFile)}
+                    onChange={() => onToggle(item.sourceFile)}
                   />
                   <Icon
                     className="upgrade-object__icon"
-                    source={folderIconSource(item.folder, item.object_type)}
+                    source={folderIconSource(item.folder, item.objectTypes[0])}
                     size={16}
                   />
                   <code>{item.path}</code>
-                  <span>{item.object_type.replaceAll("_", " ")}</span>
+                  <span>{item.objectTypes.map((type) => type.replaceAll("_", " ")).join(", ")}</span>
                 </label>
-                <StatusBadge status={item.status} />
+                <span className="row-actions">
+                  {item.statuses.map((status) => (
+                    <StatusBadge key={status} status={status} />
+                  ))}
+                </span>
               </li>
             );
           })}
@@ -456,10 +441,22 @@ const ObjectTree = ({
   </div>
 );
 
-const groupObjects = (objects: SchemaObjectListItem[]) => {
-  const groups = new Map<string, SchemaObjectListItem[]>();
-  objects.forEach((item) => groups.set(item.folder, [...(groups.get(item.folder) ?? []), item]));
-  return Array.from(groups, ([folder, items]) => ({ folder, objects: items })).sort((a, b) =>
+export const groupFiles = (objects: SchemaObjectListItem[]) => {
+  const files = new Map<string, UpgradeFileListItem>();
+  objects.forEach((item) => {
+    const existing = files.get(item.source_file);
+    files.set(item.source_file, {
+      folder: item.folder,
+      path: item.path,
+      sourceFile: item.source_file,
+      objectTypes: Array.from(new Set([...(existing?.objectTypes ?? []), item.object_type])),
+      statuses: Array.from(new Set([...(existing?.statuses ?? []), item.status]))
+    });
+  });
+
+  const groups = new Map<string, UpgradeFileListItem[]>();
+  files.forEach((item) => groups.set(item.folder, [...(groups.get(item.folder) ?? []), item]));
+  return Array.from(groups, ([folder, groupedFiles]) => ({ folder, files: groupedFiles })).sort((a, b) =>
     a.folder.localeCompare(b.folder)
   );
 };

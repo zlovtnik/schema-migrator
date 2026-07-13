@@ -62,21 +62,6 @@ object SchemaControlStore:
         val matches = many.map(t => s"${t.kind}:${t.objectName}").mkString(", ")
         throw MigratorError.Apply(s"object name is ambiguous; matches: $matches")
 
-  private[db] val lookupExistingSql: String =
-    """
-    select content_sha256, apply_status
-      from schema_control.schema_objects
-     where kind = ? and object_name = ?
-    """
-
-  private[db] val fetchRollbackTargetSql: String =
-    """
-    select kind, object_name, source_file, content_sha256, rollback_file
-      from schema_control.schema_objects
-     where object_name = ?
-     order by kind, object_name
-    """
-
 final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
   import PostgresDriftAnalyzer.*
 
@@ -86,12 +71,8 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
   private def prepareOne(objectDef: SchemaObject): ConnectionIO[PreparedObject] =
     val operation =
       for
-        existing <-
-          sql"""
-          select content_sha256, apply_status
-            from schema_control.schema_objects
-           where kind = ${objectDef.kind} and object_name = ${objectDef.objectName}
-          """.query[(String, String)].option
+        existing <- Query[(String, String), (String, String)](PostgresStatements.lookupExistingSql)
+          .option((objectDef.kind, objectDef.objectName))
         oldSha = existing.map(_._1)
         oldStatus = existing.map(_._2)
         controlCurrent = oldSha.exists(_ == objectDef.sha256) && oldStatus.exists(Set("applied", "skipped"))
@@ -285,14 +266,8 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
       }
 
   override def fetchRollbackTarget(objectName: String): ConnectionIO[RollbackTarget] =
-    sql"""
-    select kind, object_name, source_file, content_sha256, rollback_file
-      from schema_control.schema_objects
-     where object_name = $objectName
-     order by kind, object_name
-    """
-      .query[(String, String, String, String, Option[String])]
-      .to[List]
+    Query[String, (String, String, String, String, Option[String])](PostgresStatements.fetchRollbackTargetSql)
+      .to[List](objectName)
       .map { rows =>
         SchemaControlStore.buildRollbackTarget(
           rows.map { case (kind, rowObjectName, sourceFile, contentSha256, rollbackFile) =>
@@ -317,7 +292,7 @@ final class OracleSchemaControlStore(connection: Connection) extends SchemaContr
 
   private def prepareOne(objectDef: SchemaObject): IO[PreparedObject] =
     IO.blocking {
-      val existing = queryPrepared(connection, SchemaControlStore.lookupExistingSql) { statement =>
+      val existing = queryPrepared(connection, OracleStatements.lookupExistingSql) { statement =>
         statement.setString(1, objectDef.kind)
         statement.setString(2, objectDef.objectName)
       } { row =>
@@ -361,7 +336,7 @@ final class OracleSchemaControlStore(connection: Connection) extends SchemaContr
 
   override def fetchRollbackTarget(objectName: String): IO[RollbackTarget] =
     IO.blocking {
-      val allRows = queryPrepared(connection, SchemaControlStore.fetchRollbackTargetSql) { statement =>
+      val allRows = queryPrepared(connection, OracleStatements.fetchRollbackTargetSql) { statement =>
         statement.setString(1, objectName)
       } { row =>
         Some(

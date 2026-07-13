@@ -220,7 +220,9 @@ export const DriftPage = () => {
 
       {hasSelectedTarget && isGateBlocked ? (
         <div className="status-banner status-banner--error">
-          <span>Drift execution is disabled by failed run {failedRun?.id}. Resolve it before starting another run.</span>
+          <span>
+            Drift execution is disabled by failed run {failedRun?.id}. Resolve it before starting another run.
+          </span>
           {failedRun ? (
             <button
               className="button button--secondary button--small"
@@ -295,6 +297,7 @@ export const DriftPage = () => {
                 </label>
                 <div className="drift-chip-row" aria-label="Drift type filters">
                   <button
+                    aria-label={`All ${textFilteredItems.length}`}
                     className={driftFilter === "all" ? "drift-chip drift-chip--active" : "drift-chip"}
                     type="button"
                     onClick={() => setDriftFilter("all")}
@@ -305,6 +308,7 @@ export const DriftPage = () => {
                   </button>
                   {Array.from(driftCounts.entries()).map(([type, count]) => (
                     <button
+                      aria-label={`${type.replaceAll("_", " ")} ${count}`}
                       className={driftFilter === type ? "drift-chip drift-chip--active" : "drift-chip"}
                       key={type}
                       type="button"

@@ -5,12 +5,31 @@ import { WarningIcon } from "@phosphor-icons/react/dist/csr/Warning";
 import { ActivityTable } from "../../components/ActivityTable";
 import { StatusBadge } from "../../components/StatusBadge";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { Icon } from "../../components/ui/Icon";
 import { useAuditEvents } from "../../hooks/useAudit";
 import { useRuns } from "../../hooks/useRuns";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useTargets } from "../../hooks/useTargets";
+import type { Run } from "../../types";
+
+const recentRunColumns: DataTableColumn<Run>[] = [
+  {
+    id: "source",
+    header: "Run source",
+    sortValue: (run) => run.patch_id,
+    cell: (run) => <Link to={`/runs/${run.id}`}>{run.patch_id}</Link>
+  },
+  { id: "target", header: "Target", sortValue: (run) => run.target_id, cell: (run) => run.target_id },
+  {
+    id: "started",
+    header: "Started",
+    sortValue: (run) => run.started_at,
+    cell: (run) => new Date(run.started_at).toLocaleString()
+  },
+  { id: "status", header: "Status", sortValue: (run) => run.status, cell: (run) => <StatusBadge status={run.status} /> }
+];
 
 export const OverviewPage = () => {
   const { canViewAudit } = useSession();
@@ -99,32 +118,13 @@ export const OverviewPage = () => {
             Run history will appear here after drift execution starts.
           </EmptyState>
         ) : (
-          <div className="table-panel">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Run source</th>
-                  <th scope="col">Target</th>
-                  <th scope="col">Started</th>
-                  <th scope="col">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentRuns.map((run) => (
-                  <tr key={run.id}>
-                    <td>
-                      <Link to={`/runs/${run.id}`}>{run.patch_id}</Link>
-                    </td>
-                    <td>{run.target_id}</td>
-                    <td>{new Date(run.started_at).toLocaleString()}</td>
-                    <td>
-                      <StatusBadge status={run.status} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="Recent runs"
+            columns={recentRunColumns}
+            rows={recentRuns}
+            rowKey={(run) => run.id}
+            empty="No runs yet"
+          />
         )}
       </section>
 

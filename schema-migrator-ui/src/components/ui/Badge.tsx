@@ -1,5 +1,4 @@
 import type { HTMLAttributes, ReactNode } from "react";
-import styles from "./Badge.module.css";
 
 export type BadgeTone = "neutral" | "success" | "warning" | "danger" | "info";
 
@@ -12,7 +11,7 @@ interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 export const Badge = ({ children, className, icon, mono = false, tone = "neutral", ...props }: BadgeProps) => (
   <span
     {...props}
-    className={[styles.badge, styles[tone], mono ? styles.mono : "", className].filter(Boolean).join(" ")}
+    className={["ui-badge", `ui-badge--${tone}`, mono ? "ui-badge--mono" : "", className].filter(Boolean).join(" ")}
   >
     {icon}
     {children}

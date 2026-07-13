@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { primitiveTokens, semanticDarkTokens, semanticLightTokens } from "./tokens";
+import { primitiveTokens, scaleTokens, semanticDarkTokens, semanticLightTokens } from "./tokens";
 
 const resolveToken = (tokens: Record<string, string>, name: string): string => {
   const value = tokens[name];
@@ -76,6 +76,11 @@ describe("design color tokens", () => {
     expect(resolveToken(semanticDarkTokens, "--color-warning")).toBe("#E0963C");
     expect(resolveToken(semanticDarkTokens, "--color-danger")).toBe("#A93C34");
     expect(resolveToken(semanticDarkTokens, "--color-info")).toBe("#6B94D4");
+    expect(semanticDarkTokens["--surface-glass"]).toContain("transparent");
+    expect(semanticLightTokens["--surface-glass"]).toContain("transparent");
+    expect(scaleTokens["--elevation-blur-sm"]).toBe("4px");
+    expect(scaleTokens["--elevation-blur-md"]).toBe("12px");
+    expect(scaleTokens["--elevation-blur-lg"]).toBe("20px");
   });
 
   it("keeps status and button foreground tokens above WCAG AA contrast", () => {

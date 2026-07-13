@@ -6,6 +6,7 @@ import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ConnectionForm } from "../../components/ConnectionForm";
 import { StatusBadge } from "../../components/StatusBadge";
+import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { Icon } from "../../components/ui/Icon";
 import { useRuns } from "../../hooks/useRuns";
 import { useSession } from "../../hooks/useSession";
@@ -137,6 +138,92 @@ export const TargetListPage = () => {
     });
   };
 
+  const columns: DataTableColumn<Target>[] = [
+    {
+      id: "label",
+      header: "Label",
+      sortValue: (target) => target.label,
+      cell: (target) => <Link to={inSettings ? target.id : `${target.id}/overview`}>{target.label}</Link>
+    },
+    { id: "app", header: "App", sortValue: (target) => target.app_name, cell: (target) => target.app_name },
+    {
+      id: "environment",
+      header: "Env",
+      sortValue: (target) => target.env,
+      cell: (target) => (
+        <>
+          <StatusBadge status={target.env === "production" ? "warning" : "clean"} title={target.env} />
+          <span className="cell-subtle">{target.env}</span>
+        </>
+      )
+    },
+    {
+      id: "url",
+      header: "Database URL",
+      sortValue: (target) => target.jdbc_url,
+      cell: (target) => <code>{redactedJdbcUrl(target.jdbc_url)}</code>
+    },
+    {
+      id: "status",
+      header: "Status",
+      sortValue: (target) => {
+        const result = testResults[target.id];
+        return result ? (result.ok ? "connected" : "error") : "untested";
+      },
+      cell: (target) => {
+        const result = testResults[target.id];
+        const status = result ? (result.ok ? "connected" : "error") : "untested";
+        return <StatusBadge status={status} title={result?.ok ? `${result.latency_ms ?? 0} ms` : result?.error} />;
+      }
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      cell: (target) => {
+        const hasActiveRuns = activeRunTargetIds.has(target.id);
+        const runsUnavailable = runsLoading || (!runsLoaded && !runsError);
+        const testDisabled = !canManageTargets || testingTargetId === target.id;
+        const deleteDisabled = !canManageTargets || runsUnavailable || runsError || hasActiveRuns;
+        return (
+          <div className="row-actions">
+            <button
+              className="button button--secondary button--small"
+              type="button"
+              onClick={() => runConnectionTest(target)}
+              disabled={testDisabled}
+              title={canManageTargets ? undefined : "Admin role required to test target connections"}
+            >
+              <Icon source={LightningIcon} size={16} />
+              {testingTargetId === target.id ? "Testing" : "Test"}
+            </button>
+            <button
+              className="icon-button icon-button--danger"
+              type="button"
+              aria-label={`Delete ${target.label}`}
+              onClick={() => {
+                if (!deleteDisabled) setTargetToDelete(target);
+              }}
+              disabled={deleteDisabled}
+              title={
+                !canManageTargets
+                  ? "Admin role required to delete targets"
+                  : runsError
+                    ? "Delete disabled until run state reloads"
+                    : runsUnavailable
+                      ? "Delete disabled until run state loads"
+                      : hasActiveRuns
+                        ? "Delete disabled while active runs exist"
+                        : undefined
+              }
+            >
+              <Icon source={TrashIcon} size={16} label={`Delete ${target.label}`} />
+            </button>
+          </div>
+        );
+      }
+    }
+  ];
+
   return (
     <section className="page">
       <header className="page-header">
@@ -172,89 +259,13 @@ export const TargetListPage = () => {
       ) : null}
 
       {targets.length > 0 ? (
-        <div className="table-panel">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th scope="col">Label</th>
-                <th scope="col">App</th>
-                <th scope="col">Env</th>
-                <th scope="col">Database URL</th>
-                <th scope="col">Status</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {targets.map((target) => {
-                const result = testResults[target.id];
-                const status = result ? (result.ok ? "connected" : "error") : "untested";
-                const hasActiveRuns = activeRunTargetIds.has(target.id);
-                const runsUnavailable = runsLoading || (!runsLoaded && !runsError);
-                const testDisabled = !canManageTargets || testingTargetId === target.id;
-                const deleteDisabled = !canManageTargets || runsUnavailable || runsError || hasActiveRuns;
-                return (
-                  <tr key={target.id}>
-                    <td>
-                      <Link to={inSettings ? target.id : `${target.id}/overview`}>{target.label}</Link>
-                    </td>
-                    <td>{target.app_name}</td>
-                    <td>
-                      <StatusBadge status={target.env === "production" ? "warning" : "clean"} title={target.env} />
-                      <span className="cell-subtle">{target.env}</span>
-                    </td>
-                    <td>
-                      <code>{redactedJdbcUrl(target.jdbc_url)}</code>
-                    </td>
-                    <td>
-                      <StatusBadge
-                        status={status}
-                        title={result?.ok ? `${result.latency_ms ?? 0} ms` : result?.error}
-                      />
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                        <button
-                          className="button button--secondary button--small"
-                          type="button"
-                          onClick={() => runConnectionTest(target)}
-                          disabled={testDisabled}
-                          title={canManageTargets ? undefined : "Admin role required to test target connections"}
-                        >
-                          <Icon source={LightningIcon} size={16} />
-                          {testingTargetId === target.id ? "Testing" : "Test"}
-                        </button>
-                        <button
-                          className="icon-button icon-button--danger"
-                          type="button"
-                          aria-label={`Delete ${target.label}`}
-                          onClick={() => {
-                            if (!deleteDisabled) {
-                              setTargetToDelete(target);
-                            }
-                          }}
-                          disabled={deleteDisabled}
-                          title={
-                            !canManageTargets
-                              ? "Admin role required to delete targets"
-                              : runsError
-                                ? "Delete disabled until run state reloads"
-                                : runsUnavailable
-                                  ? "Delete disabled until run state loads"
-                                  : hasActiveRuns
-                                    ? "Delete disabled while active runs exist"
-                                    : undefined
-                          }
-                        >
-                          <Icon source={TrashIcon} size={16} label={`Delete ${target.label}`} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Database targets"
+          columns={columns}
+          rows={targets}
+          rowKey={(target) => target.id}
+          empty="No targets configured."
+        />
       ) : null}
 
       {createOpen ? (

@@ -3,10 +3,11 @@ import { Link, useSearchParams } from "react-router-dom";
 import { LiveRunCard } from "../../components/LiveRunCard";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
+import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { useAbortRun, useResolveRun, useRuns } from "../../hooks/useRuns";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
-import { runStatusOptions, type RunStatus } from "../../types";
+import { runStatusOptions, type Run, type RunStatus } from "../../types";
 
 const formatDuration = (startedAt: string, endedAt?: string) => {
   if (!endedAt) {
@@ -56,6 +57,45 @@ export const RunListPage = () => {
     setSearchParams(next);
   };
 
+  const columns: DataTableColumn<Run>[] = [
+    { id: "target", header: "Target", sortValue: (run) => run.target_id, cell: (run) => run.target_id },
+    {
+      id: "source",
+      header: "Run source",
+      sortValue: (run) => run.patch_id,
+      cell: (run) => <Link to={`/runs/${run.id}`}>{run.patch_id}</Link>
+    },
+    {
+      id: "started",
+      header: "Started",
+      sortValue: (run) => run.started_at,
+      cell: (run) => new Date(run.started_at).toLocaleString()
+    },
+    { id: "duration", header: "Duration", cell: (run) => formatDuration(run.started_at, run.ended_at) },
+    {
+      id: "status",
+      header: "Status",
+      sortValue: (run) => run.status,
+      cell: (run) => <StatusBadge status={run.status} />
+    },
+    {
+      id: "action",
+      header: "Action",
+      cell: (run) =>
+        run.status === "failed" ? (
+          <button
+            className="button button--secondary button--small"
+            type="button"
+            disabled={!canMutate || resolveRun.isPending}
+            title={canMutate ? undefined : "Viewer role cannot resolve runs"}
+            onClick={() => resolveRun.mutate(run.id)}
+          >
+            {resolveRun.isPending ? "Resolving" : "Resolve"}
+          </button>
+        ) : null
+    }
+  ];
+
   return (
     <section className="page">
       <header className="page-header">
@@ -88,48 +128,14 @@ export const RunListPage = () => {
       {!isLoading && filteredRuns.length === 0 ? <div className="empty-state">No runs match this filter.</div> : null}
 
       {filteredRuns.length > 0 ? (
-        <div className="table-panel">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th scope="col">Target</th>
-                <th scope="col">Run source</th>
-                <th scope="col">Started</th>
-                <th scope="col">Duration</th>
-                <th scope="col">Status</th>
-                <th scope="col">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRuns.map((run) => (
-                <tr className={run.status === "failed" ? "row--failed" : undefined} key={run.id}>
-                  <td>{run.target_id}</td>
-                  <td>
-                    <Link to={`/runs/${run.id}`}>{run.patch_id}</Link>
-                  </td>
-                  <td>{new Date(run.started_at).toLocaleString()}</td>
-                  <td>{formatDuration(run.started_at, run.ended_at)}</td>
-                  <td>
-                    <StatusBadge status={run.status} />
-                  </td>
-                  <td>
-                    {run.status === "failed" ? (
-                      <button
-                        className="button button--secondary button--small"
-                        type="button"
-                        disabled={!canMutate || resolveRun.isPending}
-                        title={canMutate ? undefined : "Viewer role cannot resolve runs"}
-                        onClick={() => resolveRun.mutate(run.id)}
-                      >
-                        {resolveRun.isPending ? "Resolving" : "Resolve"}
-                      </button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Run history"
+          columns={columns}
+          rows={filteredRuns}
+          rowKey={(run) => run.id}
+          getRowState={(run) => ({ className: run.status === "failed" ? "row--failed" : undefined })}
+          empty="No runs match this filter."
+        />
       ) : null}
     </section>
   );

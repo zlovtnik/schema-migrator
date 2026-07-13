@@ -1,6 +1,11 @@
 package com.sslproxy.schema.db.postgres
 
-object PostgresStatements:
+import com.sslproxy.schema.db.DialectStatements
+
+object PostgresStatements extends DialectStatements:
+  val ensureSchemaControlSchemaSql: String =
+    "create schema if not exists schema_control"
+
   val customizationRegistrySql: String =
     """
     create table if not exists schema_control.object_customization_registry (
@@ -35,7 +40,7 @@ object PostgresStatements:
 
   val bootstrapSql: String =
     s"""
-    create schema if not exists schema_control;
+    $ensureSchemaControlSchemaSql;
 
     create table if not exists schema_control.schema_objects (
       id              bigserial primary key,
@@ -130,6 +135,13 @@ object PostgresStatements:
       updated_at = now()
     """
 
+  val lookupExistingSql: String =
+    """
+    select content_sha256, apply_status
+      from schema_control.schema_objects
+     where kind = ? and object_name = ?
+    """
+
   val applyLogSql: String =
     """
     insert into schema_control.schema_apply_log (
@@ -184,4 +196,34 @@ object PostgresStatements:
            to_char(last_updated_at, 'YYYY-MM-DD HH24:MI:SS') as last_updated_at,
            to_char(last_applied_at, 'YYYY-MM-DD HH24:MI:SS') as last_applied_at
       from schema_control.schema_ready
+    """
+
+  val fetchRollbackTargetSql: String =
+    """
+    select kind, object_name, source_file, content_sha256, rollback_file
+      from schema_control.schema_objects
+     where object_name = ?
+     order by kind, object_name
+    """
+
+  val deleteCustomerRowsSql: String =
+    "delete from schema_control.object_customization_registry where customer = ?"
+
+  val insertCustomizationRegistrySql: String =
+    """
+    insert into schema_control.object_customization_registry (
+      customer, object_schema, object_name, object_type, source_file,
+      core_hash, live_hash, status, drift_type, apply_status,
+      expected_ddl, actual_ddl, last_checked
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    on conflict (customer, object_schema, object_type, object_name) do update set
+      source_file = excluded.source_file,
+      core_hash = excluded.core_hash,
+      live_hash = excluded.live_hash,
+      status = excluded.status,
+      drift_type = excluded.drift_type,
+      apply_status = excluded.apply_status,
+      expected_ddl = excluded.expected_ddl,
+      actual_ddl = excluded.actual_ddl,
+      last_checked = excluded.last_checked
     """

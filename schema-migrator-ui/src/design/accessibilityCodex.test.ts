@@ -5,7 +5,6 @@ import { scaleTokens } from "./tokens";
 
 const srcDir = join(process.cwd(), "src");
 const globalStyles = readFileSync(join(srcDir, "styles.css"), "utf8");
-const buttonModuleStyles = readFileSync(join(srcDir, "components/ui/Button.module.css"), "utf8");
 const appShell = readFileSync(join(srcDir, "layouts/AppShell.tsx"), "utf8");
 const loginPage = readFileSync(join(srcDir, "pages/Login/LoginPage.tsx"), "utf8");
 const connectionForm = readFileSync(join(srcDir, "components/ConnectionForm.tsx"), "utf8");
@@ -48,8 +47,8 @@ describe("WCAG 2.2 AA UI codex", () => {
     expect(globalStyles).toContain("scroll-margin-block-start: var(--a11y-focus-obscured-offset);");
     expect(globalStyles).toContain("outline: var(--a11y-focus-ring-width) solid var(--color-accent-primary);");
     expect(globalStyles).toContain("outline-offset: var(--a11y-focus-ring-offset);");
-    expect(buttonModuleStyles).toContain("outline: var(--a11y-focus-ring-width) solid var(--color-accent-primary);");
-    expect(buttonModuleStyles).toContain("outline-offset: var(--a11y-focus-ring-offset);");
+    expect(globalStyles).toContain("outline: var(--a11y-focus-ring-width) solid var(--color-accent-primary);");
+    expect(globalStyles).toContain("outline-offset: var(--a11y-focus-ring-offset);");
   });
 
   it("keeps shared controls at or above the WCAG 2.2 AA target floor", () => {
@@ -58,9 +57,9 @@ describe("WCAG 2.2 AA UI codex", () => {
     expect(globalStyles).toContain("width: max(38px, var(--a11y-target-min));");
     expect(globalStyles).toContain("height: max(38px, var(--a11y-target-min));");
     expect(globalStyles).toContain("width: var(--a11y-target-min);");
-    expect(buttonModuleStyles).toContain("min-height: max(32px, var(--a11y-target-min));");
-    expect(buttonModuleStyles).toContain("min-height: max(40px, var(--a11y-target-min));");
-    expect(buttonModuleStyles).toContain("min-height: max(44px, var(--a11y-target-comfort));");
+    expect(globalStyles).toContain("min-height: max(32px, var(--a11y-target-min));");
+    expect(globalStyles).toContain("min-height: max(40px, var(--a11y-target-min));");
+    expect(globalStyles).toContain("min-height: max(44px, var(--a11y-target-comfort));");
   });
 
   it("does not block paste in authentication or credential fields", () => {

@@ -1,5 +1,3 @@
-import styles from "./ProgressBar.module.css";
-
 interface ProgressBarProps {
   value: number;
   max: number;
@@ -13,18 +11,18 @@ export const ProgressBar = ({ label, liveText, max, value }: ProgressBarProps) =
   const percentage = Math.round((safeValue / safeMax) * 100);
 
   return (
-    <div className={styles.progress}>
+    <div className="ui-progress">
       <div
         aria-label={label}
         aria-valuemax={safeMax}
         aria-valuemin={0}
         aria-valuenow={safeValue}
-        className={styles.track}
+        className="ui-progress__track"
         role="progressbar"
       >
-        <div className={styles.bar} style={{ width: `${percentage}%` }} />
+        <div className="ui-progress__bar" style={{ width: `${percentage}%` }} />
       </div>
-      <span className={styles.label}>{liveText ?? `${safeValue} of ${safeMax}`}</span>
+      <span className="ui-progress__label">{liveText ?? `${safeValue} of ${safeMax}`}</span>
       <span className="sr-only" aria-live="polite">
         {liveText ?? `${safeValue} of ${safeMax} complete`}
       </span>

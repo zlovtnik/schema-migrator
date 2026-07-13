@@ -8,14 +8,103 @@ import scala.util.control.NonFatal
 
 private[schema] object PostgresCatalogReader:
   import PostgresDriftAnalyzer.*
+  import PostgresDriftModel.ControlObject
 
-  final case class Snapshot(objects: List[LiveObject], control: ControlSnapshot)
+  final case class Snapshot(
+    objects: List[LiveObject],
+    control: ControlSnapshot,
+    expected: List[ExpectedObject] = Nil
+  )
 
-  def snapshot(config: JdbcConnectionConfig): IO[Snapshot] =
-    JdbcSupport.connection(config).use(connection => IO.blocking(readSnapshot(connection)))
+  def snapshot(config: JdbcConnectionConfig, expected: List[ExpectedObject] = Nil): IO[Snapshot] =
+    JdbcSupport.connection(config).use(connection => IO.blocking(readSnapshot(connection, expected)))
 
   def readSnapshot(connection: Connection): Snapshot =
     Snapshot(readPostgresObjects(connection), readControlObjects(connection))
+
+  def readSnapshot(connection: Connection, expected: List[ExpectedObject]): Snapshot =
+    val snapshot = readSnapshot(connection)
+    val (canonicalExpected, expectedWarnings) = canonicalizeExpectedViews(connection, expected)
+    val (canonicalControlObjects, controlWarnings) = canonicalizeControlViews(connection, snapshot.control.objects)
+    snapshot.copy(
+      control = snapshot.control.copy(
+        objects = canonicalControlObjects,
+        warnings = snapshot.control.warnings ++ expectedWarnings ++ controlWarnings
+      ),
+      expected = canonicalExpected
+    )
+
+  private def canonicalizeExpectedViews(
+    connection: Connection,
+    expected: List[ExpectedObject]
+  ): (List[ExpectedObject], List[String]) =
+    val results = expected.zipWithIndex.map { case (item, index) =>
+      item.expectedDdl match
+        case Some(ddl) if isViewType(item.key.objectType) =>
+          canonicalViewDdl(connection, item.key, ddl, s"expected_$index") match
+            case Right(canonical) => item.copy(expectedDdl = Some(canonical)) -> None
+            case Left(message) => item -> Some(message)
+        case _ => item -> None
+    }
+    results.map(_._1) -> results.flatMap(_._2).distinct
+
+  private def canonicalizeControlViews(
+    connection: Connection,
+    control: List[ControlObject]
+  ): (List[ControlObject], List[String]) =
+    val results = control.zipWithIndex.map { case (item, index) =>
+      item.expectedDdl match
+        case Some(ddl) if isViewType(item.key.objectType) =>
+          canonicalViewDdl(connection, item.key, ddl, s"control_$index") match
+            case Right(canonical) => item.copy(expectedDdl = Some(canonical)) -> None
+            case Left(message) => item -> Some(message)
+        case _ => item -> None
+    }
+    results.map(_._1) -> results.flatMap(_._2).distinct
+
+  private def canonicalViewDdl(
+    connection: Connection,
+    key: ObjectKey,
+    ddl: String,
+    probeSuffix: String
+  ): Either[String, String] =
+    PostgresDriftDdlParser
+      .viewQuery(ddl)
+      .toRight(s"could not isolate ${key.objectType} query for ${key.name}")
+      .flatMap { query =>
+        val probeName = s"bedrock_drift_$probeSuffix"
+        val create = connection.createStatement()
+        try
+          create.execute(s"create temporary view $probeName as $query")
+          val definition = readCanonicalView(connection, probeName)
+          definition
+            .toRight(s"Postgres did not return a canonical definition for ${key.objectType} ${key.name}")
+            .map(value => s"create view $probeName as $value")
+        catch
+          case NonFatal(error) =>
+            Left(s"could not canonicalize ${key.objectType} ${key.name} with Postgres: ${error.getMessage}")
+        finally
+          create.close()
+          dropTemporaryView(connection, probeName)
+      }
+
+  private def readCanonicalView(connection: Connection, probeName: String): Option[String] =
+    val statement = connection.prepareStatement("select pg_get_viewdef(?::regclass, true)")
+    try
+      statement.setString(1, s"pg_temp.$probeName")
+      val resultSet = statement.executeQuery()
+      try Option.when(resultSet.next())(resultSet.getString(1)).flatMap(Option(_))
+      finally resultSet.close()
+    finally statement.close()
+
+  private def dropTemporaryView(connection: Connection, probeName: String): Unit =
+    val statement = connection.createStatement()
+    try statement.execute(s"drop view if exists pg_temp.$probeName")
+    catch case NonFatal(_) => ()
+    finally statement.close()
+
+  private def isViewType(objectType: String): Boolean =
+    objectType == "view" || objectType == "materialized_view"
 
   private def readPostgresObjects(connection: Connection): List[LiveObject] =
     JdbcSupport.queryList(connection, postgresCatalogSql)(readLiveObject)

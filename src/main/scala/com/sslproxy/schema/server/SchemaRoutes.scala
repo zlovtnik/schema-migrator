@@ -179,9 +179,9 @@ object SchemaRoutes:
             )
           )
         case DbKind.Postgres =>
-          postgresSnapshot(target).attempt.map {
+          postgresSnapshot(target, expected.objects).attempt.map {
             case Right(snapshot) =>
-              val objects = mergeCatalog(now, expected.objects, snapshot.objects, snapshot.control)
+              val objects = mergeCatalog(now, snapshot.expected, snapshot.objects, snapshot.control)
               SchemaCatalogResponse(
                 target_id = target.target.id,
                 db_kind = "postgres",
@@ -235,7 +235,7 @@ object SchemaRoutes:
             )
           )
         case DbKind.Postgres =>
-          postgresSnapshot(target).attempt.map {
+          postgresSnapshot(target, expected.objects).attempt.map {
             case Right(snapshot) =>
               DriftResponse(
                 target_id = target.target.id,
@@ -244,7 +244,7 @@ object SchemaRoutes:
                 checked_at = now,
                 control_summary = snapshot.control.summary,
                 control_objects = snapshot.control.rows,
-                items = driftItems(now, expected.objects, snapshot.objects, snapshot.control),
+                items = driftItems(now, snapshot.expected, snapshot.objects, snapshot.control),
                 warnings = expected.warnings ++ snapshot.control.warnings
               )
             case Left(error) =>
@@ -295,8 +295,8 @@ object SchemaRoutes:
           case DbKind.Postgres =>
             (for
               expected <- expectedObjects(config, kind, now, targetId, sqlFileStore)
-              snapshot <- postgresSnapshot(target)
-              drift = driftItems(now, expected.objects, snapshot.objects, snapshot.control)
+              snapshot <- postgresSnapshot(target, expected.objects)
+              drift = driftItems(now, snapshot.expected, snapshot.objects, snapshot.control)
               runnableSourceFiles = orderedRunnableSources(expected.objects, drift)
               selectedSourceFiles = selectedRunnableSources(payload.source_files, runnableSourceFiles)
               result <-
@@ -468,12 +468,15 @@ object SchemaRoutes:
       content = Some(String(bytes, StandardCharsets.UTF_8))
     )
 
-  private def postgresSnapshot(target: StoredTarget): IO[PostgresCatalogReader.Snapshot] =
+  private def postgresSnapshot(
+    target: StoredTarget,
+    expected: List[ExpectedObject]
+  ): IO[PostgresCatalogReader.Snapshot] =
     IO.blocking {
       Class.forName("org.postgresql.Driver")
       val connection = connect(target)
       try
-        PostgresCatalogReader.readSnapshot(connection)
+        PostgresCatalogReader.readSnapshot(connection, expected)
       finally connection.close()
     }
 

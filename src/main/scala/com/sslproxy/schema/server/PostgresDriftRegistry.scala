@@ -32,7 +32,7 @@ private[schema] object PostgresDriftRegistry:
     val oldAutoCommit = connection.getAutoCommit
     connection.setAutoCommit(false)
     try
-      JdbcSupport.executeStatement(connection, "create schema if not exists schema_control")
+      JdbcSupport.executeStatement(connection, PostgresStatements.ensureSchemaControlSchemaSql)
       JdbcSupport.executeStatement(connection, PostgresStatements.customizationRegistrySql)
       deleteCustomerRows(connection, customer)
       insertRows(connection, registryRows(customer, catalog, drift))
@@ -46,12 +46,12 @@ private[schema] object PostgresDriftRegistry:
   private def deleteCustomerRows(connection: Connection, customer: String): Unit =
     JdbcSupport.executePrepared(
       connection,
-      "delete from schema_control.object_customization_registry where customer = ?"
+      PostgresStatements.deleteCustomerRowsSql
     )(_.setString(1, customer))
 
   private def insertRows(connection: Connection, rows: List[RegistryRow]): Unit =
     if rows.nonEmpty then
-      val statement = connection.prepareStatement(insertSql)
+      val statement = connection.prepareStatement(PostgresStatements.insertCustomizationRegistrySql)
       try
         rows.foreach(row => bindRow(statement, row))
         statement.executeBatch()
@@ -124,32 +124,3 @@ private[schema] object PostgresDriftRegistry:
     actualDdl: Option[String],
     lastChecked: String
   )
-
-  private val insertSql: String =
-    """
-    insert into schema_control.object_customization_registry (
-      customer,
-      object_schema,
-      object_name,
-      object_type,
-      source_file,
-      core_hash,
-      live_hash,
-      status,
-      drift_type,
-      apply_status,
-      expected_ddl,
-      actual_ddl,
-      last_checked
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    on conflict (customer, object_schema, object_type, object_name) do update set
-      source_file = excluded.source_file,
-      core_hash = excluded.core_hash,
-      live_hash = excluded.live_hash,
-      status = excluded.status,
-      drift_type = excluded.drift_type,
-      apply_status = excluded.apply_status,
-      expected_ddl = excluded.expected_ddl,
-      actual_ddl = excluded.actual_ddl,
-      last_checked = excluded.last_checked
-    """

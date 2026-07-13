@@ -1,6 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Spinner } from "./Spinner";
-import styles from "./Button.module.css";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -28,7 +27,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const isDisabled = disabled || loading;
-    const classes = [styles.button, styles[variant], styles[size], className].filter(Boolean).join(" ");
+    const classes = ["ui-button", `ui-button--${variant}`, `ui-button--${size}`, className].filter(Boolean).join(" ");
 
     return (
       <button
