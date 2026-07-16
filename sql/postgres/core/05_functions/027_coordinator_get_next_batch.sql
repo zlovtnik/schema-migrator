@@ -16,7 +16,9 @@ begin
            event.payload as stored_payload
       from sync_batches batch
       join sync_jobs job on job.job_id = batch.job_id
-      left join sync_events event on event.dedupe_key = batch.dedupe_key
+      left join sync_events event
+        on event.dedupe_key = batch.dedupe_key
+       and event.stream_name = batch.stream_name
      where batch.status = 'pending'
        and job.stream_name in (
              select btrim(configured.stream_name)

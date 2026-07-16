@@ -14,6 +14,16 @@ begin
     return 0;
   end if;
 
+  if exists (
+    select 1
+    from jsonb_to_recordset(p_payload) as item(job_id bigint)
+    where item.job_id is not null
+    group by item.job_id
+    having count(*) > 1
+  ) then
+    raise exception 'vec_complete_embedding_batch payload contains duplicate job_id';
+  end if;
+
   with payload_rows as materialized (
     select *
     from jsonb_to_recordset(p_payload) as r(

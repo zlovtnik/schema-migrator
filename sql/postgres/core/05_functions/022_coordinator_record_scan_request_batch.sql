@@ -13,8 +13,11 @@ as $$
 declare
   v_recorded_count integer := 0;
 begin
-  if cardinality(p_requests) <> cardinality(p_payloads)
-     or cardinality(p_requests) <> cardinality(p_payload_sha256s) then
+  if p_requests is null
+     or p_payloads is null
+     or p_payload_sha256s is null
+     or cardinality(p_requests) is distinct from cardinality(p_payloads)
+     or cardinality(p_requests) is distinct from cardinality(p_payload_sha256s) then
     raise exception 'record_scan_request_batch array length mismatch';
   end if;
 
@@ -117,7 +120,7 @@ begin
            now(),
            now()
       from valid
-    on conflict (dedupe_key)
+    on conflict (dedupe_key, stream_name)
     do update set
       observed_at = excluded.observed_at,
       payload_ref = excluded.payload_ref,

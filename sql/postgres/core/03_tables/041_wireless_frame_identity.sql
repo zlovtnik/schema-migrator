@@ -101,7 +101,10 @@ as $$
 begin
   update wireless_frame_identity
      set search_tsv = wireless_frame_identity.search_tsv
-   where dedupe_key = new.dedupe_key;
+   where dedupe_key = case when tg_op = 'DELETE' then old.dedupe_key else new.dedupe_key end;
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
   return new;
 end;
 $$;
@@ -119,6 +122,11 @@ for each row execute function wireless_frame_identity_refresh_search_tsv();
 drop trigger if exists wireless_frame_network_update_refresh_identity_search_tsv on wireless_frame_network;
 create trigger wireless_frame_network_update_refresh_identity_search_tsv
 after update of app_protocol, src_ip, dst_ip on wireless_frame_network
+for each row execute function wireless_frame_identity_refresh_search_tsv();
+
+drop trigger if exists wireless_frame_network_delete_refresh_identity_search_tsv on wireless_frame_network;
+create trigger wireless_frame_network_delete_refresh_identity_search_tsv
+after delete on wireless_frame_network
 for each row execute function wireless_frame_identity_refresh_search_tsv();
 
 update wireless_frame_identity

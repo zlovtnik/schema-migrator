@@ -47,6 +47,7 @@ begin
       priority = 0,
       content_sha256 = null,
       updated_at = now()
+    where vec_embedding_jobs.status not in ('pending', 'leased')
     returning job_id
   ),
   leases_reset as (

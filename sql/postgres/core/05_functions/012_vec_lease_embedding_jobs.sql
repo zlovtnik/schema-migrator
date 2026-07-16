@@ -79,7 +79,6 @@ begin
         job.priority asc,
         lease.due_at asc,
         job.job_id asc
-      for update of job, lease skip locked
       limit greatest(p_limit, 1)
     ) candidate
   ),
@@ -103,6 +102,23 @@ begin
     order by reclaim_rank, kind_round, kind_rank, priority, due_at, job_id
     limit greatest(p_limit, 1)
   ),
+  locked as materialized (
+    select selected.job_id
+    from selected
+    join vec_embedding_jobs job using (job_id)
+    join vec_embedding_job_leases lease using (job_id)
+    where lease.attempts < lease.max_attempts
+      and lease.due_at <= now()
+      and (
+        job.status in ('pending', 'failed')
+        or (
+          job.status = 'leased'
+          and lease.leased_at < now() - p_lease
+        )
+      )
+    order by selected.job_id
+    for update of job, lease skip locked
+  ),
   leases_updated as (
     update vec_embedding_job_leases lease
        set attempts = lease.attempts + 1,
@@ -110,8 +126,8 @@ begin
            leased_at = now(),
            locked_by = p_worker_name,
            last_error = null
-      from selected
-     where lease.job_id = selected.job_id
+      from locked
+     where lease.job_id = locked.job_id
     returning lease.*
   ),
   jobs_updated as (

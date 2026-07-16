@@ -1,6 +1,6 @@
 -- object: vec_materialize_similarity_pairs
 -- folder: functions
--- depends_on: vec_similarity_pairs, sync_cursors, vec_job_locks
+-- depends_on: vec_similarity_pairs, vec_upsert_similarity_pair_batch, sync_cursors, vec_job_locks
 drop function if exists vec_materialize_similarity_pairs(text, integer, double precision, double precision);
 drop function if exists vec_materialize_similarity_pairs(text, integer, double precision, double precision, double precision);
 drop function if exists vec_materialize_similarity_pairs(text, integer, double precision, double precision, double precision, double precision);
@@ -62,20 +62,32 @@ begin
       and neighbor.cosine_distance <= p_event_dup_distance_threshold
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   )
-  select count(*) into v_count
-  from (
-    select vec_upsert_similarity_pair(
-      'event_event', p_model, 'event',
-      candidates.left_embedding_id, candidates.right_embedding_id,
-      left_e.source_table, left_e.source_key,
-      right_e.source_table, right_e.source_key,
-      candidates.cosine_distance, 1 - candidates.cosine_distance, 1,
-      jsonb_build_object('threshold', p_event_dup_distance_threshold, 'detector', 'near_duplicate_event')
-    ) as pair_id
-    from candidates
-    join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
-    join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id
-  ) upserted;
+  select vec_upsert_similarity_pair_batch(
+    coalesce(
+      jsonb_agg(jsonb_build_object(
+        'pair_kind', 'event_event',
+        'embedding_model', p_model,
+        'embedding_kind', 'event',
+        'left_embedding_id', candidates.left_embedding_id,
+        'right_embedding_id', candidates.right_embedding_id,
+        'left_source_table', left_e.source_table,
+        'left_source_key', left_e.source_key,
+        'right_source_table', right_e.source_table,
+        'right_source_key', right_e.source_key,
+        'cosine_distance', candidates.cosine_distance,
+        'cosine_similarity', 1 - candidates.cosine_distance,
+        'rank', 1,
+        'evidence', jsonb_build_object(
+          'threshold', p_event_dup_distance_threshold,
+          'detector', 'near_duplicate_event'
+        )
+      )),
+      '[]'::jsonb
+    )
+  ) into v_count
+  from candidates
+  join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
+  join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id;
   v_total := v_total + v_count;
 
   with last_run as materialized (
@@ -114,20 +126,29 @@ begin
       and neighbor.cosine_distance <= greatest(p_event_dup_distance_threshold * 3, p_event_dup_distance_threshold)
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   )
-  select count(*) into v_count
-  from (
-    select vec_upsert_similarity_pair(
-      'cross_sensor', p_model, 'event',
-      candidates.left_embedding_id, candidates.right_embedding_id,
-      left_e.source_table, left_e.source_key,
-      right_e.source_table, right_e.source_key,
-      candidates.cosine_distance, 1 - candidates.cosine_distance, 1,
-      jsonb_build_object('detector', 'cross_sensor_event_cluster')
-    ) as pair_id
-    from candidates
-    join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
-    join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id
-  ) upserted;
+  select vec_upsert_similarity_pair_batch(
+    coalesce(
+      jsonb_agg(jsonb_build_object(
+        'pair_kind', 'cross_sensor',
+        'embedding_model', p_model,
+        'embedding_kind', 'event',
+        'left_embedding_id', candidates.left_embedding_id,
+        'right_embedding_id', candidates.right_embedding_id,
+        'left_source_table', left_e.source_table,
+        'left_source_key', left_e.source_key,
+        'right_source_table', right_e.source_table,
+        'right_source_key', right_e.source_key,
+        'cosine_distance', candidates.cosine_distance,
+        'cosine_similarity', 1 - candidates.cosine_distance,
+        'rank', 1,
+        'evidence', jsonb_build_object('detector', 'cross_sensor_event_cluster')
+      )),
+      '[]'::jsonb
+    )
+  ) into v_count
+  from candidates
+  join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
+  join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id;
   v_total := v_total + v_count;
 
   with last_run as materialized (
@@ -166,20 +187,32 @@ begin
       and neighbor.cosine_distance <= (1 - p_behaviour_similarity_threshold)
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   )
-  select count(*) into v_count
-  from (
-    select vec_upsert_similarity_pair(
-      'device_device', p_model, 'behaviour_window',
-      candidates.left_embedding_id, candidates.right_embedding_id,
-      left_e.source_table, left_e.source_key,
-      right_e.source_table, right_e.source_key,
-      candidates.cosine_distance, 1 - candidates.cosine_distance, 1,
-      jsonb_build_object('threshold', p_behaviour_similarity_threshold, 'detector', 'mac_rotation_suspected')
-    ) as pair_id
-    from candidates
-    join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
-    join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id
-  ) upserted;
+  select vec_upsert_similarity_pair_batch(
+    coalesce(
+      jsonb_agg(jsonb_build_object(
+        'pair_kind', 'device_device',
+        'embedding_model', p_model,
+        'embedding_kind', 'behaviour_window',
+        'left_embedding_id', candidates.left_embedding_id,
+        'right_embedding_id', candidates.right_embedding_id,
+        'left_source_table', left_e.source_table,
+        'left_source_key', left_e.source_key,
+        'right_source_table', right_e.source_table,
+        'right_source_key', right_e.source_key,
+        'cosine_distance', candidates.cosine_distance,
+        'cosine_similarity', 1 - candidates.cosine_distance,
+        'rank', 1,
+        'evidence', jsonb_build_object(
+          'threshold', p_behaviour_similarity_threshold,
+          'detector', 'mac_rotation_suspected'
+        )
+      )),
+      '[]'::jsonb
+    )
+  ) into v_count
+  from candidates
+  join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
+  join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id;
   v_total := v_total + v_count;
 
   with last_run as materialized (
@@ -214,20 +247,32 @@ begin
       and neighbor.cosine_distance <= p_sequence_similarity_threshold
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   )
-  select count(*) into v_count
-  from (
-    select vec_upsert_similarity_pair(
-      'sequence_sequence', p_model, 'frame_sequence',
-      candidates.left_embedding_id, candidates.right_embedding_id,
-      left_e.source_table, left_e.source_key,
-      right_e.source_table, right_e.source_key,
-      candidates.cosine_distance, 1 - candidates.cosine_distance, 1,
-      jsonb_build_object('detector', 'similar_frame_sequence', 'threshold', p_sequence_similarity_threshold)
-    ) as pair_id
-    from candidates
-    join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
-    join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id
-  ) upserted;
+  select vec_upsert_similarity_pair_batch(
+    coalesce(
+      jsonb_agg(jsonb_build_object(
+        'pair_kind', 'sequence_sequence',
+        'embedding_model', p_model,
+        'embedding_kind', 'frame_sequence',
+        'left_embedding_id', candidates.left_embedding_id,
+        'right_embedding_id', candidates.right_embedding_id,
+        'left_source_table', left_e.source_table,
+        'left_source_key', left_e.source_key,
+        'right_source_table', right_e.source_table,
+        'right_source_key', right_e.source_key,
+        'cosine_distance', candidates.cosine_distance,
+        'cosine_similarity', 1 - candidates.cosine_distance,
+        'rank', 1,
+        'evidence', jsonb_build_object(
+          'detector', 'similar_frame_sequence',
+          'threshold', p_sequence_similarity_threshold
+        )
+      )),
+      '[]'::jsonb
+    )
+  ) into v_count
+  from candidates
+  join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
+  join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id;
   v_total := v_total + v_count;
 
   with last_run as materialized (
@@ -267,20 +312,32 @@ begin
       and neighbor.cosine_distance <= p_timing_similarity_threshold
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   )
-  select count(*) into v_count
-  from (
-    select vec_upsert_similarity_pair(
-      'timing_timing', p_model, 'timing_profile',
-      candidates.left_embedding_id, candidates.right_embedding_id,
-      left_e.source_table, left_e.source_key,
-      right_e.source_table, right_e.source_key,
-      candidates.cosine_distance, 1 - candidates.cosine_distance, 1,
-      jsonb_build_object('detector', 'timing_fingerprint_match', 'threshold', p_timing_similarity_threshold)
-    ) as pair_id
-    from candidates
-    join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
-    join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id
-  ) upserted;
+  select vec_upsert_similarity_pair_batch(
+    coalesce(
+      jsonb_agg(jsonb_build_object(
+        'pair_kind', 'timing_timing',
+        'embedding_model', p_model,
+        'embedding_kind', 'timing_profile',
+        'left_embedding_id', candidates.left_embedding_id,
+        'right_embedding_id', candidates.right_embedding_id,
+        'left_source_table', left_e.source_table,
+        'left_source_key', left_e.source_key,
+        'right_source_table', right_e.source_table,
+        'right_source_key', right_e.source_key,
+        'cosine_distance', candidates.cosine_distance,
+        'cosine_similarity', 1 - candidates.cosine_distance,
+        'rank', 1,
+        'evidence', jsonb_build_object(
+          'detector', 'timing_fingerprint_match',
+          'threshold', p_timing_similarity_threshold
+        )
+      )),
+      '[]'::jsonb
+    )
+  ) into v_count
+  from candidates
+  join vec_embeddings_expanded left_e on left_e.embedding_id = candidates.left_embedding_id
+  join vec_embeddings_expanded right_e on right_e.embedding_id = candidates.right_embedding_id;
   v_total := v_total + v_count;
 
   insert into sync_cursors (stream_name, cursor_value, updated_at)

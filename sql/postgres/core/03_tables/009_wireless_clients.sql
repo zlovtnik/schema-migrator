@@ -9,5 +9,9 @@ create table if not exists wireless_clients (
   last_seen timestamptz not null default now(),
   probe_count integer not null default 1,
   location_id text,
+  last_probe_batch_id text,
   primary key (ssid, client_mac)
 );
+
+alter table wireless_clients
+  add column if not exists last_probe_batch_id text;

@@ -38,7 +38,10 @@ begin
     from payload_rows payload
     join vec_embedding_jobs job on job.job_id = payload.job_id
     join vec_embedding_job_leases lease on lease.job_id = job.job_id
-    where lease.lease_token is not distinct from payload.lease_token
+    where job.status = 'leased'
+      and payload.lease_token is not null
+      and lease.lease_token is not null
+      and lease.lease_token = payload.lease_token
     order by job.job_id
     for update of job, lease skip locked
   ),

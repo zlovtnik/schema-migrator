@@ -29,6 +29,7 @@ export const AuditLogPage = () => {
     [actor, entityId, entityType, limit, targetId]
   );
   const { data: events = [], isLoading, error } = useAuditEvents(filters, canViewAudit);
+  const { data: referenceEvents = [] } = useAuditEvents({ limit: 250 }, canViewAudit);
   const { data: patches = [] } = usePatches();
   const { data: runs = [] } = useRuns();
   const { data: targets = [] } = useTargets();
@@ -114,7 +115,7 @@ export const AuditLogPage = () => {
         <ActivityTable
           events={events}
           patches={patches}
-          referenceEvents={events}
+          referenceEvents={referenceEvents}
           runs={runs}
           targets={targets}
           empty="No audit events match these filters."

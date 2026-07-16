@@ -35,7 +35,7 @@ begin
     select 1
       from incoming
       join configured_streams on configured_streams.stream_name = incoming.stream_name
-     where nullif(dedupe_key, '') is null
+     where nullif(btrim(dedupe_key), '') is null
   ) then
     raise exception 'scan request missing dedupe_key';
   end if;
@@ -54,7 +54,7 @@ begin
     select 1
       from incoming
       join configured_streams on configured_streams.stream_name = incoming.stream_name
-     where nullif(payload_ref, '') is null
+     where nullif(btrim(payload_ref), '') is null
   ) then
     raise exception 'scan request missing payload_ref';
   end if;
@@ -93,9 +93,9 @@ begin
        and typed.observed_at is not null
   ),
   deduplicated as (
-    select distinct on (valid.dedupe_key) valid.*
+    select distinct on (valid.dedupe_key, valid.stream_name) valid.*
       from valid
-     order by valid.dedupe_key, valid.input_ordinality desc
+     order by valid.dedupe_key, valid.stream_name, valid.input_ordinality desc
   ),
   upserted as (
     insert into sync_events (
@@ -127,7 +127,7 @@ begin
            now(),
            now()
       from deduplicated
-    on conflict (dedupe_key)
+    on conflict (dedupe_key, stream_name)
     do update set
       observed_at = excluded.observed_at,
       payload_ref = excluded.payload_ref,
@@ -155,7 +155,7 @@ begin
     deduplicated.payload
   )
   from (
-    select distinct on (raw.dedupe_key)
+    select distinct on (raw.dedupe_key, raw.stream_name)
            raw.dedupe_key,
            raw.stream_name,
            raw.payload
@@ -184,7 +184,7 @@ begin
        and event.status in ('pending', 'failed')
        and tombstone.dedupe_key is null
        and coordinator.safe_timestamptz(raw.request->>'observed_at') is not null
-     order by raw.dedupe_key, raw.input_ordinality desc
+     order by raw.dedupe_key, raw.stream_name, raw.input_ordinality desc
   ) deduplicated
   where deduplicated.stream_name = 'wireless.audit';
 

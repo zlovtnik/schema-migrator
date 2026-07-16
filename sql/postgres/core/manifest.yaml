@@ -80,6 +80,7 @@ apply_order:
   - 05_functions/012a_vec_upsert_embedding.sql
   - 05_functions/013_vec_complete_embedding_batch.sql
   - 05_functions/013a_vec_upsert_similarity_pair.sql
+  - 05_functions/013b_vec_upsert_similarity_pair_batch.sql
   - 05_functions/014_vec_materialize_similarity_pairs.sql
   - 05_functions/015_vec_reembed_changed_jobs.sql
   - 05_functions/016_vec_release_expired_leases.sql

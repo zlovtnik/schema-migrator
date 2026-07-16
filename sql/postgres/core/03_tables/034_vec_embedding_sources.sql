@@ -104,25 +104,41 @@ returns trigger
 language plpgsql
 as $$
 begin
-  if pg_trigger_depth() > 1 or not exists (
+  if pg_trigger_depth() > 1 then
+    if tg_op = 'DELETE' then
+      return old;
+    end if;
+    return new;
+  end if;
+
+  if not exists (
     select 1 from information_schema.columns
     where table_schema = current_schema()
       and table_name = 'vec_embeddings'
       and column_name = 'source_table'
   ) then
+    if tg_op = 'DELETE' then
+      return old;
+    end if;
     return new;
+  end if;
+
+  if tg_op = 'DELETE' then
+    raise exception 'vec_embedding_sources cannot be deleted directly while legacy vec_embeddings source columns are present';
   end if;
 
   execute $sync$
     update vec_embeddings set
       source_table = $1, source_key = $2, source_observed_at = $3,
       source_stream_name = $4, source_sensor_id = $5,
-      source_location_id = $6, source_mac = $7
-    where embedding_id = $8
+      source_location_id = $6, source_mac = $7,
+      embedding_model = $8, embedding_kind = $9
+    where embedding_id = $10
   $sync$ using
     new.source_table, new.source_key, new.source_observed_at,
     new.source_stream_name, new.source_sensor_id,
-    new.source_location_id, new.source_mac, new.embedding_id;
+    new.source_location_id, new.source_mac,
+    new.embedding_model, new.embedding_kind, new.embedding_id;
   return new;
 end;
 $$;
@@ -134,5 +150,5 @@ for each row execute function vec_embeddings_legacy_to_source();
 
 drop trigger if exists vec_embedding_sources_to_legacy on vec_embedding_sources;
 create trigger vec_embedding_sources_to_legacy
-after insert or update on vec_embedding_sources
+after insert or update or delete on vec_embedding_sources
 for each row execute function vec_embedding_sources_to_legacy();
