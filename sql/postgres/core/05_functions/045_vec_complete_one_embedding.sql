@@ -5,13 +5,14 @@ create or replace function vec_complete_one_embedding(p_payload jsonb)
 returns boolean
 language plpgsql
 as $$
+declare
+  v_completed boolean := false;
 begin
   if p_payload is null or jsonb_typeof(p_payload) <> 'object' then
     return false;
   end if;
 
-  return exists (
-    with payload as materialized (
+  with payload as materialized (
       select *
       from jsonb_to_record(p_payload) as r(
         job_id bigint,
@@ -89,7 +90,9 @@ begin
        where lease.job_id = job_completed.job_id
       returning lease.job_id
     )
-    select 1 from lease_completed
-  );
+  select exists (select 1 from lease_completed)
+    into v_completed;
+
+  return v_completed;
 end;
 $$;
