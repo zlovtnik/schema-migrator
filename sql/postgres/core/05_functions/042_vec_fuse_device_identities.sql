@@ -26,10 +26,10 @@ begin
       select
         lower(sp.left_source_mac) as mac_a,
         lower(sp.right_source_mac) as mac_b
-      from vec_similarity_pairs sp
-      join vec_behaviour_snapshots left_snapshot
+      from vec_similarity_pairs_expanded sp
+      join vec_behaviour_snapshots_expanded left_snapshot
         on left_snapshot.snapshot_id::text = sp.left_source_key
-      join vec_behaviour_snapshots right_snapshot
+      join vec_behaviour_snapshots_expanded right_snapshot
         on right_snapshot.snapshot_id::text = sp.right_source_key
       where sp.pair_kind = 'device_device'
         and sp.embedding_kind = 'behaviour_window'
@@ -46,10 +46,10 @@ begin
       select
         lower(sp.left_source_mac) as mac_a,
         lower(sp.right_source_mac) as mac_b
-      from vec_similarity_pairs sp
-      join vec_timing_profiles left_profile
+      from vec_similarity_pairs_expanded sp
+      join vec_timing_profiles_expanded left_profile
         on left_profile.profile_id::text = sp.left_source_key
-      join vec_timing_profiles right_profile
+      join vec_timing_profiles_expanded right_profile
         on right_profile.profile_id::text = sp.right_source_key
       where sp.pair_kind = 'timing_timing'
         and sp.embedding_kind = 'timing_profile'

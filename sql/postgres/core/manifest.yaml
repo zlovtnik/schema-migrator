@@ -35,6 +35,17 @@ apply_order:
   - 03_tables/029_sync_event_payload_archives.sql
   - 03_tables/030_sync_event_tombstones.sql
   - 03_tables/031_device_graph_workmap_hardening.sql
+  - 03_tables/032_vec_timing_profile_stats.sql
+  - 03_tables/033_vec_behaviour_snapshot_stats.sql
+  - 03_tables/034_vec_embedding_sources.sql
+  - 03_tables/035_vec_embedding_job_leases.sql
+  - 03_tables/036_vec_similarity_pair_meta.sql
+  - 03_tables/037_wireless_frame_radio.sql
+  - 03_tables/038_wireless_frame_qos.sql
+  - 03_tables/039_wireless_frame_network.sql
+  - 03_tables/040_wireless_frame_app_signals.sql
+  - 03_tables/041_wireless_frame_identity.sql
+  - 03_tables/042_wireless_frame_security.sql
   - 04_indexes/001_sync_events_indexes.sql
   - 04_indexes/002_wireless_frames_indexes.sql
   - 04_indexes/003_vec_embeddings_indexes.sql
@@ -65,7 +76,9 @@ apply_order:
   - 05_functions/010_vec_build_behaviour_snapshots.sql
   - 05_functions/011_vec_enqueue_embedding_jobs.sql
   - 05_functions/012_vec_lease_embedding_jobs.sql
+  - 05_functions/012a_vec_upsert_embedding.sql
   - 05_functions/013_vec_complete_embedding_batch.sql
+  - 05_functions/013a_vec_upsert_similarity_pair.sql
   - 05_functions/014_vec_materialize_similarity_pairs.sql
   - 05_functions/015_vec_reembed_changed_jobs.sql
   - 05_functions/016_vec_release_expired_leases.sql
@@ -106,6 +119,13 @@ apply_order:
   - 05_functions/051_vec_device_graph_retention.sql
   - 05_functions/052_coordinator_flush_probe_batch_bigint.sql
   - 05_functions/053_coordinator_record_scan_request_batch_tombstone_frames.sql
+  - 05_functions/054_coordinator_record_scan_request_batch_deduplicate.sql
+  - 06_views/000_wireless_frames_expanded.sql
+  - 06_views/000a_vec_embeddings_expanded.sql
+  - 06_views/000b_vec_behaviour_snapshots_expanded.sql
+  - 06_views/000c_vec_embedding_jobs_expanded.sql
+  - 06_views/000d_vec_similarity_pairs_expanded.sql
+  - 06_views/000e_vec_timing_profiles_expanded.sql
   - 06_views/001_sync_events_expanded.sql
   - 06_views/002_v_wireless_audit_with_devices.sql
   - 06_views/003_v_wireless_threats.sql

@@ -24,7 +24,7 @@ declare
 begin
   with doomed as (
     select pair_id
-    from vec_similarity_pairs
+    from vec_similarity_pairs_expanded
     where computed_at < now() - make_interval(days => greatest(coalesce(p_similarity_pair_days, 14), 1))
     order by computed_at asc, pair_id asc
     limit greatest(coalesce(p_limit, 5000), 1)
@@ -39,7 +39,7 @@ begin
 
   with doomed as (
     select embedding_id
-    from vec_embeddings
+    from vec_embeddings_expanded
     where embedding_kind = 'event'
       and coalesce(source_observed_at, embedded_at) < now() - make_interval(days => greatest(coalesce(p_event_embedding_days, 14), 1))
     order by coalesce(source_observed_at, embedded_at) asc, embedding_id asc
@@ -55,7 +55,7 @@ begin
 
   with doomed as (
     select embedding_id
-    from vec_embeddings
+    from vec_embeddings_expanded
     where embedding_kind in ('behaviour_window', 'baseline_profile', 'frame_sequence', 'infrastructure_subgraph', 'timing_profile')
       and coalesce(source_observed_at, embedded_at) < now() - make_interval(days => greatest(coalesce(p_rollup_embedding_days, 30), 1))
     order by coalesce(source_observed_at, embedded_at) asc, embedding_id asc
@@ -71,7 +71,7 @@ begin
 
   with doomed as (
     select job_id
-    from vec_embedding_jobs
+    from vec_embedding_jobs_expanded
     where status = 'completed'
       and coalesce(completed_at, updated_at) < now() - make_interval(days => greatest(coalesce(p_completed_job_days, 7), 1))
     order by coalesce(completed_at, updated_at) asc, job_id asc
@@ -87,7 +87,7 @@ begin
 
   with doomed as (
     select job_id
-    from vec_embedding_jobs
+    from vec_embedding_jobs_expanded
     where status = 'failed'
       and updated_at < now() - make_interval(days => greatest(coalesce(p_failed_job_days, 30), 1))
     order by updated_at asc, job_id asc
@@ -103,7 +103,7 @@ begin
 
   with doomed as (
     select snapshot_id
-    from vec_behaviour_snapshots
+    from vec_behaviour_snapshots_expanded
     where window_end < now() - make_interval(days => greatest(coalesce(p_rollup_embedding_days, 30), 1))
     order by window_end asc, snapshot_id asc
     limit greatest(coalesce(p_limit, 5000), 1)
@@ -133,7 +133,7 @@ begin
 
   with doomed as (
     select profile_id
-    from vec_timing_profiles
+    from vec_timing_profiles_expanded
     where window_end < now() - make_interval(days => greatest(coalesce(p_rollup_embedding_days, 30), 1))
     order by window_end asc, profile_id asc
     limit greatest(coalesce(p_limit, 5000), 1)
@@ -158,4 +158,3 @@ begin
   );
 end;
 $$;
-

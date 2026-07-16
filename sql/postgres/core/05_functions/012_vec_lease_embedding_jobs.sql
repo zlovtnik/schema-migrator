@@ -1,22 +1,37 @@
 -- object: vec_lease_embedding_jobs
 -- folder: functions
--- depends_on: vec_embedding_jobs, vec_worker_state
+-- depends_on: vec_embedding_jobs, vec_embedding_job_leases, vec_worker_state
+drop function if exists vec_lease_embedding_jobs(integer, text, interval);
+
 create or replace function vec_lease_embedding_jobs(
   p_limit integer default 25,
   p_worker_name text default 'vector-worker',
   p_lease interval default interval '5 minutes'
 )
-returns setof vec_embedding_jobs
+returns table (
+  job_id bigint,
+  source_table text,
+  source_key text,
+  embedding_model text,
+  embedding_kind text,
+  status text,
+  priority integer,
+  attempts integer,
+  max_attempts integer,
+  lease_token text,
+  leased_at timestamptz,
+  locked_by text,
+  due_at timestamptz,
+  content_sha256 text,
+  last_error text,
+  completed_at timestamptz,
+  created_at timestamptz,
+  updated_at timestamptz
+)
 language plpgsql
 as $$
-declare
-  v_limit integer := greatest(p_limit, 1);
-  v_count integer;
-  remaining_limit integer;
+#variable_conflict use_column
 begin
-  -- Branch A: pending & failed jobs that are due for retry.
-  -- Pull bounded candidates per kind, then interleave by kind_round so a deep
-  -- event backlog cannot starve less frequent embedding kinds.
   return query
   with kind_order(embedding_kind, kind_rank) as (
     values
@@ -28,136 +43,106 @@ begin
       ('infrastructure_subgraph', 6),
       ('timing_profile', 7)
   ),
-  candidates as (
+  candidates as materialized (
     select
-      c.job_id,
-      c.embedding_kind,
-      c.priority,
-      c.due_at,
-      k.kind_rank
-    from kind_order k
+      candidate.job_id,
+      candidate.embedding_kind,
+      candidate.priority,
+      candidate.due_at,
+      candidate.leased_at,
+      candidate.reclaim_rank,
+      kind.kind_rank
+    from kind_order kind
     cross join lateral (
       select
-        job_id,
-        embedding_kind,
-        priority,
-        due_at
-      from vec_embedding_jobs
-      where embedding_kind = k.embedding_kind
-        and status in ('pending', 'failed')
-        and attempts < max_attempts
-        and due_at <= now()
-      order by priority asc, due_at asc, job_id asc
-      for update skip locked
-      limit v_limit
-    ) c
+        job.job_id,
+        job.embedding_kind,
+        job.priority,
+        lease.due_at,
+        lease.leased_at,
+        case when job.status in ('pending', 'failed') then 0 else 1 end as reclaim_rank
+      from vec_embedding_jobs job
+      join vec_embedding_job_leases lease using (job_id)
+      where job.embedding_kind = kind.embedding_kind
+        and lease.attempts < lease.max_attempts
+        and lease.due_at <= now()
+        and (
+          job.status in ('pending', 'failed')
+          or (
+            job.status = 'leased'
+            and lease.leased_at < now() - p_lease
+          )
+        )
+      order by
+        reclaim_rank,
+        case when job.status = 'leased' then lease.leased_at end asc,
+        job.priority asc,
+        lease.due_at asc,
+        job.job_id asc
+      for update of job, lease skip locked
+      limit greatest(p_limit, 1)
+    ) candidate
   ),
   ranked as (
     select
       job_id,
       priority,
       due_at,
-      kind_rank,
-      row_number() over (
-        partition by embedding_kind
-        order by priority asc, due_at asc, job_id asc
-      ) as kind_round
-    from candidates
-  ),
-  selected as (
-    select job_id
-    from ranked
-    order by kind_round asc, kind_rank asc, priority asc, due_at asc, job_id asc
-    limit v_limit
-  )
-  update vec_embedding_jobs job
-     set status = 'leased',
-         attempts = job.attempts + 1,
-         lease_token = md5(random()::text || clock_timestamp()::text || job.job_id::text),
-         leased_at = now(),
-         locked_by = p_worker_name,
-         last_error = null,
-         updated_at = now()
-    from selected
-   where job.job_id = selected.job_id
-  returning job.*;
-
-  get diagnostics v_count = row_count;
-  if v_count >= v_limit then
-    return;
-  end if;
-
-  remaining_limit := greatest(0, v_limit - v_count);
-  if remaining_limit <= 0 then
-    return;
-  end if;
-
-  -- Branch B: expired leases (worker died mid-batch).
-  -- Keep the same fair ordering for reclaimed work.
-  return query
-  with kind_order(embedding_kind, kind_rank) as (
-    values
-      ('event', 1),
-      ('device', 2),
-      ('behaviour_window', 3),
-      ('baseline_profile', 4),
-      ('frame_sequence', 5),
-      ('infrastructure_subgraph', 6),
-      ('timing_profile', 7)
-  ),
-  candidates as (
-    select
-      c.job_id,
-      c.embedding_kind,
-      c.leased_at,
-      c.priority,
-      k.kind_rank
-    from kind_order k
-    cross join lateral (
-      select
-        job_id,
-        embedding_kind,
-        leased_at,
-        priority
-      from vec_embedding_jobs
-      where embedding_kind = k.embedding_kind
-        and status = 'leased'
-        and leased_at < now() - p_lease
-        and attempts < max_attempts
-        and due_at <= now()
-      order by leased_at asc, priority asc, job_id asc
-      for update skip locked
-      limit remaining_limit
-    ) c
-  ),
-  ranked as (
-    select
-      job_id,
       leased_at,
-      priority,
+      reclaim_rank,
       kind_rank,
       row_number() over (
         partition by embedding_kind
-        order by leased_at asc, priority asc, job_id asc
+        order by reclaim_rank, priority, due_at, job_id
       ) as kind_round
     from candidates
   ),
   selected as (
     select job_id
     from ranked
-    order by kind_round asc, kind_rank asc, leased_at asc, priority asc, job_id asc
-    limit remaining_limit
+    order by reclaim_rank, kind_round, kind_rank, priority, due_at, job_id
+    limit greatest(p_limit, 1)
+  ),
+  leases_updated as (
+    update vec_embedding_job_leases lease
+       set attempts = lease.attempts + 1,
+           lease_token = md5(random()::text || clock_timestamp()::text || lease.job_id::text),
+           leased_at = now(),
+           locked_by = p_worker_name,
+           last_error = null
+      from selected
+     where lease.job_id = selected.job_id
+    returning lease.*
+  ),
+  jobs_updated as (
+    update vec_embedding_jobs job
+       set status = 'leased',
+           updated_at = now()
+      from leases_updated lease
+     where job.job_id = lease.job_id
+    returning job.*
   )
-  update vec_embedding_jobs job
-     set status = 'leased',
-         attempts = job.attempts + 1,
-         lease_token = md5(random()::text || clock_timestamp()::text || job.job_id::text),
-         leased_at = now(),
-         locked_by = p_worker_name,
-         last_error = null,
-         updated_at = now()
-    from selected
-   where job.job_id = selected.job_id
-  returning job.*;
+  select
+    job.job_id,
+    job.source_table,
+    job.source_key,
+    job.embedding_model,
+    job.embedding_kind,
+    job.status,
+    job.priority,
+    lease.attempts,
+    lease.max_attempts,
+    lease.lease_token,
+    lease.leased_at,
+    lease.locked_by,
+    lease.due_at,
+    job.content_sha256,
+    lease.last_error,
+    lease.completed_at,
+    job.created_at,
+    job.updated_at
+  from jobs_updated job
+  join leases_updated lease using (job_id)
+  order by job.priority, lease.due_at, job.job_id;
 end;
 $$;

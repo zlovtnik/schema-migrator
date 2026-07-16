@@ -24,14 +24,25 @@ with relation_stats as (
   where relname in (
     'sync_events',
     'wireless_frames',
+    'wireless_frame_radio',
+    'wireless_frame_qos',
+    'wireless_frame_network',
+    'wireless_frame_app_signals',
+    'wireless_frame_identity',
+    'wireless_frame_security',
     'sync_event_payload_archives',
     'sync_event_tombstones',
     'vec_embeddings',
+    'vec_embedding_sources',
     'vec_embedding_jobs',
+    'vec_embedding_job_leases',
     'vec_similarity_pairs',
+    'vec_similarity_pair_meta',
     'vec_behaviour_snapshots',
+    'vec_behaviour_snapshot_stats',
     'vec_frame_sequences',
-    'vec_timing_profiles'
+    'vec_timing_profiles',
+    'vec_timing_profile_stats'
   )
 ),
 wireless_payloads as (

@@ -1,76 +1,73 @@
 -- object: vec_reembed_changed_jobs
 -- folder: functions
--- depends_on: vec_embeddings, vec_embedding_jobs
--- V021: Add vec_reembed_changed_jobs() function for re-queuing
---
--- After the text builder changes in Phase 3 (noise filtering, ssid reordering,
--- WPS name normalization), existing embeddings may have different content_sha256
--- values. This function identifies rows whose content_text digest no longer
--- matches the stored content_sha256 and re-queues them as pending embedding jobs.
---
--- Usage:
---   SELECT vec_reembed_changed_jobs(p_limit => 1000);
---   -- Returns number of jobs re-queued
-
-CREATE OR REPLACE FUNCTION vec_reembed_changed_jobs(
-    p_limit INTEGER DEFAULT 1000
+-- depends_on: vec_embeddings_expanded, vec_embedding_jobs, vec_embedding_job_leases
+create or replace function vec_reembed_changed_jobs(
+  p_limit integer default 1000
 )
-RETURNS INTEGER
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    v_count INTEGER := 0;
-    v_job_id BIGINT;
-BEGIN
-    -- Insert new embedding jobs for rows where content_text would produce
-    -- a different digest than the stored content_sha256.
-    --
-    -- We use sha256(content_text) as the expected digest. If it doesn't match
-    -- the stored content_sha256, the text builder would produce different text
-    -- and therefore a different embedding.
-    INSERT INTO vec_embedding_jobs (
-        source_table,
-        source_key,
-        embedding_model,
-        embedding_kind,
-        status,
-        priority,
-        max_attempts,
-        due_at,
-        created_at,
-        updated_at
+returns integer
+language plpgsql
+as $$
+declare
+  v_count integer := 0;
+begin
+  with candidates as materialized (
+    select
+      embedding.source_table,
+      embedding.source_key,
+      embedding.embedding_model,
+      embedding.embedding_kind
+    from vec_embeddings_expanded embedding
+    where embedding.content_sha256 is distinct from encode(
+      digest(embedding.content_text, 'sha256'), 'hex'
     )
-    SELECT
-        e.source_table,
-        e.source_key,
-        e.embedding_model,
-        e.embedding_kind,
-        'pending',
-        0,   -- normal priority for re-embed
-        3,   -- max 3 attempts
-        NOW(),
-        NOW(),
-        NOW()
-    FROM vec_embeddings e
-    WHERE e.content_sha256 IS DISTINCT FROM encode(
-        digest(e.content_text, 'sha256'), 'hex'
+      and not exists (
+        select 1
+        from vec_embedding_jobs job
+        where job.source_table = embedding.source_table
+          and job.source_key = embedding.source_key
+          and job.embedding_model = embedding.embedding_model
+          and job.embedding_kind = embedding.embedding_kind
+          and job.status in ('pending', 'leased')
+      )
+    order by embedding.embedded_at asc
+    limit greatest(p_limit, 1)
+  ),
+  jobs_queued as (
+    insert into vec_embedding_jobs (
+      source_table, source_key, embedding_model, embedding_kind,
+      status, priority, content_sha256, created_at, updated_at
     )
-    AND NOT EXISTS (
-        -- Avoid re-queuing jobs that are already pending/leased
-        SELECT 1 FROM vec_embedding_jobs j
-        WHERE j.source_table = e.source_table
-          AND j.source_key = e.source_key
-          AND j.embedding_model = e.embedding_model
-          AND j.embedding_kind = e.embedding_kind
-          AND j.status IN ('pending', 'leased')
-    )
-    ORDER BY e.embedded_at ASC
-    LIMIT p_limit;
+    select
+      source_table, source_key, embedding_model, embedding_kind,
+      'pending', 0, null, now(), now()
+    from candidates
+    on conflict (source_table, source_key, embedding_model, embedding_kind)
+    do update set
+      status = 'pending',
+      priority = 0,
+      content_sha256 = null,
+      updated_at = now()
+    returning job_id
+  ),
+  leases_reset as (
+    update vec_embedding_job_leases lease
+       set max_attempts = 3,
+           attempts = 0,
+           due_at = now(),
+           lease_token = null,
+           leased_at = null,
+           locked_by = null,
+           last_error = null,
+           completed_at = null
+      from jobs_queued
+     where lease.job_id = jobs_queued.job_id
+    returning lease.job_id
+  )
+  select count(*) into v_count from leases_reset;
 
-    GET DIAGNOSTICS v_count = ROW_COUNT;
-    RETURN v_count;
-END;
+  return v_count;
+end;
 $$;
 
-COMMENT ON FUNCTION vec_reembed_changed_jobs IS
+comment on function vec_reembed_changed_jobs is
   'Re-queues embedding jobs for existing rows where content_sha256 no longer matches the SHA-256 of content_text. Typically invoked after text builder changes to force re-embedding of affected rows.';

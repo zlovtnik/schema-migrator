@@ -11,16 +11,17 @@ as $$
       lower(frame.source_mac) as source_mac,
       lower(coalesce(nullif(trim(frame.destination_bssid), ''), nullif(trim(frame.bssid), ''))) as destination_bssid,
       frame.ssid,
-      frame.signal_dbm,
+      radio.signal_dbm,
       coalesce(frame.sensor_id, event.payload->>'sensor_id') as sensor_id,
       coalesce(frame.location_id, event.payload->>'location_id') as location_id
     from sync_events event
     join wireless_frames frame on frame.dedupe_key = event.dedupe_key
+    join wireless_frame_radio radio on radio.dedupe_key = frame.dedupe_key
     where event.stream_name = 'wireless.audit'
       and event.observed_at >= now() - interval '60 seconds'
       and frame.source_mac is not null
       and lower(frame.source_mac) ~ '^[0-9a-f]{2}(:[0-9a-f]{2}){5}$'
-      and frame.signal_dbm >= -50
+      and radio.signal_dbm >= -50
   ),
   candidates as (
     select distinct on (source_mac)

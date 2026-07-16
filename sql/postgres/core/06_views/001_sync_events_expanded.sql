@@ -101,5 +101,5 @@ select
   e.created_at,
   greatest(e.updated_at, coalesce(f.updated_at, e.updated_at)) as updated_at
 from sync_events e
-left join wireless_frames f on f.dedupe_key = e.dedupe_key
+left join wireless_frames_expanded f on f.dedupe_key = e.dedupe_key
 left join sync_event_payload_archives archive on archive.dedupe_key = e.dedupe_key;

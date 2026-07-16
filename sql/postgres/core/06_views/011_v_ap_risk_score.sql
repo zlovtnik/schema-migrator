@@ -69,7 +69,7 @@ similarity_bssid_rows as (
   select
     lower(nullif(trim(coalesce(nullif(left_event.bssid, ''), nullif(left_event.payload->>'bssid', ''), nullif(left_event.destination_bssid, ''), nullif(left_event.payload->>'destination_bssid', ''))), '')) as bssid,
     p.cosine_distance
-  from vec_similarity_pairs p
+  from vec_similarity_pairs_expanded p
   join sync_events_expanded left_event
     on p.left_source_table = 'sync_events'
    and left_event.dedupe_key = p.left_source_key
@@ -79,7 +79,7 @@ similarity_bssid_rows as (
   select
     lower(nullif(trim(coalesce(nullif(right_event.bssid, ''), nullif(right_event.payload->>'bssid', ''), nullif(right_event.destination_bssid, ''), nullif(right_event.payload->>'destination_bssid', ''))), '')) as bssid,
     p.cosine_distance
-  from vec_similarity_pairs p
+  from vec_similarity_pairs_expanded p
   join sync_events_expanded right_event
     on p.right_source_table = 'sync_events'
    and right_event.dedupe_key = p.right_source_key

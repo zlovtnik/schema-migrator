@@ -17,19 +17,19 @@ begin
     return 0;
   end if;
 
-  update wireless_frames target
+  update wireless_frame_security target
      set dedupe_or_replay_suspect = true,
          updated_at = now()
    where target.dedupe_key in (
      select left_source_key
-     from vec_similarity_pairs
+     from vec_similarity_pairs_expanded
      where pair_kind = 'event_event'
        and embedding_model = p_model
        and embedding_kind = 'event'
        and cosine_distance <= p_event_dup_distance_threshold
      union
      select right_source_key
-     from vec_similarity_pairs
+     from vec_similarity_pairs_expanded
      where pair_kind = 'event_event'
        and embedding_model = p_model
        and embedding_kind = 'event'
@@ -66,9 +66,9 @@ begin
     null,
     now(),
     now()
-  from vec_similarity_pairs pair
-  join vec_behaviour_snapshots left_snapshot on left_snapshot.snapshot_id::text = pair.left_source_key
-  join vec_behaviour_snapshots right_snapshot on right_snapshot.snapshot_id::text = pair.right_source_key
+  from vec_similarity_pairs_expanded pair
+  join vec_behaviour_snapshots_expanded left_snapshot on left_snapshot.snapshot_id::text = pair.left_source_key
+  join vec_behaviour_snapshots_expanded right_snapshot on right_snapshot.snapshot_id::text = pair.right_source_key
   where pair.pair_kind = 'device_device'
     and pair.embedding_model = p_model
     and pair.embedding_kind = 'behaviour_window'

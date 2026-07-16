@@ -105,58 +105,44 @@ begin
      and b.sensor_id is not distinct from s.sensor_id
      and b.location_id is not distinct from s.location_id
      and b.window_start = s.window_start
+  ),
+  upserted as (
+    insert into vec_timing_profiles (
+      profile_key, source_mac, sensor_id, location_id,
+      window_start, window_end, embedding_text, created_at, updated_at
+    )
+    select
+      profile_key, source_mac, sensor_id, location_id,
+      window_start, window_end, embedding_text, now(), now()
+    from prepared
+    on conflict (profile_key) do update set
+      source_mac = excluded.source_mac,
+      sensor_id = excluded.sensor_id,
+      location_id = excluded.location_id,
+      window_start = excluded.window_start,
+      window_end = excluded.window_end,
+      embedding_text = excluded.embedding_text,
+      updated_at = now()
+    returning profile_id, profile_key
   )
-  insert into vec_timing_profiles (
-    profile_key,
-    source_mac,
-    sensor_id,
-    location_id,
-    window_start,
-    window_end,
-    tsft_p50_us,
-    tsft_p95_us,
-    tsft_jitter,
-    wall_p50_ms,
-    wall_jitter_ms,
-    beacon_interval_median_ms,
-    beacon_jitter_ms,
-    embedding_text,
-    created_at,
-    updated_at
+  insert into vec_timing_profile_stats (
+    profile_id, tsft_p50_us, tsft_p95_us, tsft_jitter,
+    wall_p50_ms, wall_jitter_ms, beacon_interval_median_ms, beacon_jitter_ms
   )
   select
-    profile_key,
-    source_mac,
-    sensor_id,
-    location_id,
-    window_start,
-    window_end,
-    tsft_p50_us,
-    tsft_p95_us,
-    tsft_jitter,
-    wall_p50_ms,
-    wall_jitter_ms,
-    beacon_interval_median_ms,
-    beacon_jitter_ms,
-    embedding_text,
-    now(),
-    now()
-  from prepared
-  on conflict (profile_key) do update set
-    source_mac = excluded.source_mac,
-    sensor_id = excluded.sensor_id,
-    location_id = excluded.location_id,
-    window_start = excluded.window_start,
-    window_end = excluded.window_end,
+    upserted.profile_id, prepared.tsft_p50_us, prepared.tsft_p95_us,
+    prepared.tsft_jitter, prepared.wall_p50_ms, prepared.wall_jitter_ms,
+    prepared.beacon_interval_median_ms, prepared.beacon_jitter_ms
+  from upserted
+  join prepared using (profile_key)
+  on conflict (profile_id) do update set
     tsft_p50_us = excluded.tsft_p50_us,
     tsft_p95_us = excluded.tsft_p95_us,
     tsft_jitter = excluded.tsft_jitter,
     wall_p50_ms = excluded.wall_p50_ms,
     wall_jitter_ms = excluded.wall_jitter_ms,
     beacon_interval_median_ms = excluded.beacon_interval_median_ms,
-    beacon_jitter_ms = excluded.beacon_jitter_ms,
-    embedding_text = excluded.embedding_text,
-    updated_at = now();
+    beacon_jitter_ms = excluded.beacon_jitter_ms;
 
   get diagnostics v_count = row_count;
   perform vec_finish_job('vec_build_timing_profiles');

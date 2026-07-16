@@ -1,8 +1,6 @@
 -- object: vec_release_expired_leases
 -- folder: functions
--- depends_on: vec_embedding_jobs
--- Release jobs whose leases have expired (worker died mid-batch).
--- Uses a fixed default of 30 minutes matching VECTOR_EMBEDDING_LEASE_SECONDS=1800.
+-- depends_on: vec_embedding_jobs, vec_embedding_job_leases
 create or replace function vec_release_expired_leases(
   p_lease_interval interval default interval '30 minutes'
 )
@@ -12,35 +10,42 @@ as $$
 declare
   v_count integer;
 begin
-  update vec_embedding_jobs
-     set status = case
-           when attempts >= max_attempts then 'failed'
-           else 'pending'
-         end,
-         lease_token = null,
-         leased_at = null,
-         locked_by = null,
-         due_at = case
-           when attempts >= max_attempts then due_at
-           else now()
-         end,
-         last_error = case
-           when attempts >= max_attempts then 'lease expired after max attempts'
-           else 'lease expired'
-         end,
-         updated_at = now()
-   where status = 'leased'
-     and leased_at < now() - p_lease_interval
-     and job_id in (
-       select job_id
-       from vec_embedding_jobs
-       where status = 'leased'
-         and leased_at < now() - p_lease_interval
-       order by job_id asc
-       for update skip locked
-     );
+  with selected as materialized (
+    select
+      job.job_id,
+      lease.attempts >= lease.max_attempts as exhausted
+    from vec_embedding_jobs job
+    join vec_embedding_job_leases lease using (job_id)
+    where job.status = 'leased'
+      and lease.leased_at < now() - p_lease_interval
+    order by job.job_id
+    for update of job, lease skip locked
+  ),
+  leases_released as (
+    update vec_embedding_job_leases lease
+       set lease_token = null,
+           leased_at = null,
+           locked_by = null,
+           due_at = case when selected.exhausted then lease.due_at else now() end,
+           last_error = case
+             when selected.exhausted then 'lease expired after max attempts'
+             else 'lease expired'
+           end
+      from selected
+     where lease.job_id = selected.job_id
+    returning lease.job_id
+  ),
+  jobs_released as (
+    update vec_embedding_jobs job
+       set status = case when selected.exhausted then 'failed' else 'pending' end,
+           updated_at = now()
+      from selected
+      join leases_released using (job_id)
+     where job.job_id = selected.job_id
+    returning job.job_id
+  )
+  select count(*) into v_count from jobs_released;
 
-  get diagnostics v_count = row_count;
   return v_count;
 end;
 $$;
