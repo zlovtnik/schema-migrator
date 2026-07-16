@@ -21,6 +21,7 @@ declare
   v_count integer := 0;
   v_started_at timestamptz := now();
 begin
+  -- Serialize the full candidate batch instead of locking each materialized pair.
   if not vec_try_begin_job('vec_materialize_similarity_pairs') then
     return 0;
   end if;

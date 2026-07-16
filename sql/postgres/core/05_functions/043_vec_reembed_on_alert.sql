@@ -19,6 +19,7 @@ begin
     )
     update vec_embedding_job_leases lease
        set due_at = now(),
+           attempts = 0,
            completed_at = null,
            lease_token = null,
            leased_at = null,
@@ -46,6 +47,7 @@ begin
     )
     update vec_embedding_job_leases lease
        set due_at = now(),
+           attempts = 0,
            completed_at = null,
            lease_token = null,
            leased_at = null,

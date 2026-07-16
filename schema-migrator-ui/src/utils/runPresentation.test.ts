@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AuditEvent, Patch, Run } from "../types";
-import { buildRunTrend, formatRunSource, recentlyAbortedRuns, runFailureReason } from "./runPresentation";
+import {
+  buildRunTrend,
+  formatRunSource,
+  recentlyAbortedRuns,
+  runFailureReason,
+  runOutcomeFallback
+} from "./runPresentation";
 
 const run = (overrides: Partial<Run> = {}): Run =>
   ({
@@ -51,6 +57,12 @@ describe("run presentation", () => {
     ).toBe("Lock timed out");
   });
 
+  it("uses status-specific outcome fallbacks", () => {
+    expect(runOutcomeFallback("pending")).toBe("Pending");
+    expect(runOutcomeFallback("running")).toBe("Running");
+    expect(runOutcomeFallback("completed")).toBe("Completed without interruption");
+  });
+
   it("builds a seven-day completed and interrupted trend", () => {
     const now = Date.parse("2026-07-13T12:00:00Z");
     const trend = buildRunTrend(
@@ -66,10 +78,7 @@ describe("run presentation", () => {
     expect(trend.at(-1)).toMatchObject({ completed: 1, interrupted: 0 });
     expect(trend.at(-2)).toMatchObject({ completed: 0, interrupted: 1 });
     expect(
-      recentlyAbortedRuns(
-        [run({ status: "aborted", started_at: "2026-07-07T12:00:00Z" as Run["started_at"] })],
-        now
-      )
+      recentlyAbortedRuns([run({ status: "aborted", started_at: "2026-07-07T12:00:00Z" as Run["started_at"] })], now)
     ).toHaveLength(1);
   });
 });

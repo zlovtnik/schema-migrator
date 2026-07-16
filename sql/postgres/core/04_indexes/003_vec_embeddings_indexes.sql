@@ -1,13 +1,13 @@
 -- object: vec_embeddings indexes
 -- folder: indexes
 -- depends_on: vec_embeddings
-create index if not exists vec_embeddings_source_idx
+create index if not exists vec_embedding_sources_source_idx
   on vec_embedding_sources (source_table, source_key);
 
 create index if not exists vec_embeddings_kind_model_idx
   on vec_embeddings (embedding_kind, embedding_model, embedded_at desc);
 
-create index if not exists vec_embeddings_source_mac_idx
+create index if not exists vec_embedding_sources_source_mac_idx
   on vec_embedding_sources (lower(source_mac), source_observed_at desc)
   where source_mac is not null;
 

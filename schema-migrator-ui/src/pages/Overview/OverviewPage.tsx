@@ -23,6 +23,7 @@ import {
   formatRunSource,
   recentlyAbortedRuns,
   runFailureReason,
+  runOutcomeFallback,
   type RunTrendDay
 } from "../../utils/runPresentation";
 
@@ -264,7 +265,7 @@ const createRecentRunColumns = (
   {
     id: "outcome",
     header: "Outcome",
-    sortValue: (run) => runFailureReason(run) ?? "Completed",
+    sortValue: (run) => runFailureReason(run) ?? runOutcomeFallback(run.status),
     cell: (run) => {
       const reason = runFailureReason(run);
       return reason ? (
@@ -272,7 +273,7 @@ const createRecentRunColumns = (
           {reason}
         </Link>
       ) : (
-        <span className="cell-subtle">Completed without interruption</span>
+        <span className="cell-subtle">{runOutcomeFallback(run.status)}</span>
       );
     }
   },
@@ -307,7 +308,11 @@ const RunTrend = ({ days }: { days: RunTrendDay[] }) => {
   const interrupted = days.reduce((total, day) => total + day.interrupted, 0);
 
   return (
-    <div className="run-trend" aria-label={`7-day run outcomes: ${completed} completed, ${interrupted} interrupted`}>
+    <div
+      className="run-trend"
+      role="img"
+      aria-label={`7-day run outcomes: ${completed} completed, ${interrupted} interrupted`}
+    >
       <div className="run-trend__header">
         <span>7-day outcomes</span>
         <div className="run-trend__legend" aria-hidden="true">

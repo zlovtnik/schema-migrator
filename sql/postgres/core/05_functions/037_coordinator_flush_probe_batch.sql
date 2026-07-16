@@ -1,12 +1,14 @@
 -- object: coordinator.flush_probe_batch
 -- folder: functions
 -- depends_on: wireless_clients, wireless_authorized_networks
+drop function if exists coordinator.flush_probe_batch(jsonb);
+
 create or replace function coordinator.flush_probe_batch(p_probes jsonb)
-returns integer
+returns bigint
 language plpgsql
 as $$
 declare
-  v_inserted integer := 0;
+  v_inserted bigint := 0;
   v_probes jsonb;
   v_probe jsonb;
 begin
@@ -31,7 +33,7 @@ begin
        where lower(ssid) = lower(v_probe->>'ssid') and enabled limit 1),
       (v_probe->>'first_seen')::timestamptz,
       (v_probe->>'last_seen')::timestamptz,
-      (v_probe->>'probe_count')::integer
+      (v_probe->>'probe_count')::bigint
     )
     on conflict (ssid, client_mac) do update
       set first_seen = least(wireless_clients.first_seen, excluded.first_seen),

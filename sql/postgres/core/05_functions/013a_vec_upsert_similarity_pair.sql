@@ -30,14 +30,6 @@ declare
   v_right_location_id text;
   v_right_observed_at timestamptz;
 begin
-  perform pg_advisory_xact_lock(hashtextextended(
-    concat_ws(
-      E'\x1f', p_pair_kind, p_embedding_model, p_embedding_kind,
-      p_left_embedding_id::text, p_right_embedding_id::text
-    ),
-    0
-  ));
-
   select pair_id
     into v_pair_id
   from vec_similarity_pair_meta
@@ -137,6 +129,27 @@ begin
            computed_at = now(),
            updated_at = now()
      where pair_id = v_pair_id;
+
+    if exists (
+      select 1
+      from information_schema.columns
+      where table_schema = current_schema()
+        and table_name = 'vec_similarity_pairs'
+        and column_name = 'pair_kind'
+    ) then
+      execute $legacy_update$
+        update vec_similarity_pairs
+           set left_source_table = $1,
+               left_source_key = $2,
+               right_source_table = $3,
+               right_source_key = $4,
+               evidence = $5
+         where pair_id = $6
+      $legacy_update$ using
+        p_left_source_table, p_left_source_key,
+        p_right_source_table, p_right_source_key,
+        coalesce(p_evidence, '{}'::jsonb), v_pair_id;
+    end if;
 
     update vec_similarity_pair_meta
        set left_source_table = p_left_source_table,

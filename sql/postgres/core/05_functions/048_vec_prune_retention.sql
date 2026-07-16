@@ -1,6 +1,6 @@
 -- object: vec_prune_retention
 -- folder: functions
--- depends_on: vec_embeddings, vec_embedding_jobs, vec_similarity_pairs
+-- depends_on: vec_similarity_pairs_expanded, vec_embeddings_expanded, vec_embedding_jobs_expanded, vec_behaviour_snapshots_expanded, vec_timing_profiles_expanded
 create or replace function vec_prune_retention(
   p_event_embedding_days integer default 14,
   p_rollup_embedding_days integer default 30,

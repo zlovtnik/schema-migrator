@@ -30,13 +30,23 @@ begin
       insert into wireless_frame_identity (
         dedupe_key, username, event_type, session_key, retransmit_key,
         frame_fingerprint, payload_visibility, identity_source, device_fingerprint,
-        wps_device_name, wps_manufacturer, wps_model_name, handshake_captured
+        wps_device_name, wps_manufacturer, wps_model_name, handshake_captured,
+        search_tsv
       )
       select
-        dedupe_key, username, event_type, session_key, retransmit_key,
-        frame_fingerprint, payload_visibility, identity_source, device_fingerprint,
-        wps_device_name, wps_manufacturer, wps_model_name, handshake_captured
-      from wireless_frames
+        core.dedupe_key, core.username, core.event_type, core.session_key, core.retransmit_key,
+        core.frame_fingerprint, core.payload_visibility, core.identity_source, core.device_fingerprint,
+        core.wps_device_name, core.wps_manufacturer, core.wps_model_name, core.handshake_captured,
+        to_tsvector(
+          'simple'::regconfig,
+          lower(concat_ws(
+            ' ', core.sensor_id, core.source_mac, core.bssid, core.destination_bssid, core.ssid,
+            core.wps_device_name, core.wps_manufacturer, core.wps_model_name, core.device_fingerprint,
+            network.app_protocol, network.src_ip, network.dst_ip, core.username
+          ))
+        )
+      from wireless_frames core
+      left join wireless_frame_network network using (dedupe_key)
       on conflict (dedupe_key) do update set
         username = excluded.username,
         event_type = excluded.event_type,
@@ -49,7 +59,8 @@ begin
         wps_device_name = excluded.wps_device_name,
         wps_manufacturer = excluded.wps_manufacturer,
         wps_model_name = excluded.wps_model_name,
-        handshake_captured = excluded.handshake_captured
+        handshake_captured = excluded.handshake_captured,
+        search_tsv = excluded.search_tsv
     $backfill$;
   end if;
 end;
@@ -82,3 +93,33 @@ drop trigger if exists wireless_frame_identity_search_tsv on wireless_frame_iden
 create trigger wireless_frame_identity_search_tsv
 before insert or update on wireless_frame_identity
 for each row execute function wireless_frame_identity_search_tsv();
+
+create or replace function wireless_frame_identity_refresh_search_tsv()
+returns trigger
+language plpgsql
+as $$
+begin
+  update wireless_frame_identity
+     set search_tsv = wireless_frame_identity.search_tsv
+   where dedupe_key = new.dedupe_key;
+  return new;
+end;
+$$;
+
+drop trigger if exists wireless_frames_refresh_identity_search_tsv on wireless_frames;
+create trigger wireless_frames_refresh_identity_search_tsv
+after update of sensor_id, source_mac, bssid, destination_bssid, ssid on wireless_frames
+for each row execute function wireless_frame_identity_refresh_search_tsv();
+
+drop trigger if exists wireless_frame_network_insert_refresh_identity_search_tsv on wireless_frame_network;
+create trigger wireless_frame_network_insert_refresh_identity_search_tsv
+after insert on wireless_frame_network
+for each row execute function wireless_frame_identity_refresh_search_tsv();
+
+drop trigger if exists wireless_frame_network_update_refresh_identity_search_tsv on wireless_frame_network;
+create trigger wireless_frame_network_update_refresh_identity_search_tsv
+after update of app_protocol, src_ip, dst_ip on wireless_frame_network
+for each row execute function wireless_frame_identity_refresh_search_tsv();
+
+update wireless_frame_identity
+   set search_tsv = wireless_frame_identity.search_tsv;

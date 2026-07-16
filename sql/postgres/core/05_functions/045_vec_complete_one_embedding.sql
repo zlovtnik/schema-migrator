@@ -37,7 +37,9 @@ begin
       from payload
       join vec_embedding_jobs job on job.job_id = payload.job_id
       join vec_embedding_job_leases lease on lease.job_id = job.job_id
-      where lease.lease_token is not distinct from payload.lease_token
+      where payload.lease_token is not null
+        and lease.lease_token is not null
+        and lease.lease_token = payload.lease_token
       for update of job, lease
     ),
     upserted as materialized (

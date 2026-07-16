@@ -3,7 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 export const useWizardSteps = <T>(steps: readonly T[], initialIndex = 0) => {
   const lastIndex = Math.max(0, steps.length - 1);
   const clamp = useCallback((index: number) => Math.min(Math.max(0, index), lastIndex), [lastIndex]);
-  const [currentIndex, setCurrentIndex] = useState(() => clamp(initialIndex));
+  const [storedCurrentIndex, setCurrentIndex] = useState(() => clamp(initialIndex));
+  const currentIndex = clamp(storedCurrentIndex);
 
   useEffect(() => setCurrentIndex((current) => clamp(current)), [clamp]);
 

@@ -139,14 +139,27 @@ begin
   select count(*) into v_recorded_count from upserted;
 
   perform coordinator.upsert_wireless_frame_from_payload(
-    raw.request->>'dedupe_key',
-    raw.request->>'stream_name',
+    raw.dedupe_key,
+    raw.stream_name,
     raw.payload
   )
-  from unnest(p_requests, p_payloads, p_payload_sha256s) as raw(request, payload, payload_sha256)
+  from (
+    select raw.request,
+           raw.payload,
+           raw.request->>'stream_name' as stream_name,
+           raw.request->>'dedupe_key' as dedupe_key
+      from unnest(p_requests, p_payloads, p_payload_sha256s) as raw(request, payload, payload_sha256)
+  ) raw
   join unnest(p_stream_names) as configured(stream_name)
-    on btrim(configured.stream_name) = raw.request->>'stream_name'
-  where raw.request->>'stream_name' = 'wireless.audit'
+    on btrim(configured.stream_name) = raw.stream_name
+  where raw.stream_name = 'wireless.audit'
+    and not exists (
+      select 1
+      from sync_event_tombstones tombstone
+      where tombstone.dedupe_key = raw.dedupe_key
+        and tombstone.stream_name = raw.stream_name
+        and tombstone.expires_at > now()
+    )
     and coordinator.safe_timestamptz(raw.request->>'observed_at') is not null;
 
   return coalesce(v_recorded_count, 0);

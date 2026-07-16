@@ -13,8 +13,11 @@ as $$
 declare
   v_recorded_count integer := 0;
 begin
-  if cardinality(p_requests) <> cardinality(p_payloads)
-     or cardinality(p_requests) <> cardinality(p_payload_sha256s) then
+  if p_requests is null
+     or p_payloads is null
+     or p_payload_sha256s is null
+     or cardinality(p_requests) is distinct from cardinality(p_payloads)
+     or cardinality(p_requests) is distinct from cardinality(p_payload_sha256s) then
     raise exception 'record_scan_request_batch array length mismatch';
   end if;
 
@@ -141,6 +144,7 @@ begin
         else sync_events.last_error
       end,
       updated_at = now()
+    where sync_events.status in ('pending', 'failed')
     returning 1
   )
   select count(*) into v_recorded_count from upserted;
@@ -169,11 +173,15 @@ begin
           from unnest(p_stream_names) as configured(stream_name)
          where btrim(configured.stream_name) <> ''
       ) configured_streams on configured_streams.stream_name = raw.stream_name
+      join sync_events event
+        on event.dedupe_key = raw.dedupe_key
+       and event.stream_name = raw.stream_name
       left join sync_event_tombstones tombstone
         on tombstone.dedupe_key = raw.dedupe_key
        and tombstone.stream_name = raw.stream_name
        and tombstone.expires_at > now()
      where raw.dedupe_key is not null
+       and event.status in ('pending', 'failed')
        and tombstone.dedupe_key is null
        and coordinator.safe_timestamptz(raw.request->>'observed_at') is not null
      order by raw.dedupe_key, raw.input_ordinality desc

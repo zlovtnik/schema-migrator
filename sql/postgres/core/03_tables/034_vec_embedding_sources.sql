@@ -57,37 +57,44 @@ as $$
 declare
   legacy jsonb := to_jsonb(new);
 begin
-  if pg_trigger_depth() > 1 or not (legacy ? 'source_table') then
+  if pg_trigger_depth() > 1 then
     return new;
   end if;
 
-  insert into vec_embedding_sources (
-    embedding_id, source_table, source_key, source_observed_at,
-    source_stream_name, source_sensor_id, source_location_id, source_mac,
-    embedding_model, embedding_kind
-  )
-  values (
-    new.embedding_id,
-    legacy->>'source_table',
-    legacy->>'source_key',
-    (legacy->>'source_observed_at')::timestamptz,
-    legacy->>'source_stream_name',
-    legacy->>'source_sensor_id',
-    legacy->>'source_location_id',
-    legacy->>'source_mac',
-    new.embedding_model,
-    new.embedding_kind
-  )
-  on conflict (embedding_id) do update set
-    source_table = excluded.source_table,
-    source_key = excluded.source_key,
-    source_observed_at = excluded.source_observed_at,
-    source_stream_name = excluded.source_stream_name,
-    source_sensor_id = excluded.source_sensor_id,
-    source_location_id = excluded.source_location_id,
-    source_mac = excluded.source_mac,
-    embedding_model = excluded.embedding_model,
-    embedding_kind = excluded.embedding_kind;
+  if legacy ? 'source_table' then
+    insert into vec_embedding_sources (
+      embedding_id, source_table, source_key, source_observed_at,
+      source_stream_name, source_sensor_id, source_location_id, source_mac,
+      embedding_model, embedding_kind
+    )
+    values (
+      new.embedding_id,
+      legacy->>'source_table',
+      legacy->>'source_key',
+      (legacy->>'source_observed_at')::timestamptz,
+      legacy->>'source_stream_name',
+      legacy->>'source_sensor_id',
+      legacy->>'source_location_id',
+      legacy->>'source_mac',
+      new.embedding_model,
+      new.embedding_kind
+    )
+    on conflict (embedding_id) do update set
+      source_table = excluded.source_table,
+      source_key = excluded.source_key,
+      source_observed_at = excluded.source_observed_at,
+      source_stream_name = excluded.source_stream_name,
+      source_sensor_id = excluded.source_sensor_id,
+      source_location_id = excluded.source_location_id,
+      source_mac = excluded.source_mac,
+      embedding_model = excluded.embedding_model,
+      embedding_kind = excluded.embedding_kind;
+  else
+    update vec_embedding_sources
+       set embedding_model = new.embedding_model,
+           embedding_kind = new.embedding_kind
+     where embedding_id = new.embedding_id;
+  end if;
   return new;
 end;
 $$;

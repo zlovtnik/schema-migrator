@@ -11,7 +11,7 @@ import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
 import { useTargets } from "../../hooks/useTargets";
 import { runStatusOptions, type Run, type RunStatus } from "../../types";
-import { formatRunSource, runFailureReason } from "../../utils/runPresentation";
+import { formatRunSource, runFailureReason, runOutcomeFallback } from "../../utils/runPresentation";
 
 const formatDuration = (startedAt: string, endedAt?: string) => {
   if (!endedAt) {
@@ -115,7 +115,7 @@ export const RunListPage = () => {
     {
       id: "outcome",
       header: "Outcome",
-      sortValue: (run) => runFailureReason(run) ?? "Completed",
+      sortValue: (run) => runFailureReason(run) ?? runOutcomeFallback(run.status),
       cell: (run) => {
         const reason = runFailureReason(run);
         return reason ? (
@@ -123,7 +123,7 @@ export const RunListPage = () => {
             {reason}
           </Link>
         ) : (
-          <span className="cell-subtle">Completed without interruption</span>
+          <span className="cell-subtle">{runOutcomeFallback(run.status)}</span>
         );
       }
     },

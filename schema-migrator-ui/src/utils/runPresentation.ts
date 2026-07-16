@@ -39,6 +39,21 @@ export const runFailureReason = (run: Run): string | undefined => {
   return undefined;
 };
 
+export const runOutcomeFallback = (status: Run["status"]): string => {
+  switch (status) {
+    case "pending":
+      return "Pending";
+    case "running":
+      return "Running";
+    case "completed":
+      return "Completed without interruption";
+    case "failed":
+      return "Failed";
+    case "aborted":
+      return "Aborted";
+  }
+};
+
 export const buildRunTrend = (runs: Run[], now = Date.now()): RunTrendDay[] => {
   const dayMs = 24 * 60 * 60 * 1000;
   const days = Array.from({ length: 7 }, (_, index) => {
@@ -46,7 +61,7 @@ export const buildRunTrend = (runs: Run[], now = Date.now()): RunTrendDay[] => {
     const key = date.toISOString().slice(0, 10);
     return {
       key,
-      label: date.toLocaleDateString(undefined, { weekday: "short" }),
+      label: date.toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" }),
       completed: 0,
       interrupted: 0
     } satisfies RunTrendDay;

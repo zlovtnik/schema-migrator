@@ -61,39 +61,46 @@ as $$
 declare
   legacy jsonb := to_jsonb(new);
 begin
-  if pg_trigger_depth() > 1 or not (legacy ? 'pair_kind') then
+  if pg_trigger_depth() > 1 then
     return new;
   end if;
 
-  insert into vec_similarity_pair_meta (
-    pair_id, pair_kind, embedding_model, embedding_kind,
-    left_source_table, left_source_key, right_source_table, right_source_key,
-    evidence, left_embedding_id, right_embedding_id
-  )
-  values (
-    new.pair_id,
-    legacy->>'pair_kind',
-    legacy->>'embedding_model',
-    legacy->>'embedding_kind',
-    legacy->>'left_source_table',
-    legacy->>'left_source_key',
-    legacy->>'right_source_table',
-    legacy->>'right_source_key',
-    coalesce(legacy->'evidence', '{}'::jsonb),
-    new.left_embedding_id,
-    new.right_embedding_id
-  )
-  on conflict (pair_id) do update set
-    pair_kind = excluded.pair_kind,
-    embedding_model = excluded.embedding_model,
-    embedding_kind = excluded.embedding_kind,
-    left_source_table = excluded.left_source_table,
-    left_source_key = excluded.left_source_key,
-    right_source_table = excluded.right_source_table,
-    right_source_key = excluded.right_source_key,
-    evidence = excluded.evidence,
-    left_embedding_id = excluded.left_embedding_id,
-    right_embedding_id = excluded.right_embedding_id;
+  if legacy ? 'pair_kind' then
+    insert into vec_similarity_pair_meta (
+      pair_id, pair_kind, embedding_model, embedding_kind,
+      left_source_table, left_source_key, right_source_table, right_source_key,
+      evidence, left_embedding_id, right_embedding_id
+    )
+    values (
+      new.pair_id,
+      legacy->>'pair_kind',
+      legacy->>'embedding_model',
+      legacy->>'embedding_kind',
+      legacy->>'left_source_table',
+      legacy->>'left_source_key',
+      legacy->>'right_source_table',
+      legacy->>'right_source_key',
+      coalesce(legacy->'evidence', '{}'::jsonb),
+      new.left_embedding_id,
+      new.right_embedding_id
+    )
+    on conflict (pair_id) do update set
+      pair_kind = excluded.pair_kind,
+      embedding_model = excluded.embedding_model,
+      embedding_kind = excluded.embedding_kind,
+      left_source_table = excluded.left_source_table,
+      left_source_key = excluded.left_source_key,
+      right_source_table = excluded.right_source_table,
+      right_source_key = excluded.right_source_key,
+      evidence = excluded.evidence,
+      left_embedding_id = excluded.left_embedding_id,
+      right_embedding_id = excluded.right_embedding_id;
+  else
+    update vec_similarity_pair_meta
+       set left_embedding_id = new.left_embedding_id,
+           right_embedding_id = new.right_embedding_id
+     where pair_id = new.pair_id;
+  end if;
   return new;
 end;
 $$;

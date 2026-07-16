@@ -63,6 +63,7 @@ apply_order:
   - 04_indexes/015_sync_event_retention_indexes.sql
   - 04_indexes/016_device_graph_workmap_indexes.sql
   - 04_indexes/017_graph_ssid_indexes.sql
+  - 04_indexes/018_vec_embedding_jobs_indexes_rebuild.sql
   - 05_functions/001_sync_stable_uuid.sql
   - 05_functions/002_coordinator_safe_helpers.sql
   - 05_functions/003_upsert_wireless_frame.sql
@@ -117,7 +118,6 @@ apply_order:
   - 05_functions/049_coordinator_backlog_retry_caps.sql
   - 05_functions/050_vec_job_lock_ttl_helpers.sql
   - 05_functions/051_vec_device_graph_retention.sql
-  - 05_functions/052_coordinator_flush_probe_batch_bigint.sql
   - 05_functions/053_coordinator_record_scan_request_batch_tombstone_frames.sql
   - 05_functions/054_coordinator_record_scan_request_batch_deduplicate.sql
   - 06_views/000_wireless_frames_expanded.sql
