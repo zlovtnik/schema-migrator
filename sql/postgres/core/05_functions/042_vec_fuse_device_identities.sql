@@ -62,9 +62,16 @@ begin
         and left_profile.location_id is not distinct from right_profile.location_id
     ),
     candidate_pairs as (
-      select mac_a, mac_b from behaviour_pairs
-      union
-      select mac_a, mac_b from timing_pairs
+      -- A single embedding modality is not enough to mutate identity state.
+      -- Co-located devices often have near-identical behaviour embeddings;
+      -- require independent timing agreement for the same canonical pair.
+      select
+        least(behaviour.mac_a, behaviour.mac_b) as mac_a,
+        greatest(behaviour.mac_a, behaviour.mac_b) as mac_b
+      from behaviour_pairs behaviour
+      join timing_pairs timing
+        on least(timing.mac_a, timing.mac_b) = least(behaviour.mac_a, behaviour.mac_b)
+       and greatest(timing.mac_a, timing.mac_b) = greatest(behaviour.mac_a, behaviour.mac_b)
     ),
     normalized_pairs as (
       select distinct
@@ -113,7 +120,7 @@ begin
       select array_agg(mac order by mac)
         into v_merged_macs
       from (
-        select distinct lower(cluster_mac.mac) as mac
+      select distinct lower(cluster_mac.mac) as mac
         from device_identity_clusters
         cross join lateral unnest(mac_ids) as cluster_mac(mac)
         where cluster_id = any(v_cluster_ids)
@@ -122,6 +129,12 @@ begin
         union
         select v_pair.mac_b
       ) merged;
+
+      -- Prevent similarity chains from collapsing a busy location into one
+      -- synthetic identity. Larger merges require explicit operator review.
+      if cardinality(v_merged_macs) > 8 then
+        continue;
+      end if;
 
       update device_identity_clusters target
          set mac_ids = v_merged_macs,

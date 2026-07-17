@@ -20,6 +20,7 @@ declare
   v_total integer := 0;
   v_count integer := 0;
   v_started_at timestamptz := now();
+  v_cutoff_at timestamptz;
 begin
   -- Serialize the full candidate batch instead of locking each materialized pair.
   if not vec_try_begin_job('vec_materialize_similarity_pairs') then
@@ -29,6 +30,11 @@ begin
   insert into sync_cursors (stream_name, cursor_value, updated_at)
   values ('vec_similarity_pairs.last_run', '1970-01-01T00:00:00+00:00', now())
   on conflict (stream_name) do nothing;
+
+  select least(v_started_at, cursor_value::timestamptz + interval '15 minutes')
+    into v_cutoff_at
+    from sync_cursors
+    where stream_name = 'vec_similarity_pairs.last_run';
 
   with last_run as materialized (
     select cursor_value::timestamptz as ts
@@ -58,7 +64,7 @@ begin
       and e1.embedding_model = p_model
       and e1.embedding_dimensions = 768
       and e1.embedded_at > last_run.ts
-      and e1.embedded_at <= v_started_at
+      and e1.embedded_at <= v_cutoff_at
       and neighbor.cosine_distance <= p_event_dup_distance_threshold
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   ),
@@ -134,7 +140,7 @@ begin
       and e1.embedding_model = p_model
       and e1.embedding_dimensions = 768
       and e1.embedded_at > last_run.ts
-      and e1.embedded_at <= v_started_at
+      and e1.embedded_at <= v_cutoff_at
       and neighbor.cosine_distance <= greatest(p_event_dup_distance_threshold * 3, p_event_dup_distance_threshold)
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   ),
@@ -207,7 +213,7 @@ begin
       and e1.embedding_model = p_model
       and e1.embedding_dimensions = 768
       and e1.embedded_at > last_run.ts
-      and e1.embedded_at <= v_started_at
+      and e1.embedded_at <= v_cutoff_at
       and neighbor.cosine_distance <= (1 - p_behaviour_similarity_threshold)
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   ),
@@ -279,7 +285,7 @@ begin
       and e1.embedding_model = p_model
       and e1.embedding_dimensions = 768
       and e1.embedded_at > last_run.ts
-      and e1.embedded_at <= v_started_at
+      and e1.embedded_at <= v_cutoff_at
       and neighbor.cosine_distance <= p_sequence_similarity_threshold
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   ),
@@ -356,7 +362,7 @@ begin
       and e1.embedding_model = p_model
       and e1.embedding_dimensions = 768
       and e1.embedded_at > last_run.ts
-      and e1.embedded_at <= v_started_at
+      and e1.embedded_at <= v_cutoff_at
       and neighbor.cosine_distance <= p_timing_similarity_threshold
     group by least(e1.embedding_id, neighbor.embedding_id), greatest(e1.embedding_id, neighbor.embedding_id)
   ),
@@ -401,7 +407,7 @@ begin
   v_total := v_total + v_count;
 
   insert into sync_cursors (stream_name, cursor_value, updated_at)
-  values ('vec_similarity_pairs.last_run', v_started_at::text, now())
+  values ('vec_similarity_pairs.last_run', v_cutoff_at::text, now())
   on conflict (stream_name) do update
     set cursor_value = excluded.cursor_value,
         updated_at = now();
