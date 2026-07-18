@@ -12,6 +12,13 @@ export class ApiError extends Error {
   }
 }
 
+export class ResponseDecryptionError extends Error {
+  constructor() {
+    super("Encrypted response could not be decrypted with the configured AES-GCM key");
+    this.name = "ResponseDecryptionError";
+  }
+}
+
 const API_BASE_KEY = "schemaMigrator.apiBaseUrl";
 const ENCRYPT_KEY = "schemaMigrator.encryptKey";
 let authToken = "";
@@ -142,7 +149,11 @@ const decryptEnvelope = async (text: string): Promise<string> => {
 const readResponseText = async (response: Response): Promise<string> => {
   const text = await response.text();
   if (response.headers.get("X-Bedrock-Encrypted") === "1") {
-    return decryptEnvelope(text);
+    try {
+      return await decryptEnvelope(text);
+    } catch {
+      throw new ResponseDecryptionError();
+    }
   }
   return text;
 };

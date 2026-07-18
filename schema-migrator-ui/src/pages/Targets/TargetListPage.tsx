@@ -3,6 +3,7 @@ import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
+import { ResponseDecryptionError } from "../../api/client";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ConnectionForm } from "../../components/ConnectionForm";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -29,6 +30,7 @@ export const TargetListPage = () => {
     isLoading: runsLoading,
     isSuccess: runsLoaded,
     isError: runsError,
+    error: runsLoadError,
     isFetching: runsFetching,
     refetch: refetchRuns
   } = useRuns();
@@ -42,6 +44,7 @@ export const TargetListPage = () => {
   const [preSaveTestResult, setPreSaveTestResult] = useState<ConnectionTestResult | undefined>();
   const preSaveTestRequestRef = useRef(0);
   const inSettings = location.pathname.startsWith("/settings");
+  const decryptionFailed = error instanceof ResponseDecryptionError || runsLoadError instanceof ResponseDecryptionError;
 
   const activeRunTargetIds = useMemo(
     () =>
@@ -243,8 +246,13 @@ export const TargetListPage = () => {
         </button>
       </header>
 
-      {error ? <div className="status-banner status-banner--error">Unable to load targets.</div> : null}
-      {runsError ? (
+      {decryptionFailed ? (
+        <div className="status-banner status-banner--error">
+          API responses could not be decrypted. Enter the current AES-GCM key in <Link to="/settings">Settings</Link>.
+        </div>
+      ) : null}
+      {error && !decryptionFailed ? <div className="status-banner status-banner--error">Unable to load targets.</div> : null}
+      {runsError && !decryptionFailed ? (
         <div className="status-banner status-banner--error">
           Unable to load run state.
           <button className="link-button" type="button" onClick={() => void refetchRuns()} disabled={runsFetching}>

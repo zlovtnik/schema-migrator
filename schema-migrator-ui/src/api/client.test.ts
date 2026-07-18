@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { ApiError, apiRequest, setApiBaseUrl, setAuthToken, setAuthTokenProvider, validateEncryptKey } from "./client";
+import {
+  ApiError,
+  ResponseDecryptionError,
+  apiRequest,
+  setApiBaseUrl,
+  setAuthToken,
+  setAuthTokenProvider,
+  validateEncryptKey
+} from "./client";
 
 const jsonResponse = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -77,7 +85,7 @@ describe("apiRequest", () => {
     });
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(encrypted));
 
-    await expect(apiRequest("/targets")).rejects.toThrow("Encrypted response received but no AES key is configured");
+    await expect(apiRequest("/targets")).rejects.toBeInstanceOf(ResponseDecryptionError);
   });
 });
 
