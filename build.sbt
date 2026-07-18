@@ -1,6 +1,6 @@
 ThisBuild / organization := "com.sslproxy"
 ThisBuild / version := "0.1.0"
-ThisBuild / scalaVersion := "3.3.8"
+ThisBuild / scalaVersion := "3.8.4"
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 ThisBuild / wartremoverErrors ++= Warts.allBut(
