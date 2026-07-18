@@ -47,7 +47,6 @@ val declineVersion = "2.5.0"
 val circeVersion = "0.14.14"
 val doobieVersion = "1.0.0-RC10"
 val http4sVersion = "0.23.34"
-val mongoDriverVersion = "5.9.0"
 val jgitVersion = "7.7.0.202606012155-r"
 val oracleJdbcVersion = "23.6.0.24.10"
 val oracleOsdtVersion = "21.18.0.0"
@@ -60,6 +59,7 @@ lazy val root = (project in file("."))
       "co.fs2" %% "fs2-core" % fs2Version,
       "co.fs2" %% "fs2-io" % fs2Version,
       "org.tpolecat" %% "doobie-core" % doobieVersion,
+      "org.tpolecat" %% "doobie-hikari" % doobieVersion,
       "org.tpolecat" %% "doobie-postgres" % doobieVersion,
       "com.monovore" %% "decline" % declineVersion,
       "com.monovore" %% "decline-effect" % declineVersion,
@@ -71,7 +71,6 @@ lazy val root = (project in file("."))
       "org.http4s" %% "http4s-circe" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion,
       "com.auth0" % "java-jwt" % "4.4.0",
-      "org.mongodb" % "mongodb-driver-sync" % mongoDriverVersion,
       "org.eclipse.jgit" % "org.eclipse.jgit" % jgitVersion,
       "org.apache.commons" % "commons-compress" % "1.27.1",
       "org.typelevel" %% "log4cats-slf4j" % "2.8.0",
