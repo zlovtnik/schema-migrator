@@ -1,6 +1,5 @@
 package com.sslproxy.schema.engine
 
-import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.discovery.SqlFile
@@ -28,14 +27,14 @@ class ManifestBuilderSuite extends FunSuite:
     )
 
     try
-      val manifest = ManifestBuilder[IO](SqlDialect.Oracle)
+      val manifest = ManifestBuilder(SqlDialect.Oracle)
         .build(List(SqlFile("functions", file, file.getFileName.toString, "functions/001_demo_procedure.sql")))
         .unsafeRunSync()
 
       assertEquals(manifest.head.kind, "procedure")
     finally
-      Files.deleteIfExists(file)
-      Files.deleteIfExists(dir)
+      deleteIfExists(file)
+      deleteIfExists(dir)
   }
 
   test("classifies Oracle editionable procedures stored in functions folder as procedures") {
@@ -57,13 +56,17 @@ class ManifestBuilderSuite extends FunSuite:
       )
 
       try
-        val manifest = ManifestBuilder[IO](SqlDialect.Oracle)
+        val manifest = ManifestBuilder(SqlDialect.Oracle)
           .build(List(SqlFile("functions", file, file.getFileName.toString, s"functions/${file.getFileName}")))
           .unsafeRunSync()
 
         assertEquals(manifest.head.kind, "procedure")
       finally
-        Files.deleteIfExists(file)
-        Files.deleteIfExists(dir)
+        deleteIfExists(file)
+        deleteIfExists(dir)
     }
   }
+
+  private def deleteIfExists(path: java.nio.file.Path): Unit =
+    Files.deleteIfExists(path)
+    ()

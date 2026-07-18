@@ -2,19 +2,11 @@ package com.sslproxy.schema.server
 
 import cats.effect.IO
 import cats.syntax.all.*
-import com.sslproxy.schema.config.ServerConfig
+import com.sslproxy.schema.config.{DbKind, ServerConfig}
 import com.sslproxy.schema.db.postgres.PostgresProvider
+import com.sslproxy.schema.db.TargetDescriptor
 import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
-import com.sslproxy.schema.store.{
-  AuditStore,
-  Models,
-  PatchStore,
-  RepoSyncStore,
-  RunStore,
-  TargetPayload,
-  TargetStore,
-  ValidationStore
-}
+import com.sslproxy.schema.store.{AuditStore, Models, PatchStore, RunStore, TargetPayload, TargetStore, ValidationStore}
 import io.circe.Json
 import io.circe.syntax.*
 import org.http4s.{HttpRoutes, Request, Response}
@@ -23,7 +15,6 @@ import org.http4s.dsl.io.*
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
 
-import java.net.URI
 import java.net.{URLDecoder, URLEncoder}
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -40,8 +31,7 @@ object TargetRoutes:
     patchStore: PatchStore,
     runStore: RunStore,
     validationStore: ValidationStore,
-    auditStore: AuditStore,
-    repoSyncStore: RepoSyncStore
+    auditStore: AuditStore
   ): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
       case GET -> Root / "targets" =>
@@ -119,11 +109,7 @@ object TargetRoutes:
             case None =>
               store.delete(id).flatMap {
                 case true =>
-                  (repoSyncStore.clear(id).attempt.flatMap {
-                    case Left(error) =>
-                      log.warn(error)(s"Failed to clear repoSync state for target $id")
-                    case Right(_) => IO.unit
-                  }) *> auditStore
+                  auditStore
                     .record(claims.subject, claims.role, "target.delete", "target", id, Some(id))
                     .void *> NoContent()
                 case false => RouteJson.notFound(s"target '$id' was not found")
@@ -179,7 +165,8 @@ object TargetRoutes:
       jdbc_url = jdbcUrl,
       repo_url = repoUrl,
       repo_branch = repoBranch,
-      repo_sql_path = repoSqlPath
+      repo_sql_path = repoSqlPath,
+      db_kind = payload.db_kind.map(_.trim.toLowerCase).filter(_.nonEmpty)
     )
     if jdbcUrl.isEmpty then Left("Database URL is required")
     else if repoUrl.isEmpty then Left("Repository URL is required")
@@ -195,7 +182,8 @@ object TargetRoutes:
             Left(
               "Postgres JDBC URLs must start with jdbc:postgresql://, for example jdbc:postgresql://host:5432/database?user=username"
             )
-          else if isSupportedJdbcUrl(jdbcUrl) then TargetPayload.rejectInlineCredentials(jdbcUrl).as(trimmedPayload)
+          else if isSupportedJdbcUrl(jdbcUrl) then
+            TargetPayload.rejectInlineCredentials(jdbcUrl) *> withDetectedKind(trimmedPayload)
           else
             Left(
               "unsupported database URL: expected postgres://..., postgresql://..., jdbc:postgresql://..., or jdbc:oracle:thin:..."
@@ -211,7 +199,18 @@ object TargetRoutes:
       _ <- TargetPayload.rejectInlineCredentials(config.url)
       jdbcUrl <- config.user.fold(Right(config.url))(user => appendUserParameter(config.url, user))
       password <- mergedPassword(payload.password, config.password)
-    yield payload.copy(jdbc_url = jdbcUrl, password = password)
+      normalized <- withDetectedKind(payload.copy(jdbc_url = jdbcUrl, password = password))
+    yield normalized
+
+  private def withDetectedKind(payload: TargetPayload): Either[String, TargetPayload] =
+    for
+      descriptor <- TargetDescriptor.parse(payload.jdbc_url)
+      configured <- payload.db_kind.traverse(DbKind.parse)
+      _ <- configured match
+        case Some(value) if value != descriptor.dbKind =>
+          Left(s"db_kind '${value.toString.toLowerCase}' does not match the database URL")
+        case _ => Right(())
+    yield payload.copy(db_kind = Some(descriptor.dbKind.toString.toLowerCase))
 
   private def mergedPassword(
     formPassword: Option[String],
@@ -225,7 +224,7 @@ object TargetRoutes:
       case (None, parsed) => Right(parsed)
 
   private def isSupportedJdbcUrl(value: String): Boolean =
-    value.startsWith("jdbc:postgresql:") || value.startsWith("jdbc:oracle:thin:")
+    TargetDescriptor.parse(value).isRight
 
   private def isPostgresUrl(value: String): Boolean =
     value.startsWith("postgres://") || value.startsWith("postgresql://") || value.startsWith("jdbc:postgresql://")
@@ -288,22 +287,7 @@ object TargetRoutes:
     }
 
   private[server] def jdbcHost(jdbcUrl: String): Option[String] =
-    val value = jdbcUrl.trim
-    if value.startsWith("jdbc:postgresql://") then uriHost(value.stripPrefix("jdbc:"))
-    else if value.startsWith("jdbc:oracle:thin:@//") then uriHost("oracle:" + value.stripPrefix("jdbc:oracle:thin:@"))
-    else oracleDescriptorHost(value)
-
-  private def uriHost(value: String): Option[String] =
-    Either.catchNonFatal(URI.create(value).getHost).toOption.flatMap(Option(_)).filter(_.nonEmpty)
-
-  private def oracleDescriptorHost(value: String): Option[String] =
-    raw"(?i)\bhost\s*=\s*([^)]+)".r
-      .findAllMatchIn(value)
-      .map(_.group(1).trim)
-      .filter(_.nonEmpty)
-      .toList match
-      case host :: Nil => Some(host)
-      case _ => None
+    TargetDescriptor.parse(jdbcUrl).toOption.flatMap(_.host)
 
   private val invalidPayloadMessage: String =
-    "invalid target payload: expected label, app_name, env, jdbc_url, repo_url, repo_branch, repo_sql_path, and optional password fields"
+    "invalid target payload: expected label, app_name, env, jdbc_url, repo_url, repo_branch, repo_sql_path, and optional password and db_kind fields"

@@ -18,10 +18,6 @@ final case class RetryPolicy(
   require(maxAttempts >= 1, "maxAttempts must be >= 1")
   require(baseDelay >= 0.millis, "baseDelay must be non-negative")
 
-object RetryPolicy:
-  val default: RetryPolicy =
-    RetryPolicy(maxAttempts = 3, baseDelay = 1.second)
-
 /** Retry combinators lifted into `Temporal[F]`. */
 object Retry:
 

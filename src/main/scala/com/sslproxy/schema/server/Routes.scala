@@ -7,7 +7,6 @@ import com.sslproxy.schema.discovery.{GitRepoLoader, RepoSyncService}
 import com.sslproxy.schema.store.{
   AuditStore,
   PatchStore,
-  RepoSyncStore,
   RunStore,
   SnapshotStore,
   SqlFileStore,
@@ -24,41 +23,6 @@ object Routes:
     runStore: RunStore,
     validationStore: ValidationStore,
     sqlFileStore: SqlFileStore,
-    repoSyncStore: RepoSyncStore,
-    snapshotStore: SnapshotStore,
-    auditStore: AuditStore
-  ): HttpRoutes[IO] =
-    val loader = GitRepoLoader(config.server.repoCloneTimeoutSeconds)
-    all(
-      config,
-      targetStore,
-      patchStore,
-      runStore,
-      validationStore,
-      sqlFileStore,
-      repoSyncStore,
-      snapshotStore,
-      auditStore,
-      RunExecutor.real(config, patchStore, runStore, validationStore, Some(auditStore)),
-      loader,
-      RepoSyncService(
-        sqlFileStore,
-        repoSyncStore,
-        loader,
-        config.server.repoCacheDir,
-        config.server.repoCloneTimeoutSeconds,
-        targetStore
-      )
-    )
-
-  def all(
-    config: MigratorConfig,
-    targetStore: TargetStore,
-    patchStore: PatchStore,
-    runStore: RunStore,
-    validationStore: ValidationStore,
-    sqlFileStore: SqlFileStore,
-    repoSyncStore: RepoSyncStore,
     snapshotStore: SnapshotStore,
     auditStore: AuditStore,
     runExecutor: RunExecutor
@@ -71,14 +35,12 @@ object Routes:
       runStore,
       validationStore,
       sqlFileStore,
-      repoSyncStore,
       snapshotStore,
       auditStore,
       runExecutor,
       loader,
       RepoSyncService(
         sqlFileStore,
-        repoSyncStore,
         loader,
         config.server.repoCacheDir,
         config.server.repoCloneTimeoutSeconds,
@@ -93,7 +55,6 @@ object Routes:
     runStore: RunStore,
     validationStore: ValidationStore,
     sqlFileStore: SqlFileStore,
-    repoSyncStore: RepoSyncStore,
     snapshotStore: SnapshotStore,
     auditStore: AuditStore,
     runExecutor: RunExecutor,
@@ -108,12 +69,11 @@ object Routes:
         patchStore,
         runStore,
         validationStore,
-        auditStore,
-        repoSyncStore
+        auditStore
       ) <+>
       SchemaRoutes.routes(config, targetStore, sqlFileStore, patchStore, runStore, auditStore, runExecutor) <+>
       PatchRoutes.routes(targetStore, patchStore, sqlFileStore, auditStore) <+>
-      RunRoutes.routes(config, targetStore, patchStore, runStore, validationStore, auditStore, runExecutor) <+>
+      RunRoutes.routes(config, targetStore, patchStore, runStore, auditStore, runExecutor) <+>
       ValidationRoutes.routes(config, targetStore, patchStore, runStore, sqlFileStore, validationStore, auditStore) <+>
       SnapshotRoutes.routes(
         config,
@@ -126,4 +86,4 @@ object Routes:
         runExecutor
       ) <+>
       AuditRoutes.routes(auditStore) <+>
-      SqlFileRoutes.routes(sqlFileStore, targetStore, repoSyncStore, repoSyncService, gitRepoLoader)
+      SqlFileRoutes.routes(sqlFileStore, targetStore, repoSyncService, gitRepoLoader)

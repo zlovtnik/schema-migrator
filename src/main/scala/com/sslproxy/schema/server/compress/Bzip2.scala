@@ -1,7 +1,6 @@
 package com.sslproxy.schema.server.compress
 
 import cats.effect.{Deferred, IO, Ref}
-import cats.syntax.all.*
 import fs2.Stream
 import org.apache.commons.compress.compressors.bzip2.{BZip2CompressorInputStream, BZip2CompressorOutputStream}
 

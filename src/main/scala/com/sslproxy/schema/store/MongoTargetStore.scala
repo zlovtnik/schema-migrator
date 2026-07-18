@@ -5,6 +5,7 @@ import cats.syntax.all.*
 import com.mongodb.client.model.{Indexes, Updates}
 import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.MongoConfig
+import com.sslproxy.schema.db.TargetDescriptor
 import com.sslproxy.schema.server.crypto.AesGcm
 import org.bson.Document
 
@@ -46,7 +47,7 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
     for
       id <- IO.delay(UUID.randomUUID().toString)
       now <- nowString
-      target = toTarget(id, now, payload)
+      target = Target.fromPayload(id, now, payload)
       stored = StoredTarget(target, payload.password.filter(_.nonEmpty))
       document <- documentFor(stored, now)
       _ <- IO.blocking(collection.insertOne(document)).void
@@ -75,6 +76,7 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
             Updates.set("app_name", payload.app_name),
             Updates.set("env", payload.env),
             Updates.set("jdbc_url", payload.jdbc_url),
+            Updates.set("db_kind", Target.dbKindFor(payload)),
             Updates.set("repo_url", payload.repo_url),
             Updates.set("repo_branch", payload.repo_branch),
             Updates.set("repo_sql_path", payload.repo_sql_path),
@@ -123,6 +125,16 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
         .getMatchedCount > 0
     }
 
+  override def clearRepoSync(id: String): IO[Boolean] =
+    IO.blocking {
+      collection
+        .updateOne(
+          idFilter(id),
+          Updates.combine(Updates.unset("last_synced_commit"), Updates.unset("last_synced_at"))
+        )
+        .getMatchedCount > 0
+    }
+
   private[store] def initialize: IO[Unit] =
     IO.blocking(collection.createIndex(Indexes.ascending("created_at"))).void
 
@@ -134,6 +146,7 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
       .append("app_name", target.app_name)
       .append("env", target.env)
       .append("jdbc_url", target.jdbc_url)
+      .append("db_kind", target.db_kind)
       .append("created_at", target.created_at)
       .append("repo_url", target.repo_url)
       .append("repo_branch", target.repo_branch)
@@ -164,7 +177,11 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
       repo_branch = optionalString(document, "repo_branch").getOrElse("main"),
       repo_sql_path = optionalString(document, "repo_sql_path").getOrElse("sql"),
       last_synced_commit = optionalString(document, "last_synced_commit"),
-      last_synced_at = optionalString(document, "last_synced_at")
+      last_synced_at = optionalString(document, "last_synced_at"),
+      db_kind = optionalString(document, "db_kind")
+        .orElse(TargetDescriptor.parse(requiredString(document, "jdbc_url")).toOption.map(_.dbKind.toString))
+        .getOrElse("")
+        .toLowerCase
     )
 
   private def requiredString(document: Document, field: String): String =
@@ -175,21 +192,6 @@ private final class MongoTargetStore(collection: MongoCollection[Document], pass
 
   private def idFilter(id: String): Document =
     new Document("_id", id)
-
-  private def toTarget(id: String, createdAt: String, payload: TargetPayload): Target =
-    Target(
-      id = id,
-      label = payload.label,
-      app_name = payload.app_name,
-      env = payload.env,
-      jdbc_url = payload.jdbc_url,
-      created_at = createdAt,
-      repo_url = payload.repo_url,
-      repo_branch = payload.repo_branch,
-      repo_sql_path = payload.repo_sql_path,
-      last_synced_commit = None,
-      last_synced_at = None
-    )
 
   private def nowString: IO[String] =
     Clock[IO].realTimeInstant.map(_.toString)

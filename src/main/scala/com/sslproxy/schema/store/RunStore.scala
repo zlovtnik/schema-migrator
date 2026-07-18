@@ -29,7 +29,6 @@ trait RunStore:
   def scriptCompleted(id: String, scriptId: String, filename: String, durationMs: Long): IO[Boolean]
   def scriptFailed(id: String, scriptId: String, filename: String, error: ScriptError, durationMs: Long): IO[Boolean]
   def log(runId: String, level: String, message: String): IO[Unit]
-  def events: Stream[IO, RunEvent]
   def runEvents(id: String): Resource[IO, Stream[IO, RunEvent]]
 
 object RunStore:
@@ -199,9 +198,6 @@ private trait RunStoreEvents:
         )
       )
     }
-
-  def events: Stream[IO, RunEvent] =
-    topic.subscribe(1024)
 
   def runEvents(id: String): Resource[IO, Stream[IO, RunEvent]] =
     topic.subscribeAwait(1024).map(_.filter(_.run_id == id))

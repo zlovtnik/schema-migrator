@@ -42,7 +42,9 @@ object Graph:
 
     val available = mutable.TreeSet.empty[Int]
     inDegree.zipWithIndex.foreach { case (degree, index) =>
-      if degree == 0 then available.add(index)
+      if degree == 0 then
+        available.add(index)
+        ()
     }
 
     val sorted = mutable.ListBuffer.empty[Int]
@@ -52,7 +54,9 @@ object Graph:
       sorted.append(index)
       adjacency(index).foreach { dependent =>
         inDegree(dependent) -= 1
-        if inDegree(dependent) == 0 then available.add(dependent)
+        if inDegree(dependent) == 0 then
+          available.add(dependent)
+          ()
       }
 
     if sorted.length != count then

@@ -1,7 +1,6 @@
 package com.sslproxy.schema.store
 
 import cats.effect.{Clock, IO}
-import cats.syntax.all.*
 import com.mongodb.client.model.{Indexes, ReplaceOptions}
 import com.mongodb.client.{MongoClient, MongoCollection}
 import com.sslproxy.schema.config.{MongoConfig, ServerConfig}

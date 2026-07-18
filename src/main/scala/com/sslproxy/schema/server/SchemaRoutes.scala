@@ -163,8 +163,8 @@ object SchemaRoutes:
   ): IO[SchemaCatalogResponse] =
     for
       now <- nowString
-      kind = dbKindFor(target.target.jdbc_url)
-      expected <- expectedObjects(config, kind, now, target.target.id, sqlFileStore)
+      kind <- targetDbKind(target)
+      expected <- expectedObjects(config, kind, target.target.id, sqlFileStore)
       response <- kind match
         case DbKind.Oracle =>
           IO.pure(
@@ -217,8 +217,8 @@ object SchemaRoutes:
   private def drift(config: MigratorConfig, target: StoredTarget, sqlFileStore: SqlFileStore): IO[DriftResponse] =
     for
       now <- nowString
-      kind = dbKindFor(target.target.jdbc_url)
-      expected <- expectedObjects(config, kind, now, target.target.id, sqlFileStore)
+      kind <- targetDbKind(target)
+      expected <- expectedObjects(config, kind, target.target.id, sqlFileStore)
       response <- kind match
         case DbKind.Oracle =>
           IO.pure(
@@ -287,14 +287,14 @@ object SchemaRoutes:
     val targetId = target.target.id
     for
       now <- nowString
-      kind = dbKindFor(target.target.jdbc_url)
+      kind <- targetDbKind(target)
       response <-
         kind match
           case DbKind.Oracle =>
             RouteJson.badRequest("Oracle drift execution is not implemented")
           case DbKind.Postgres =>
             (for
-              expected <- expectedObjects(config, kind, now, targetId, sqlFileStore)
+              expected <- expectedObjects(config, kind, targetId, sqlFileStore)
               snapshot <- postgresSnapshot(target, expected.objects)
               drift = driftItems(now, snapshot.expected, snapshot.objects, snapshot.control)
               runnableSourceFiles = orderedRunnableSources(expected.objects, drift)
@@ -345,7 +345,7 @@ object SchemaRoutes:
                                 )
                                 .noSpaces
                             )
-                            _ <- runExecutor.run(target, run, patch).start.void
+                            _ <- runExecutor.submit(target, run, patch)
                             created <- RouteJson.created(run.asJson)
                           yield created).recoverWith { case _: RunStore.ConcurrentRun =>
                             RouteJson.conflict(s"target '$targetId' already has an active run")
@@ -356,6 +356,9 @@ object SchemaRoutes:
                 RouteJson.internalServerError("drift run could not be prepared")
             }
     yield response
+
+  private def targetDbKind(target: StoredTarget): IO[DbKind] =
+    IO.fromEither(TargetDatabase.dbKindFor(target.target.jdbc_url).leftMap(IllegalArgumentException(_)))
 
   private def orderedRunnableSources(
     expected: List[ExpectedObject],
@@ -421,7 +424,6 @@ object SchemaRoutes:
   private def expectedObjects(
     config: MigratorConfig,
     kind: DbKind,
-    now: String,
     targetId: String,
     sqlFileStore: SqlFileStore
   ): IO[ExpectedSnapshot] =
@@ -432,8 +434,8 @@ object SchemaRoutes:
         if !empty then
           (for
             files <- storedSqlFiles(targetId, sqlFileStore)
-            discovery = DiscoveryService[IO]().discoverFromFiles(files, DbKind.Postgres)
-            objects <- ManifestBuilder[IO](SqlDialect.Postgres).build(discovery.files)
+            discovery = DiscoveryService().discoverFromFiles(files, DbKind.Postgres)
+            objects <- ManifestBuilder(SqlDialect.Postgres).build(discovery.files)
             expected = objects.flatMap(expectedFromManifest)
           yield ExpectedSnapshot(expected, discovery.warnings)).handleError { case NonFatal(error) =>
             ExpectedSnapshot(
@@ -447,8 +449,8 @@ object SchemaRoutes:
           )
         else
           (for
-            discovery <- DiscoveryService[IO]().discover(config.sqlDir, DbKind.Postgres, config.customer)
-            objects <- ManifestBuilder[IO](SqlDialect.Postgres).build(discovery.files)
+            discovery <- DiscoveryService().discover(config.sqlDir, DbKind.Postgres, config.customer)
+            objects <- ManifestBuilder(SqlDialect.Postgres).build(discovery.files)
             expected = objects.flatMap(expectedFromManifest)
           yield ExpectedSnapshot(expected, discovery.warnings)).handleError { case NonFatal(error) =>
             ExpectedSnapshot(Nil, List(s"SQL manifest could not be loaded: ${error.getMessage}"))
@@ -486,9 +488,6 @@ object SchemaRoutes:
       settings.jdbcUrl,
       JdbcConnectionProperties.withTimeouts(settings.jdbcUrl, settings.password, 5.seconds, user = settings.user)
     )
-
-  private def dbKindFor(jdbcUrl: String): DbKind =
-    if jdbcUrl.trim.startsWith("jdbc:oracle:thin:") then DbKind.Oracle else DbKind.Postgres
 
   private def nowString: IO[String] =
     Clock[IO].realTimeInstant.map(_.toString)

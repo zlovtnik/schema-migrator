@@ -190,7 +190,6 @@ object CliOpts:
 
   private final case class CollectionOptions(
     sqlFiles: String,
-    repoSync: String,
     patches: String,
     runs: String,
     validations: String,
@@ -219,14 +218,6 @@ object CliOpts:
       "MongoDB collection for synced SQL files",
       "BEDROCK_SQL_FILES_COLLECTION",
       "sql_files"
-    )
-
-  private val repoSyncCollectionOpt: Opts[String] =
-    collectionOpt(
-      "repo-sync-collection",
-      "MongoDB collection for repository sync state",
-      "BEDROCK_REPO_SYNC_COLLECTION",
-      "repo_sync_state"
     )
 
   private val runsCollectionOpt: Opts[String] =
@@ -262,7 +253,6 @@ object CliOpts:
   private val collectionOpts: Opts[CollectionOptions] =
     (
       sqlFilesCollectionOpt,
-      repoSyncCollectionOpt,
       patchesCollectionOpt,
       runsCollectionOpt,
       validationsCollectionOpt,
@@ -337,7 +327,6 @@ object CliOpts:
           patchStageDir = patchStageDir,
           mongo = mongoResult.toOption.flatten,
           sqlFilesCollection = collections.sqlFiles,
-          repoSyncCollection = collections.repoSync,
           repoCacheDir = repoCacheDir,
           repoCloneTimeoutSeconds = repoCloneTimeoutSeconds,
           patchesCollection = collections.patches,

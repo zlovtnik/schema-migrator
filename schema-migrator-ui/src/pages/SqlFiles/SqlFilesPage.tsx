@@ -6,6 +6,7 @@ import { ShieldCheckIcon } from "@phosphor-icons/react/dist/csr/ShieldCheck";
 import { TrashIcon } from "@phosphor-icons/react/dist/csr/Trash";
 import { TreeStructureIcon } from "@phosphor-icons/react/dist/csr/TreeStructure";
 import { PageHeader } from "../../components/PageHeader";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
 import { ValidationTable } from "../../components/ValidationTable";
@@ -76,6 +77,7 @@ const SqlFilesPage = () => {
   const [query, setQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>(readExpandedFolders);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const effectiveTargetId = selectedTarget ?? targetQuery.data?.id ?? repoStatus?.target_id ?? null;
 
   const load = useCallback(async () => {
@@ -114,8 +116,8 @@ const SqlFilesPage = () => {
   }, [selectedTarget]);
 
   useEffect(() => {
-    setValidationDbKind(dbKindFromJdbcUrl(targetQuery.data?.jdbc_url));
-  }, [targetQuery.data?.jdbc_url]);
+    setValidationDbKind(targetQuery.data?.db_kind ?? dbKindFromJdbcUrl(targetQuery.data?.jdbc_url));
+  }, [targetQuery.data?.db_kind, targetQuery.data?.jdbc_url]);
 
   useEffect(() => {
     try {
@@ -197,7 +199,7 @@ const SqlFilesPage = () => {
 
   const handleClear = async () => {
     if (!canMutate || !effectiveTargetId) return;
-    if (!window.confirm("Clear all synced SQL files? This will remove the loaded repository manifest.")) return;
+    setClearDialogOpen(false);
     setLoading(true);
     setError(null);
     try {
@@ -306,7 +308,7 @@ const SqlFilesPage = () => {
             <button
               className="button button--danger"
               type="button"
-              onClick={handleClear}
+              onClick={() => setClearDialogOpen(true)}
               disabled={loading || syncing || !canMutate}
               title={canMutate ? undefined : "Viewer role cannot clear SQL files"}
             >
@@ -567,6 +569,16 @@ const SqlFilesPage = () => {
           )}
         </section>
       ) : null}
+      <ConfirmDialog
+        open={clearDialogOpen}
+        title="Clear synced SQL files?"
+        message="This removes the loaded repository manifest for this target."
+        confirmLabel="Clear files"
+        destructive
+        busy={loading}
+        onCancel={() => setClearDialogOpen(false)}
+        onConfirm={() => void handleClear()}
+      />
     </section>
   );
 };

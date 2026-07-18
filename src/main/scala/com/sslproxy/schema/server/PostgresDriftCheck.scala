@@ -40,8 +40,8 @@ private[schema] object PostgresDriftCheck:
     for
       jdbc <- jdbcConfig(config)
       _ <- PostgresProvider(jdbc).session.use(_.bootstrap)
-      discovery <- DiscoveryService[IO]().discover(config.sqlDir, DbKind.Postgres, config.customer)
-      manifest <- ManifestBuilder[IO](SqlDialect.Postgres).build(discovery.files)
+      discovery <- DiscoveryService().discover(config.sqlDir, DbKind.Postgres, config.customer)
+      manifest <- ManifestBuilder(SqlDialect.Postgres).build(discovery.files)
       expected = manifest.flatMap(expectedFromManifest)
       snapshot <- PostgresCatalogReader.snapshot(jdbc, expected)
       comparableExpected = snapshot.expected

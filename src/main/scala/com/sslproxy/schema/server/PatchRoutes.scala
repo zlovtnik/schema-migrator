@@ -150,7 +150,7 @@ object PatchRoutes:
         else
           val selectedSet = selected.toSet
           val selectedFiles = storedFiles.filter(file => selectedSet.contains(file.path))
-          val discovery = DiscoveryService[IO]().discoverFromFiles(selectedFiles.map(SqlFileStore.toSqlFileUnsafe), dbKind)
+          val discovery = DiscoveryService().discoverFromFiles(selectedFiles.map(SqlFileStore.toSqlFileUnsafe), dbKind)
           val orderedStored = discovery.files.flatMap(file => byPath.get(file.relativePath))
           val fallbackStored = selectedFiles.filterNot(file => orderedStored.exists(_.path == file.path)).sortBy(_.path)
           Right((orderedStored ++ fallbackStored).zipWithIndex.map { case (file, index) =>

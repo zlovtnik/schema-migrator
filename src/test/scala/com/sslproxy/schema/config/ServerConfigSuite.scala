@@ -22,7 +22,7 @@ class ServerConfigSuite extends FunSuite:
       )
 
       assert(config.validate.left.exists(_.nonEmpty))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation requires static API bearer token and Mongo config") {
@@ -36,7 +36,7 @@ class ServerConfigSuite extends FunSuite:
         missingMongo.validate,
         Left("BEDROCK_MONGO_URI, BEDROCK_MONGO_DATABASE, and BEDROCK_MONGO_TARGETS_COLLECTION must be set")
       )
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation requires encryption key for persisted targets") {
@@ -45,7 +45,7 @@ class ServerConfigSuite extends FunSuite:
       val missingEncryptKey = validConfig(stageDir).copy(encryptKeyBase64 = None)
 
       assertEquals(missingEncryptKey.validate, Left("BEDROCK_ENCRYPT_KEY must not be empty"))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation only requires dev auth secret when dev auth is enabled") {
@@ -56,7 +56,7 @@ class ServerConfigSuite extends FunSuite:
 
       assertEquals(disabled.validate, Right(()))
       assertEquals(enabled.validate, Left("BEDROCK_DEV_AUTH_SECRET must not be empty when dev auth is enabled"))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation requires Keycloak issuer when Keycloak auth is enabled") {
@@ -67,7 +67,7 @@ class ServerConfigSuite extends FunSuite:
 
       assertEquals(disabled.validate, Right(()))
       assertEquals(enabled.validate, Left("BEDROCK_KEYCLOAK_ISSUER must not be empty when Keycloak auth is enabled"))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation requires a Keycloak audience or client id when Keycloak auth is enabled") {
@@ -88,7 +88,7 @@ class ServerConfigSuite extends FunSuite:
       )
       assertEquals(withAudience.validate, Right(()))
       assertEquals(withClientId.validate, Right(()))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation requires Keycloak config collection name") {
@@ -97,7 +97,7 @@ class ServerConfigSuite extends FunSuite:
       val config = validConfig(stageDir).copy(keycloakConfigCollection = "")
 
       assertEquals(config.validate, Left("BEDROCK_KEYCLOAK_CONFIG_COLLECTION must not be empty"))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   private def validConfig(stageDir: java.nio.file.Path): ServerConfig =
@@ -113,3 +113,7 @@ class ServerConfigSuite extends FunSuite:
       apiBearerToken = Some("api-token"),
       mongo = Some(MongoConfig("mongodb://localhost:27017", "schema_migrator", "targets"))
     )
+
+  private def deleteIfExists(path: java.nio.file.Path): Unit =
+    Files.deleteIfExists(path)
+    ()

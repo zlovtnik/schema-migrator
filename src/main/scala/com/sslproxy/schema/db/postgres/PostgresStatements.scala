@@ -58,12 +58,20 @@ object PostgresStatements extends DialectStatements:
       updated_at      timestamptz not null default now(),
       constraint schema_objects_unique unique (kind, object_name),
       constraint schema_objects_status_chk check (
-        apply_status in ('pending', 'applied', 'failed', 'skipped')
+        apply_status in ('pending', 'applied', 'failed', 'skipped', 'retired')
       )
     );
 
     alter table schema_control.schema_objects
       add column if not exists rollback_file text;
+
+    alter table schema_control.schema_objects
+      drop constraint if exists schema_objects_status_chk;
+
+    alter table schema_control.schema_objects
+      add constraint schema_objects_status_chk check (
+        apply_status in ('pending', 'applied', 'failed', 'skipped', 'retired')
+      );
 
     create table if not exists schema_control.schema_apply_log (
       log_id        bigserial primary key,
@@ -85,17 +93,17 @@ object PostgresStatements extends DialectStatements:
     create or replace view schema_control.schema_ready as
     select
       now() as measured_at,
-      count(*)::bigint as total_count,
+      count(*) filter (where apply_status <> 'retired')::bigint as total_count,
       count(*) filter (where apply_status = 'pending')::bigint as pending_count,
       count(*) filter (where apply_status = 'failed')::bigint as failed_count,
       count(*) filter (where apply_status in ('applied', 'skipped'))::bigint as applied_count,
       (
-        count(*) > 0
-        and coalesce(bool_and(apply_status in ('applied', 'skipped')), false)
+        count(*) filter (where apply_status <> 'retired') > 0
+        and coalesce(bool_and(apply_status in ('applied', 'skipped', 'retired')), false)
       ) as all_applied,
       (
-        count(*) > 0
-        and coalesce(bool_and(apply_status in ('applied', 'skipped')), false)
+        count(*) filter (where apply_status <> 'retired') > 0
+        and coalesce(bool_and(apply_status in ('applied', 'skipped', 'retired')), false)
         and count(*) filter (where apply_status = 'failed') = 0
       ) as ready,
       coalesce(
@@ -140,6 +148,16 @@ object PostgresStatements extends DialectStatements:
     select content_sha256, apply_status
       from schema_control.schema_objects
      where kind = ? and object_name = ?
+    """
+
+  val retireSql: String =
+    """
+    update schema_control.schema_objects
+       set apply_status = 'retired',
+           last_error = null,
+           updated_at = now()
+     where source_file = ?
+       and apply_status <> 'retired'
     """
 
   val applyLogSql: String =

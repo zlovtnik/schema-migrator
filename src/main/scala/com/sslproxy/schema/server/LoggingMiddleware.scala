@@ -1,9 +1,7 @@
 package com.sslproxy.schema.server
 
 import cats.effect.IO
-import cats.syntax.all.*
 import io.circe.Json
-import io.circe.syntax.*
 import org.http4s.{HttpApp, Request, Response}
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory

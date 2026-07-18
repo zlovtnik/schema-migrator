@@ -49,7 +49,7 @@ class RunStreamSuite extends FunSuite with TestSqlSupport:
           subscribed <- Deferred[IO, Unit]
           streamStore = signalingRunStore(runStore, subscribed)
           routes = RunRoutes
-            .routes(routeConfig(stageDir), targetStore, patchStore, streamStore, validationStore, auditStore, executor)
+            .routes(routeConfig(stageDir), targetStore, patchStore, streamStore, auditStore, executor)
             .orNotFound
           response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/runs/${run.id}/stream")))
           collect = response.body
@@ -95,7 +95,7 @@ class RunStreamSuite extends FunSuite with TestSqlSupport:
           storedTarget <- targetStore.getStored(target.id).map(_.get)
           _ <- executor.run(storedTarget, run, patch)
           routes = RunRoutes
-            .routes(routeConfig(stageDir), targetStore, patchStore, runStore, validationStore, auditStore, executor)
+            .routes(routeConfig(stageDir), targetStore, patchStore, runStore, auditStore, executor)
             .orNotFound
           response <- routes.run(Request[IO](Method.GET, Uri.unsafeFromString(s"/runs/${run.id}/stream")))
           body <- response.body
@@ -177,9 +177,6 @@ class RunStreamSuite extends FunSuite with TestSqlSupport:
 
       override def log(runId: String, level: String, message: String): IO[Unit] =
         delegate.log(runId, level, message)
-
-      override def events: Stream[IO, RunEvent] =
-        Stream.eval_(subscribed.complete(()).void) ++ delegate.events
 
       override def runEvents(id: String): Resource[IO, Stream[IO, RunEvent]] =
         delegate.runEvents(id).evalTap(_ => subscribed.complete(()).void)

@@ -1,12 +1,13 @@
 package com.sslproxy.schema.store
 
 import cats.effect.{Clock, IO, Ref, Resource}
-import cats.syntax.all.*
 import com.mongodb.client.model.{Indexes, ReplaceOptions}
 import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
 import com.sslproxy.schema.config.{DbKind, MongoConfig}
+import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.discovery.SqlFile
-import com.sslproxy.schema.validation.{ValidationReport, Validator}
+import com.sslproxy.schema.engine.MigrationPlan
+import com.sslproxy.schema.validation.ValidationReport
 import org.bson.Document
 
 import scala.jdk.CollectionConverters.*
@@ -17,7 +18,9 @@ trait ValidationStore:
   def record(runId: String, targetId: String, report: ValidationReport): IO[ValidationResult]
 
   def validateFiles(run: Run, dbKind: DbKind, files: List[SqlFile]): IO[ValidationResult] =
-    Validator[IO](dbKind).validate(files).flatMap(report => record(run.id, run.target_id, report))
+    MigrationPlan
+      .inspectFiles(dbKind, files, SqlDialect.forDbKind(dbKind))
+      .flatMap(plan => record(run.id, run.target_id, plan.validation))
 
   def validateRun(run: Run, patch: Patch, patchStore: PatchStore, dbKind: DbKind): IO[ValidationResult] =
     patchStore.sqlFiles(patch, dbKind).flatMap(files => validateFiles(run, dbKind, files.map(_.sqlFile)))

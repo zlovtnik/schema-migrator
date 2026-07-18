@@ -11,7 +11,7 @@ import org.bson.Document
 
 import java.nio.file.{Files, Path, StandardCopyOption}
 import java.security.MessageDigest
-import java.time.{Instant, ZoneOffset}
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Base64
 import java.util.UUID
@@ -194,6 +194,7 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
         val original = stageDir.resolve(patchId)
         if Files.exists(target) && Files.notExists(original) then
           Files.move(target, original, StandardCopyOption.ATOMIC_MOVE)
+          ()
         ()
       }.handleErrorWith(_ => IO.unit)
     }
@@ -205,6 +206,7 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
         try children.iterator().asScala.foreach(deleteRecursively)
         finally children.close()
       Files.deleteIfExists(path)
+      ()
 
   private def stagedPath(patchId: String, script: Script): Path =
     stagedPath(patchId, script.order, script.filename)

@@ -1,6 +1,6 @@
 -- object: vec_embeddings
 -- folder: tables
--- depends_on: pgvector extension
+-- depends_on: extensions
 create table if not exists vec_embeddings (
   embedding_id bigserial primary key,
   embedding_model text not null,

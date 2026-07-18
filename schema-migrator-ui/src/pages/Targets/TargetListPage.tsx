@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { LightningIcon } from "@phosphor-icons/react/dist/csr/Lightning";
 import { PlusIcon } from "@phosphor-icons/react/dist/csr/Plus";
@@ -49,7 +49,7 @@ export const TargetListPage = () => {
     [runs]
   );
 
-  const closeCreate = () => {
+  const closeCreate = useCallback(() => {
     preSaveTestRequestRef.current += 1;
     setCreateOpen(false);
     setPreSaveTestResult(undefined);
@@ -58,7 +58,7 @@ export const TargetListPage = () => {
       next.delete("create");
       setSearchParams(next, { replace: true });
     }
-  };
+  }, [searchParams, setSearchParams]);
 
   const clearPreSaveTestResult = () => {
     preSaveTestRequestRef.current += 1;
@@ -96,7 +96,7 @@ export const TargetListPage = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [createOpen]);
+  }, [closeCreate, createOpen]);
 
   const runConnectionTest = (target: Target) => {
     if (!canManageTargets) {

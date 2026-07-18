@@ -1,6 +1,5 @@
 package com.sslproxy.schema.server.crypto
 
-import cats.data.OptionT
 import cats.effect.IO
 import io.circe.Json
 import org.http4s.*

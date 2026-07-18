@@ -31,7 +31,7 @@ export const SchemaPage = () => {
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
 
-  const objects = data?.objects ?? [];
+  const objects = useMemo(() => data?.objects ?? [], [data?.objects]);
   const filteredObjects = useMemo(
     () =>
       objects.filter((object) => {

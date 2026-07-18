@@ -10,7 +10,7 @@ import doobie.*
 import doobie.free.FC
 import doobie.hi.{HC, HS}
 import doobie.implicits.*
-import doobie.util.transactor.{Strategy, Transactor}
+import doobie.util.transactor.Transactor
 import munit.FunSuite
 
 import java.util.UUID

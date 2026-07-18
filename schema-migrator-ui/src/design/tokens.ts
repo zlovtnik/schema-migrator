@@ -190,26 +190,6 @@ const compatibilityTokens = {
   "--radius": "var(--radius-md)"
 } satisfies TokenMap;
 
-export const componentTokenDefaults = {
-  button: {
-    "--button-bg": "transparent",
-    "--button-bg-hover": "transparent",
-    "--button-border": "transparent",
-    "--button-color": "var(--color-text-primary)"
-  },
-  input: {
-    "--input-bg": "var(--color-bg-surface)",
-    "--input-border": "var(--color-border)",
-    "--input-border-focus": "var(--color-accent-primary)",
-    "--input-color": "var(--color-text-primary)"
-  },
-  badge: {
-    "--badge-bg": "var(--color-bg-elevated)",
-    "--badge-color": "var(--color-text-secondary)",
-    "--badge-border": "var(--color-border)"
-  }
-} satisfies Record<string, TokenMap>;
-
 const serializeTokens = (tokens: TokenMap): string =>
   Object.entries(tokens)
     .map(([name, value]) => `  ${name}: ${value};`)

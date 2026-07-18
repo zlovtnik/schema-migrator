@@ -42,8 +42,7 @@ data:
       VITE_KEYCLOAK_URL: "http://REPLACE_WITH_LOAD_BALANCER:8080",
       VITE_KEYCLOAK_REALM: "middleware",
       VITE_KEYCLOAK_CLIENT_ID: "bedrock-ui",
-      VITE_KEYCLOAK_REDIRECT_URI: "http://REPLACE_WITH_LOAD_BALANCER/callback",
-      VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS: "false"
+      VITE_KEYCLOAK_REDIRECT_URI: "http://REPLACE_WITH_LOAD_BALANCER/callback"
     };
 ---
 apiVersion: v1

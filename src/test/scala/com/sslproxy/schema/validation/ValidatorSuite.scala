@@ -1,6 +1,5 @@
 package com.sslproxy.schema.validation
 
-import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.config.DbKind
 import com.sslproxy.schema.discovery.DiscoveryService
@@ -16,7 +15,7 @@ class ValidatorSuite extends FunSuite:
       val path = dir.resolve("001_table.sql")
       Files.writeString(path, "-- object: sample\n-- folder: tables\n-- depends_on: -\ncreate table sample(id int);\n")
 
-      val report = Validator[IO](DbKind.Postgres)
+      val report = Validator(DbKind.Postgres)
         .validate(List(SqlFile("tables", path, "001_table.sql", "001_table.sql")))
         .unsafeRunSync()
       assert(report.warnings.exists(_.contains("CREATE TABLE IF NOT EXISTS")))
@@ -29,7 +28,7 @@ class ValidatorSuite extends FunSuite:
       val path = dir.resolve("001_table.sql")
       Files.writeString(path, "create table if not exists sample(id int);\n")
 
-      val report = Validator[IO](DbKind.Postgres)
+      val report = Validator(DbKind.Postgres)
         .validate(List(SqlFile("tables", path, "001_table.sql", "001_table.sql")))
         .unsafeRunSync()
       assert(report.errors.exists(_.contains("missing required header")))
@@ -53,7 +52,7 @@ class ValidatorSuite extends FunSuite:
           |""".stripMargin
       )
 
-      val report = Validator[IO](DbKind.Postgres)
+      val report = Validator(DbKind.Postgres)
         .validate(List(SqlFile("tables", path, "001_table.sql", "001_table.sql")))
         .unsafeRunSync()
 
@@ -78,7 +77,7 @@ class ValidatorSuite extends FunSuite:
           |""".stripMargin
       )
 
-      val report = Validator[IO](DbKind.Postgres)
+      val report = Validator(DbKind.Postgres)
         .validate(List(SqlFile("tables", path, "001_table.sql", "001_table.sql")))
         .unsafeRunSync()
 
@@ -103,7 +102,7 @@ class ValidatorSuite extends FunSuite:
           |""".stripMargin
       )
 
-      val report = Validator[IO](DbKind.Postgres)
+      val report = Validator(DbKind.Postgres)
         .validate(List(SqlFile("tables", path, "001_table.sql", "001_table.sql")))
         .unsafeRunSync()
 
@@ -134,7 +133,7 @@ class ValidatorSuite extends FunSuite:
           |""".stripMargin
       )
 
-      val report = Validator[IO](DbKind.Postgres)
+      val report = Validator(DbKind.Postgres)
         .validate(
           List(
             SqlFile("views", first, "001_demo_view.sql", "core/06_views/001_demo_view.sql"),
@@ -176,7 +175,7 @@ class ValidatorSuite extends FunSuite:
           |""".stripMargin
       )
 
-      val report = Validator[IO](DbKind.Postgres)
+      val report = Validator(DbKind.Postgres)
         .validate(
           List(
             SqlFile("views", grouped, "001_grouped_views.sql", "core/06_views/001_grouped_views.sql"),
@@ -190,8 +189,8 @@ class ValidatorSuite extends FunSuite:
   }
 
   test("repository postgres SQL has no duplicate table or object body patches") {
-    val discovered = DiscoveryService[IO]().discover(Path.of("sql/postgres"), DbKind.Postgres).unsafeRunSync()
-    val report = Validator[IO](DbKind.Postgres).validate(discovered.files).unsafeRunSync()
+    val discovered = DiscoveryService().discover(Path.of("sql/postgres"), DbKind.Postgres).unsafeRunSync()
+    val report = Validator(DbKind.Postgres).validate(discovered.files).unsafeRunSync()
     val duplicateErrors = report.errors.filter(error =>
       error.contains("duplicates CREATE TABLE column") || error.contains("ignoring header comments")
     )
@@ -216,8 +215,30 @@ class ValidatorSuite extends FunSuite:
           |""".stripMargin
       )
 
-      val report = Validator[IO](DbKind.Oracle)
+      val report = Validator(DbKind.Oracle)
         .validate(List(SqlFile("functions", path, "001_proc.sql", "001_proc.sql")))
+        .unsafeRunSync()
+
+      assert(!report.warnings.exists(_.contains("CREATE OR REPLACE FUNCTION")))
+      assert(!report.hasErrors)
+    }
+  }
+
+  test("accepts idempotent routine retirement in functions folder") {
+    withTempDir { dir =>
+      val path = dir.resolve("001_retire.sql")
+      Files.writeString(
+        path,
+        """-- object: retired routines
+          |-- folder: functions
+          |-- depends_on: -
+          |drop function if exists old_function(text, integer);
+          |drop procedure if exists old_procedure(text);
+          |""".stripMargin
+      )
+
+      val report = Validator(DbKind.Postgres)
+        .validate(List(SqlFile("functions", path, "001_retire.sql", "001_retire.sql")))
         .unsafeRunSync()
 
       assert(!report.warnings.exists(_.contains("CREATE OR REPLACE FUNCTION")))
@@ -242,7 +263,7 @@ class ValidatorSuite extends FunSuite:
              |""".stripMargin
         )
 
-        val report = Validator[IO](DbKind.Oracle)
+        val report = Validator(DbKind.Oracle)
           .validate(List(SqlFile("procedures", path, path.getFileName.toString, path.getFileName.toString)))
           .unsafeRunSync()
 

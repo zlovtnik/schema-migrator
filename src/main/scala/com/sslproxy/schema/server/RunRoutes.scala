@@ -12,8 +12,7 @@ import com.sslproxy.schema.store.{
   RunEvent,
   RunStore,
   TargetStore,
-  TriggerRunPayload,
-  ValidationStore
+  TriggerRunPayload
 }
 import fs2.Stream
 import io.circe.Json
@@ -37,7 +36,6 @@ object RunRoutes:
     targetStore: TargetStore,
     patchStore: PatchStore,
     runStore: RunStore,
-    validationStore: ValidationStore,
     auditStore: AuditStore,
     runExecutor: RunExecutor
   ): HttpRoutes[IO] =
@@ -79,7 +77,7 @@ object RunRoutes:
                         )
                         .noSpaces
                     )
-                    _ <- runExecutor.run(target, run, patch).start.void
+                    _ <- runExecutor.submit(target, run, patch)
                     response <- RouteJson.created(run.asJson)
                   yield response).recoverWith { case _: RunStore.ConcurrentRun =>
                     RouteJson.conflict(s"target '${payload.target_id}' already has an active run")
@@ -135,7 +133,7 @@ object RunRoutes:
             case None => RouteJson.notFound(s"run '$id' was not found")
             case Some(run) if run.status != "failed" =>
               RouteJson.conflict(s"run '$id' is not failed")
-            case Some(run) =>
+            case Some(_) =>
               runStore.resolveFailed(id).flatMap {
                 case Some(resolved) =>
                   auditStore.record(

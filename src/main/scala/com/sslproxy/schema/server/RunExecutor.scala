@@ -1,9 +1,9 @@
 package com.sslproxy.schema.server
 
 import cats.effect.{Clock, IO, Ref, Temporal}
+import cats.effect.std.Supervisor
 import cats.syntax.all.*
 import com.sslproxy.schema.config.MigratorConfig
-import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.engine.{ApplyCallbacks, MigrationEngine, PreparedObject}
 import com.sslproxy.schema.effect.MigrationRunContext
 import com.sslproxy.schema.error.MigratorError
@@ -27,8 +27,18 @@ import scala.concurrent.duration.*
 
 trait RunExecutor:
   def run(target: StoredTarget, run: Run, patch: Patch): IO[Unit]
+  def submit(target: StoredTarget, runRecord: Run, patch: Patch): IO[Unit] =
+    run(target, runRecord, patch)
 
 object RunExecutor:
+  def supervised(delegate: RunExecutor, supervisor: Supervisor[IO]): RunExecutor =
+    new RunExecutor:
+      override def run(target: StoredTarget, run: Run, patch: Patch): IO[Unit] =
+        delegate.run(target, run, patch)
+
+      override def submit(target: StoredTarget, run: Run, patch: Patch): IO[Unit] =
+        supervisor.supervise(delegate.run(target, run, patch)).void
+
   def real(
     config: MigratorConfig,
     patchStore: PatchStore,
@@ -77,7 +87,7 @@ private final class RealRunExecutor(
               val context = MigrationRunContext
                 .fromConfig(config.copy(dbKind = dbKind, databaseUrl = Some(target.target.jdbc_url)))
                 .copy(runId = Some(run.id), targetId = Some(run.target_id))
-              MigrationEngine(provider, com.sslproxy.schema.discovery.DiscoveryService[IO]())
+              MigrationEngine(provider, com.sslproxy.schema.discovery.DiscoveryService())
                 .applyFiles(
                   config.copy(dbKind = dbKind, databaseUrl = Some(target.target.jdbc_url)),
                   patchFiles.map(_.sqlFile),
@@ -110,12 +120,11 @@ private final class RealRunExecutor(
     run: Run,
     patchFiles: List[PatchSqlFile],
     failedScript: Ref[IO, Option[(String, Throwable)]]
-  ): ApplyCallbacks[IO] =
+  ): ApplyCallbacks =
     val scriptsBySource = patchFiles.map(file => file.sqlFile.relativePath -> file.script).toMap
     val total = run.scripts.length
 
-    ApplyCallbacks
-      .silent[IO]
+    ApplyCallbacks.silent
       .copy(
         runStarted = context =>
           runStore.log(

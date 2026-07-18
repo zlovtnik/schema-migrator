@@ -52,16 +52,20 @@ env_value() {
   awk -F= -v key="${key}" '$1 == key { print substr($0, index($0, "=") + 1); exit }' "${tmp_env}"
 }
 
-if ! grep -q '^KEYCLOAK_ADMIN_PASSWORD=' "${tmp_env}"; then
-  printf 'KEYCLOAK_ADMIN_PASSWORD=%s\n' "${KEYCLOAK_ADMIN_PASSWORD:-change-me-now}" >> "${tmp_env}"
-fi
-
 keycloak_admin_value="$(env_value "KEYCLOAK_ADMIN")"
 keycloak_admin_password_value="$(env_value "KEYCLOAK_ADMIN_PASSWORD")"
 keycloak_dev_username_value="$(env_value "KEYCLOAK_DEV_USERNAME")"
 keycloak_dev_password_value="$(env_value "KEYCLOAK_DEV_PASSWORD")"
+keycloak_admin_password_raw="${keycloak_admin_password_value:-${KEYCLOAK_ADMIN_PASSWORD:-}}"
+keycloak_dev_password_raw="${keycloak_dev_password_value:-${KEYCLOAK_DEV_PASSWORD:-}}"
+
+if [[ -z "${keycloak_admin_password_raw}" || -z "${keycloak_dev_password_raw}" ]]; then
+  echo "KEYCLOAK_ADMIN_PASSWORD and KEYCLOAK_DEV_PASSWORD must be set in .env or the environment" >&2
+  exit 1
+fi
+
 keycloak_dev_username="$(escape_json_string "${keycloak_dev_username_value:-${KEYCLOAK_DEV_USERNAME:-${keycloak_admin_value:-${KEYCLOAK_ADMIN:-admin}}}}")"
-keycloak_dev_password="$(escape_json_string "${keycloak_dev_password_value:-${KEYCLOAK_DEV_PASSWORD:-${keycloak_admin_password_value:-${KEYCLOAK_ADMIN_PASSWORD:-admin}}}}")"
+keycloak_dev_password="$(escape_json_string "${keycloak_dev_password_raw}")"
 
 PUBLIC_ORIGIN="${public_origin}" \
   KEYCLOAK_DEV_USERNAME="${keycloak_dev_username}" \
@@ -78,6 +82,8 @@ KEYCLOAK_PUBLIC_URL="${keycloak_public_url}" PUBLIC_ORIGIN="${public_origin}" \
 upsert_env "PUBLIC_HOSTNAME" "${public_hostname}"
 upsert_env "KEYCLOAK_HOSTNAME" "${public_hostname}"
 upsert_env "KEYCLOAK_DEV_USERNAME" "${keycloak_dev_username_value:-${KEYCLOAK_DEV_USERNAME:-${keycloak_admin_value:-${KEYCLOAK_ADMIN:-admin}}}}"
+upsert_env "KEYCLOAK_ADMIN_PASSWORD" "${keycloak_admin_password_raw}"
+upsert_env "KEYCLOAK_DEV_PASSWORD" "${keycloak_dev_password_raw}"
 upsert_env "BEDROCK_CORS_ORIGINS" "${cors_origins}"
 upsert_env "BEDROCK_KEYCLOAK_ENABLED" "true"
 upsert_env "BEDROCK_KEYCLOAK_ISSUER" "${keycloak_public_url}/realms/middleware"
@@ -88,7 +94,6 @@ upsert_env "VITE_KEYCLOAK_URL" "${keycloak_public_url}"
 upsert_env "VITE_KEYCLOAK_REALM" "middleware"
 upsert_env "VITE_KEYCLOAK_CLIENT_ID" "bedrock-ui"
 upsert_env "VITE_KEYCLOAK_REDIRECT_URI" "${public_origin}/callback"
-upsert_env "VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS" "false"
 upsert_env "KEYCLOAK_ADMIN" "${keycloak_admin_value:-${KEYCLOAK_ADMIN:-admin}}"
 
 mv "${tmp_env}" .env

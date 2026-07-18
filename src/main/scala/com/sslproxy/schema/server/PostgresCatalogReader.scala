@@ -116,7 +116,9 @@ private[schema] object PostgresCatalogReader:
 
   private def dropTemporaryView(connection: Connection, probeName: String): Unit =
     val statement = connection.createStatement()
-    try statement.execute(s"drop view if exists pg_temp.$probeName")
+    try
+      statement.execute(s"drop view if exists pg_temp.$probeName")
+      ()
     catch case NonFatal(_) => ()
     finally statement.close()
 

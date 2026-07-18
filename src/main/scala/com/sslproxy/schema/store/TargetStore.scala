@@ -1,7 +1,6 @@
 package com.sslproxy.schema.store
 
 import cats.effect.{Clock, IO, Ref, Resource}
-import cats.syntax.all.*
 import com.mongodb.client.MongoClient
 import com.sslproxy.schema.config.MongoConfig
 
@@ -15,6 +14,7 @@ trait TargetStore:
   def getStored(id: String): IO[Option[StoredTarget]]
   def update(id: String, payload: TargetPayload): IO[Option[Target]]
   def recordRepoSync(id: String, commitSha: String, syncedAt: String): IO[Boolean]
+  def clearRepoSync(id: String): IO[Boolean]
   def delete(id: String): IO[Boolean]
 
 object TargetStore:
@@ -35,7 +35,7 @@ private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]])
     for
       id <- IO.delay(UUID.randomUUID().toString)
       now <- nowString
-      target = toTarget(id, now, payload)
+      target = Target.fromPayload(id, now, payload)
       stored = StoredTarget(target, payload.password.filter(_.nonEmpty))
       _ <- ref.update(_ + (id -> stored))
     yield target
@@ -54,10 +54,12 @@ private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]])
           val repoChanged = existing.target.repo_url != payload.repo_url ||
             existing.target.repo_branch != payload.repo_branch ||
             existing.target.repo_sql_path != payload.repo_sql_path
-          val target = toTarget(id, existing.target.created_at, payload).copy(
-            last_synced_commit = if repoChanged then None else existing.target.last_synced_commit,
-            last_synced_at = if repoChanged then None else existing.target.last_synced_at
-          )
+          val target = Target
+            .fromPayload(id, existing.target.created_at, payload)
+            .copy(
+              last_synced_commit = if repoChanged then None else existing.target.last_synced_commit,
+              last_synced_at = if repoChanged then None else existing.target.last_synced_at
+            )
           val password = payload.password.filter(_.nonEmpty).orElse(existing.password)
           val stored = StoredTarget(target, password)
           values.updated(id, stored) -> Some(target)
@@ -77,23 +79,19 @@ private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]])
           values.updated(id, updated) -> true
     }
 
+  override def clearRepoSync(id: String): IO[Boolean] =
+    ref.modify { values =>
+      values.get(id) match
+        case None => values -> false
+        case Some(existing) =>
+          val updated = existing.copy(
+            target = existing.target.copy(last_synced_commit = None, last_synced_at = None)
+          )
+          values.updated(id, updated) -> true
+    }
+
   override def delete(id: String): IO[Boolean] =
     ref.modify(values => (values - id) -> values.contains(id))
-
-  private def toTarget(id: String, createdAt: String, payload: TargetPayload): Target =
-    Target(
-      id = id,
-      label = payload.label,
-      app_name = payload.app_name,
-      env = payload.env,
-      jdbc_url = payload.jdbc_url,
-      created_at = createdAt,
-      repo_url = payload.repo_url,
-      repo_branch = payload.repo_branch,
-      repo_sql_path = payload.repo_sql_path,
-      last_synced_commit = None,
-      last_synced_at = None
-    )
 
   private def nowString: IO[String] =
     Clock[IO].realTimeInstant.map(_.toString)

@@ -98,7 +98,6 @@ final case class ServerConfig(
   apiBearerToken: Option[String] = None,
   mongo: Option[MongoConfig] = None,
   sqlFilesCollection: String = "sql_files",
-  repoSyncCollection: String = "repo_sync_state",
   repoCacheDir: Path = Path.of(sys.props.getOrElse("java.io.tmpdir", "."), "schema-migrator-repos"),
   repoCloneTimeoutSeconds: Int = 60,
   patchesCollection: String = "patches",
@@ -122,7 +121,6 @@ final case class ServerConfig(
       Left("BEDROCK_KEYCLOAK_AUDIENCE or BEDROCK_KEYCLOAK_CLIENT_ID must be set when Keycloak auth is enabled")
     else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
     else if sqlFilesCollection.trim.isEmpty then Left("BEDROCK_SQL_FILES_COLLECTION must not be empty")
-    else if repoSyncCollection.trim.isEmpty then Left("BEDROCK_REPO_SYNC_COLLECTION must not be empty")
     else if repoCloneTimeoutSeconds < 1 then Left("BEDROCK_REPO_CLONE_TIMEOUT_SECONDS must be at least 1")
     else if patchesCollection.trim.isEmpty then Left("BEDROCK_PATCHES_COLLECTION must not be empty")
     else if runsCollection.trim.isEmpty then Left("BEDROCK_RUNS_COLLECTION must not be empty")
@@ -167,7 +165,9 @@ final case class ServerConfig(
     try
       if Files.exists(path) && !Files.isDirectory(path) then Left(s"$label path '$path' is not a directory")
       else
-        if Files.notExists(path) then Files.createDirectories(path)
+        if Files.notExists(path) then
+          Files.createDirectories(path)
+          ()
         if !Files.isDirectory(path) then Left(s"$label path '$path' is not a directory")
         else if !Files.isWritable(path) then Left(s"$label directory '$path' is not writable")
         else Right(())

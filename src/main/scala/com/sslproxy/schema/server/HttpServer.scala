@@ -1,6 +1,7 @@
 package com.sslproxy.schema.server
 
 import cats.effect.{IO, Resource}
+import cats.effect.std.Supervisor
 import cats.syntax.all.*
 import com.comcast.ip4s.{Host, Port}
 import com.mongodb.client.MongoClients
@@ -12,7 +13,6 @@ import com.sslproxy.schema.store.{
   AuditStore,
   KeycloakConfigStore,
   PatchStore,
-  RepoSyncStore,
   RunStore,
   SnapshotStore,
   SqlFileStore,
@@ -68,12 +68,16 @@ object HttpServer:
       )
       targetStore <- TargetStore.mongo(mongoConfig, targetPasswordKey, mongoClient)
       sqlFileStore <- SqlFileStore.mongo(mongoConfig, config.server.sqlFilesCollection, mongoClient)
-      repoSyncStore <- RepoSyncStore.mongo(mongoConfig, config.server.repoSyncCollection, mongoClient)
       patchStore <- PatchStore.mongo(mongoConfig, config.server.patchesCollection, mongoClient)
       runStore <- RunStore.mongo(mongoConfig, config.server.runsCollection, mongoClient)
       validationStore <- ValidationStore.mongo(mongoConfig, config.server.validationsCollection, mongoClient)
       snapshotStore <- SnapshotStore.mongo(mongoConfig, config.server.snapshotsCollection, mongoClient)
       auditStore <- AuditStore.mongo(mongoConfig, config.server.auditCollection, mongoClient)
+      supervisor <- Supervisor[IO]
+      runExecutor = RunExecutor.supervised(
+        RunExecutor.real(config, patchStore, runStore, validationStore, Some(auditStore)),
+        supervisor
+      )
       _ <- Resource.eval(
         KeycloakConfigStore.persist(
           config.server,
@@ -90,9 +94,9 @@ object HttpServer:
         runStore,
         validationStore,
         sqlFileStore,
-        repoSyncStore,
         snapshotStore,
-        auditStore
+        auditStore,
+        runExecutor
       )
       routed = Router("/api" -> apiRoutes)
       authed = JwtMiddleware(config.server, keycloakVerifier)(routed)

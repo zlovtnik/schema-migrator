@@ -30,11 +30,10 @@ class MigratorErrorSuite extends FunSuite:
     assert(!MigratorError.isValidation(new RuntimeException("other")))
   }
 
-  test("LockNotHeld is a MigratorError, not a Connection") {
-    val error = MigratorError.LockNotHeld("lock lost")
-    assert(error.isInstanceOf[MigratorError])
-    assert(!error.isInstanceOf[MigratorError.Connection])
-    assert(MigratorError.isConnectionFailure(error) == false)
+  test("LockNotHeld is not classified as a connection failure") {
+    val error: MigratorError = MigratorError.LockNotHeld("lock lost")
+    assertEquals(error.getMessage, "lock lost")
+    assert(!MigratorError.isConnectionFailure(error))
   }
 
   test("case classes preserve message and optional cause") {

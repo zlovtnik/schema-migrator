@@ -1119,15 +1119,14 @@ class PostgresDriftAnalyzerSuite extends FunSuite:
   private def expected(
     key: ObjectKey,
     sourceFile: String = "functions/001_demo.sql",
-    expectedDdl: Option[String] = None,
-    applyStatus: Option[String] = None
+    expectedDdl: Option[String]
   ): ExpectedObject =
     ExpectedObject(
       key = key,
       sourceFile = sourceFile,
       checksum = s"sha-$sourceFile",
       expectedDdl = expectedDdl,
-      applyStatus = applyStatus
+      applyStatus = None
     )
 
   private def controlRow(

@@ -1,6 +1,6 @@
 package com.sslproxy.schema.store
 
-import cats.effect.{Clock, IO, Ref, Resource}
+import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
 import com.mongodb.client.model.{Indexes, ReplaceOptions}
 import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
@@ -26,9 +26,6 @@ final case class StoredSqlFile(
 trait SqlFileStore:
   /** List all stored SQL files for a specific target, ordered by folder then filename. */
   def list(targetId: String): IO[List[StoredSqlFile]]
-
-  /** List files for a specific folder for a specific target. */
-  def listByFolder(targetId: String, folder: String): IO[List[StoredSqlFile]]
 
   /** Upsert a batch of files for a specific target (replaces all existing content for that target). */
   def replaceAll(targetId: String, files: List[StoredSqlFile]): IO[Unit]
@@ -82,17 +79,6 @@ private final class MongoSqlFileStore(collection: MongoCollection[Document]) ext
       collection
         .find(targetIdFilter(targetId))
         .sort(Indexes.ascending("folder", "filename"))
-        .into(new java.util.ArrayList[Document]())
-        .asScala
-        .toList
-        .map(fromDocument)
-    }
-
-  override def listByFolder(targetId: String, folder: String): IO[List[StoredSqlFile]] =
-    IO.blocking {
-      collection
-        .find(new Document("target_id", targetId).append("folder", folder))
-        .sort(Indexes.ascending("filename"))
         .into(new java.util.ArrayList[Document]())
         .asScala
         .toList
@@ -161,11 +147,6 @@ private final class InMemorySqlFileStore(ref: Ref[IO, Map[String, StoredSqlFile]
     ref.get.map(
       _.filter { case (key, _) => key.startsWith(s"$targetId:") }.values.toList.sortBy(f => (f.folder, f.filename))
     )
-
-  override def listByFolder(targetId: String, folder: String): IO[List[StoredSqlFile]] =
-    ref.get.map(_.filter { case (key, _) =>
-      key.startsWith(s"$targetId:")
-    }.values.toList.filter(_.folder == folder).sortBy(_.filename))
 
   override def replaceAll(targetId: String, files: List[StoredSqlFile]): IO[Unit] =
     ref.update { current =>

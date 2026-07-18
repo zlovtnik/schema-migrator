@@ -1,14 +1,12 @@
 package com.sslproxy.schema.server
 
 import cats.effect.{Clock, IO}
-import cats.syntax.all.*
 import com.sslproxy.schema.store.{ConnectionTestResult, StoredTarget, TargetPayload}
+import com.sslproxy.schema.db.TargetDescriptor
 import io.circe.Json
-import io.circe.syntax.*
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
 
-import java.net.URI
 import java.sql.{DriverManager, SQLException}
 import scala.concurrent.duration.*
 
@@ -49,16 +47,7 @@ object DbPing:
     yield testResult
 
   private def extractHost(jdbcUrl: String): String =
-    val trimmed = jdbcUrl.trim
-    val host =
-      if trimmed.startsWith("jdbc:postgresql://") then uriHost(trimmed.stripPrefix("jdbc:"))
-      else if trimmed.startsWith("jdbc:oracle:thin:@//") then
-        uriHost("oracle:" + trimmed.stripPrefix("jdbc:oracle:thin:@"))
-      else None
-    host.getOrElse("unknown")
-
-  private def uriHost(value: String): Option[String] =
-    Either.catchNonFatal(URI.create(value).getHost).toOption.flatMap(Option(_)).filter(_.nonEmpty)
+    TargetDescriptor.parse(jdbcUrl).toOption.flatMap(_.host).getOrElse("unknown")
 
   private def logConnectionTest(host: String, result: ConnectionTestResult, latencyMs: Long): IO[Unit] =
     val fields = List(

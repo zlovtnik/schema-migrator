@@ -9,9 +9,7 @@ import com.sslproxy.schema.discovery.SqlPathNormalizer
 import com.sslproxy.schema.server.auth.{AuthContext, Claims, UserRole}
 import com.sslproxy.schema.store.{
   AuditStore,
-  Models,
   PatchStore,
-  RepoSyncStore,
   RunStore,
   SnapshotStore,
   SqlFileStore,
@@ -26,7 +24,7 @@ import io.circe.parser.parse
 import org.http4s.*
 import org.http4s.circe.CirceEntityCodec.*
 import org.http4s.dsl.io.*
-import org.http4s.multipart.{Multipart, Part}
+import org.http4s.multipart.{Boundary, Multipart, Part}
 import munit.FunSuite
 
 import java.net.URLEncoder
@@ -35,8 +33,6 @@ import java.nio.file.{Files, Path}
 import scala.concurrent.duration.*
 
 class RoutesSuite extends FunSuite with TestSqlSupport:
-  import Models.given
-
   private final case class RouteFixture(app: HttpApp[IO], sqlFileStore: SqlFileStore, sqlDir: Path)
 
   test("target routes create, list, fetch, update, and delete") {
@@ -891,7 +887,7 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
       .unsafeRunSync()
 
     val (status, json) = result
-    assertEquals(status, Status.UnprocessableEntity)
+    assertEquals(status, Status.UnprocessableContent)
     assertEquals(
       json.hcursor.downField("details").downArray.as[String].map(_.contains("missing -- rollback: reference")),
       Right(true)
@@ -1182,7 +1178,6 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
           validationStore <- ValidationStore.inMemory
           sqlFileStore <- SqlFileStore.inMemory
           _ <- sqlFileStore.replaceAll("target-1", preloadedSqlFiles)
-          repoSyncStore <- RepoSyncStore.inMemory
           snapshotStore <- SnapshotStore.inMemory
           auditStore <- AuditStore.inMemory
           runExecutor = RunExecutor.simulated(patchStore, runStore, validationStore, auditStore = Some(auditStore))
@@ -1195,7 +1190,6 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
               runStore,
               validationStore,
               sqlFileStore,
-              repoSyncStore,
               snapshotStore,
               auditStore,
               runExecutor
@@ -1271,7 +1265,8 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
       Vector(
         Part.formData[IO]("target_id", targetId),
         Part.fileData[IO]("files", "001_test.sql", Stream.emits(sqlBytes).covary[IO])
-      )
+      ),
+      Boundary("schema-migrator-test")
     )
     Request[IO](Method.POST, Uri.unsafeFromString("/patches")).withEntity(multipart).putHeaders(multipart.headers)
 
@@ -1281,7 +1276,8 @@ class RoutesSuite extends FunSuite with TestSqlSupport:
       Vector(
         Part.formData[IO]("target_id", targetId),
         Part.fileData[IO]("files", "001_large.sql", Stream.emits(sqlBytes).covary[IO])
-      )
+      ),
+      Boundary("schema-migrator-large-test")
     )
     Request[IO](Method.POST, Uri.unsafeFromString("/patches")).withEntity(multipart).putHeaders(multipart.headers)
 

@@ -14,7 +14,11 @@ final case class SqlFile(
   def readString: String =
     content.getOrElse(Files.readString(path))
 
-final case class DiscoveryResult(files: List[SqlFile], warnings: List[String])
+final case class DiscoveryResult(
+  files: List[SqlFile],
+  warnings: List[String],
+  retiredFiles: List[SqlFile] = Nil
+)
 
 object SqlPathNormalizer:
   final case class NormalizedPath(path: String, folder: String, filename: String)
