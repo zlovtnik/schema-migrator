@@ -18,23 +18,23 @@ class ServerConfigSuite extends FunSuite:
         dbTestAllowedHosts = Set.empty,
         patchStageDir = stageDir,
         apiBearerToken = Some("api-token"),
-        mongo = Some(MongoConfig("mongodb://localhost:27017", "schema_migrator", "targets"))
+        stateStore = Some(StateStoreConfig("jdbc:postgresql://localhost:5432/sync", "migrator", "secret"))
       )
 
       assert(config.validate.left.exists(_.nonEmpty))
     finally deleteIfExists(stageDir)
   }
 
-  test("server validation requires static API bearer token and Mongo config") {
+  test("server validation requires static API bearer token and PostgreSQL state store config") {
     val stageDir = Files.createTempDirectory("schema-migrator-config")
     try
       val missingToken = validConfig(stageDir).copy(apiBearerToken = None)
-      val missingMongo = validConfig(stageDir).copy(mongo = None)
+      val missingStateStore = validConfig(stageDir).copy(stateStore = None)
 
       assertEquals(missingToken.validate, Left("BEDROCK_API_BEARER_TOKEN must not be empty"))
       assertEquals(
-        missingMongo.validate,
-        Left("BEDROCK_MONGO_URI, BEDROCK_MONGO_DATABASE, and BEDROCK_MONGO_TARGETS_COLLECTION must be set")
+        missingStateStore.validate,
+        Left("BEDROCK_STATE_DB_URL, BEDROCK_STATE_DB_USER, and BEDROCK_STATE_DB_PASSWORD must be set")
       )
     finally deleteIfExists(stageDir)
   }
@@ -91,12 +91,14 @@ class ServerConfigSuite extends FunSuite:
     finally deleteIfExists(stageDir)
   }
 
-  test("server validation requires Keycloak config collection name") {
+  test("server validation rejects invalid PostgreSQL state schema names") {
     val stageDir = Files.createTempDirectory("schema-migrator-config")
     try
-      val config = validConfig(stageDir).copy(keycloakConfigCollection = "")
+      val config = validConfig(stageDir).copy(
+        stateStore = Some(StateStoreConfig("jdbc:postgresql://localhost:5432/sync", "migrator", "secret", "bad-name"))
+      )
 
-      assertEquals(config.validate, Left("BEDROCK_KEYCLOAK_CONFIG_COLLECTION must not be empty"))
+      assertEquals(config.validate, Left("BEDROCK_STATE_DB_SCHEMA must be a PostgreSQL identifier"))
     finally deleteIfExists(stageDir)
   }
 
@@ -111,7 +113,7 @@ class ServerConfigSuite extends FunSuite:
       dbTestAllowedHosts = Set.empty,
       patchStageDir = stageDir,
       apiBearerToken = Some("api-token"),
-      mongo = Some(MongoConfig("mongodb://localhost:27017", "schema_migrator", "targets"))
+      stateStore = Some(StateStoreConfig("jdbc:postgresql://localhost:5432/sync", "migrator", "secret"))
     )
 
   private def deleteIfExists(path: java.nio.file.Path): Unit =

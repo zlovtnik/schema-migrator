@@ -254,7 +254,7 @@ const SqlFilesPage = () => {
       <PageHeader
         eyebrow="SQL files"
         title="SQL manifest management"
-        description="Sync the selected target's Git repository SQL tree into MongoDB for schema comparison and drift detection."
+        description="Sync the selected target's Git repository SQL tree into PostgreSQL for schema comparison and drift detection."
       />
 
       <div className="sql-files-toolbar">
