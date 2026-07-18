@@ -1,18 +1,13 @@
 package com.sslproxy.schema.store
 
-import cats.effect.{IO, Ref, Resource}
+import cats.effect.{IO, Ref}
 import cats.syntax.all.*
-import com.mongodb.client.model.{Indexes, ReplaceOptions}
-import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
-import com.sslproxy.schema.config.MongoConfig
 import com.sslproxy.schema.discovery.SqlFile
-import org.bson.Document
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.Base64
-import scala.jdk.CollectionConverters.*
 
 final case class StoredSqlFile(
   path: String,
@@ -41,19 +36,6 @@ trait SqlFileStore:
     list(targetId).flatMap(_.traverse(SqlFileStore.toSqlFile))
 
 object SqlFileStore:
-  def mongo(config: MongoConfig, collectionName: String): Resource[IO, SqlFileStore] =
-    Resource
-      .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
-      .flatMap(client => mongo(config, collectionName, client))
-
-  def mongo(config: MongoConfig, collectionName: String, client: MongoClient): Resource[IO, SqlFileStore] =
-    Resource.eval {
-      val store = MongoSqlFileStore(
-        client.getDatabase(config.database).getCollection(collectionName)
-      )
-      store.initialize.as(store: SqlFileStore)
-    }
-
   def inMemory: IO[SqlFileStore] =
     Ref.of[IO, Map[String, StoredSqlFile]](Map.empty).map(InMemorySqlFileStore(_))
 
@@ -72,75 +54,6 @@ object SqlFileStore:
     IO.delay {
       toSqlFileUnsafe(stored)
     }
-
-private final class MongoSqlFileStore(collection: MongoCollection[Document]) extends SqlFileStore:
-  override def list(targetId: String): IO[List[StoredSqlFile]] =
-    IO.blocking {
-      collection
-        .find(targetIdFilter(targetId))
-        .sort(Indexes.ascending("folder", "filename"))
-        .into(new java.util.ArrayList[Document]())
-        .asScala
-        .toList
-        .map(fromDocument)
-    }
-
-  override def replaceAll(targetId: String, files: List[StoredSqlFile]): IO[Unit] =
-    IO.blocking {
-      val upsert = ReplaceOptions().upsert(true)
-      files.foreach { file =>
-        collection.replaceOne(
-          new Document("_id", s"$targetId:${file.path}"),
-          toDocument(targetId, file),
-          upsert
-        )
-      }
-      if files.isEmpty then collection.deleteMany(targetIdFilter(targetId))
-      else
-        collection.deleteMany(
-          new Document("target_id", targetId)
-            .append("_id", new Document("$nin", files.map(f => s"$targetId:${f.path}").asJava))
-        )
-      ()
-    }
-
-  override def clear(targetId: String): IO[Unit] =
-    IO.blocking(collection.deleteMany(targetIdFilter(targetId))).void
-
-  override def isEmpty(targetId: String): IO[Boolean] =
-    IO.blocking(collection.countDocuments(targetIdFilter(targetId)) == 0)
-
-  private[store] def initialize: IO[Unit] =
-    IO.blocking {
-      collection.createIndex(Indexes.ascending("target_id", "folder", "filename"))
-    }.void
-
-  private def toDocument(targetId: String, file: StoredSqlFile): Document =
-    new Document()
-      .append("_id", s"$targetId:${file.path}")
-      .append("target_id", targetId)
-      .append("path", file.path)
-      .append("folder", file.folder)
-      .append("filename", file.filename)
-      .append("content_base64", file.contentBase64)
-      .append("sha256", file.sha256)
-      .append("uploaded_at", file.uploadedAt)
-
-  private def fromDocument(doc: Document): StoredSqlFile =
-    StoredSqlFile(
-      path = requiredString(doc, "path"),
-      folder = requiredString(doc, "folder"),
-      filename = requiredString(doc, "filename"),
-      contentBase64 = requiredString(doc, "content_base64"),
-      sha256 = requiredString(doc, "sha256"),
-      uploadedAt = requiredString(doc, "uploaded_at")
-    )
-
-  private def requiredString(doc: Document, field: String): String =
-    MongoDocument.requiredString(doc, field, "sql_file")
-
-  private def targetIdFilter(targetId: String): Document =
-    new Document("target_id", targetId)
 
 private final class InMemorySqlFileStore(ref: Ref[IO, Map[String, StoredSqlFile]]) extends SqlFileStore:
   override def list(targetId: String): IO[List[StoredSqlFile]] =
@@ -183,3 +96,4 @@ object StoredSqlFile:
       sha256 = sha256,
       uploadedAt = uploadedAt
     )
+

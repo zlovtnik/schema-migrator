@@ -1,15 +1,10 @@
 package com.sslproxy.schema.store
 
-import cats.effect.{Clock, IO, Ref, Resource}
+import cats.effect.{Clock, IO, Ref}
 import cats.syntax.all.*
-import com.mongodb.client.model.{Indexes, ReplaceOptions, Sorts}
-import com.mongodb.client.{MongoClient, MongoClients, MongoCollection}
-import com.sslproxy.schema.config.MongoConfig
-import org.bson.Document
 
 import java.util.Base64
 import java.util.UUID
-import scala.jdk.CollectionConverters.*
 
 trait SnapshotStore:
   def list(targetId: Option[String]): IO[List[Snapshot]]
@@ -17,17 +12,6 @@ trait SnapshotStore:
   def get(id: String): IO[Option[Snapshot]]
 
 object SnapshotStore:
-  def mongo(config: MongoConfig, collectionName: String): Resource[IO, SnapshotStore] =
-    Resource
-      .make(IO.blocking(MongoClients.create(config.uri)))(client => IO.blocking(client.close()))
-      .flatMap(client => mongo(config, collectionName, client))
-
-  def mongo(config: MongoConfig, collectionName: String, client: MongoClient): Resource[IO, SnapshotStore] =
-    Resource.eval {
-      val store = MongoSnapshotStore(client.getDatabase(config.database).getCollection(collectionName))
-      store.initialize.as(store: SnapshotStore)
-    }
-
   def inMemory: IO[SnapshotStore] =
     Ref.of[IO, Map[String, Snapshot]](Map.empty).map(InMemorySnapshotStore.apply)
 
@@ -110,97 +94,4 @@ private final class InMemorySnapshotStore(ref: Ref[IO, Map[String, Snapshot]]) e
   override def get(id: String): IO[Option[Snapshot]] =
     ref.get.map(_.get(id))
 
-private final class MongoSnapshotStore(collection: MongoCollection[Document]) extends SnapshotStore:
-  override def list(targetId: Option[String]): IO[List[Snapshot]] =
-    IO.blocking {
-      val filter = targetId.fold(new Document())(id => new Document("target_id", id))
-      collection
-        .find(filter)
-        .sort(Sorts.descending("created_at"))
-        .into(new java.util.ArrayList[Document]())
-        .asScala
-        .toList
-        .map(fromDocument)
-    }
 
-  override def create(
-    targetId: String,
-    label: Option[String],
-    files: List[StoredSqlFile],
-    createdBy: String
-  ): IO[Snapshot] =
-    for
-      id <- IO.delay(UUID.randomUUID().toString)
-      now <- Clock[IO].realTimeInstant.map(_.toString)
-      snapshot = SnapshotStore.snapshotFromFiles(id, targetId, label, now, createdBy, files)
-      _ <- IO.blocking(collection.replaceOne(idFilter(id), toDocument(snapshot), ReplaceOptions().upsert(true))).void
-    yield snapshot
-
-  override def get(id: String): IO[Option[Snapshot]] =
-    IO.blocking(Option(collection.find(idFilter(id)).first()).map(fromDocument))
-
-  private[store] def initialize: IO[Unit] =
-    IO.blocking {
-      collection.createIndex(Indexes.ascending("target_id", "created_at"))
-    }.void
-
-  private def toDocument(snapshot: Snapshot): Document =
-    new Document()
-      .append("_id", snapshot.id)
-      .append("target_id", snapshot.target_id)
-      .append("label", snapshot.label)
-      .append("created_at", snapshot.created_at)
-      .append("created_by", snapshot.created_by)
-      .append("file_count", snapshot.file_count)
-      .append("files", snapshot.files.map(fileDocument).asJava)
-
-  private def fileDocument(file: SnapshotFile): Document =
-    new Document()
-      .append("path", file.path)
-      .append("folder", file.folder)
-      .append("filename", file.filename)
-      .append("sha256", file.sha256)
-      .append("content_base64", file.content_base64.getOrElse(""))
-      .append("uploaded_at", file.uploaded_at)
-      .append("size_bytes", Long.box(file.size_bytes))
-
-  private def fromDocument(document: Document): Snapshot =
-    val files = fileDocuments(document).map(fileFromDocument)
-    Snapshot(
-      id = requiredString(document, "_id"),
-      target_id = requiredString(document, "target_id"),
-      label = requiredString(document, "label"),
-      created_at = requiredString(document, "created_at"),
-      created_by = requiredString(document, "created_by"),
-      file_count = intValue(document, "file_count").filter(_ > 0).getOrElse(files.length),
-      files = files
-    )
-
-  private def fileFromDocument(document: Document): SnapshotFile =
-    SnapshotFile(
-      path = requiredString(document, "path"),
-      folder = requiredString(document, "folder"),
-      filename = requiredString(document, "filename"),
-      sha256 = requiredString(document, "sha256"),
-      content_base64 = Some(optionalRawString(document, "content_base64").getOrElse("")),
-      uploaded_at = requiredString(document, "uploaded_at"),
-      size_bytes = longValue(document, "size_bytes").getOrElse(0L)
-    )
-
-  private def fileDocuments(document: Document): List[Document] =
-    MongoDocument.documentList(document, "files")
-
-  private def idFilter(id: String): Document =
-    new Document("_id", id)
-
-  private def requiredString(document: Document, field: String): String =
-    MongoDocument.requiredString(document, field, "snapshot")
-
-  private def optionalRawString(document: Document, field: String): Option[String] =
-    MongoDocument.optionalRawString(document, field)
-
-  private def intValue(document: Document, field: String): Option[Int] =
-    MongoDocument.optionalInt(document, field)
-
-  private def longValue(document: Document, field: String): Option[Long] =
-    MongoDocument.optionalLong(document, field)

@@ -338,6 +338,16 @@ object Models:
   given Decoder[CreateSnapshotPayload] = deriveDecoder
   given Decoder[RollbackToSnapshotPayload] = deriveDecoder
   given Decoder[AuthTokenRequest] = deriveDecoder
+  given Decoder[ScriptError] = deriveDecoder
+  given Decoder[Script] = deriveDecoder
+  given Decoder[Patch] = deriveDecoder
+  given Decoder[ScriptRun] = deriveDecoder
+  given Decoder[Run] = deriveDecoder
+  given Decoder[SnapshotFile] = deriveDecoder
+  given Decoder[Snapshot] = deriveDecoder
+  given Decoder[AuditEvent] = deriveDecoder
+  given Decoder[InvalidObject] = deriveDecoder
+  given Decoder[ValidationResult] = deriveDecoder
 
   given Encoder[Target] = deriveEncoder
   given Encoder[ConnectionTestResult] = deriveEncoder
