@@ -7,7 +7,6 @@ import com.sslproxy.schema.server.crypto.AesGcm
 import doobie.*
 import doobie.implicits.*
 import doobie.postgres.implicits.*
-import fs2.Stream
 import fs2.concurrent.Topic
 import io.circe.Json
 import io.circe.parser.decode
@@ -324,7 +323,6 @@ private[store] final class PostgresSqlFileStore(database: StateDatabase) extends
     StoredSqlFile(row._1, row._2, row._3, Base64.getEncoder.encodeToString(row._4), row._5, row._6.toString)
 
 private[store] final class PostgresPatchStore(database: StateDatabase) extends PatchStore:
-  import Models.given
   import PostgresStoreSupport.*
 
   override def list(targetId: Option[String]): IO[List[Patch]] =
@@ -391,7 +389,6 @@ private[store] final class PostgresPatchStore(database: StateDatabase) extends P
 
 private[store] final class PostgresRunStore(database: StateDatabase, protected val topic: Topic[IO, RunEvent])
     extends RunStore with RunStoreEvents:
-  import Models.given
   import PostgresStoreSupport.*
 
   override def list(targetId: Option[String]): IO[List[Run]] =

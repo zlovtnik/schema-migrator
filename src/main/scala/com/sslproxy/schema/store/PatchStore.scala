@@ -10,7 +10,6 @@ import java.nio.file.{Files, Path, StandardCopyOption}
 import java.security.MessageDigest
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.Base64
 import java.util.UUID
 import scala.jdk.CollectionConverters.*
 
@@ -199,4 +198,3 @@ private final class InMemoryPatchStore(stageDir: Path, ref: Ref[IO, Map[String, 
 
   private def stagedPath(patchId: String, order: Int, filename: String): Path =
     stageDir.resolve(patchId).resolve(f"$order%04d_${PatchStore.safeName(filename)}")
-

@@ -1,9 +1,8 @@
 package com.sslproxy.schema.store
 
-import cats.effect.{Clock, IO, Ref, Resource}
+import cats.effect.{Clock, IO, Ref}
 
 import java.util.UUID
-import javax.crypto.spec.SecretKeySpec
 
 trait TargetStore:
   def list: IO[List[Target]]
@@ -87,4 +86,3 @@ private final class InMemoryTargetStore(ref: Ref[IO, Map[String, StoredTarget]])
 
   private def nowString: IO[String] =
     Clock[IO].realTimeInstant.map(_.toString)
-

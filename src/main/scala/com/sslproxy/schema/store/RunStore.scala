@@ -2,13 +2,11 @@ package com.sslproxy.schema.store
 
 import cats.effect.{Clock, IO, Ref, Resource}
 import cats.syntax.all.*
-import com.sslproxy.schema.effect.{Retry, RetryPolicy}
 import fs2.Stream
 import fs2.concurrent.Topic
 import io.circe.Json
 
 import java.util.UUID
-import scala.concurrent.duration.*
 
 trait RunStore:
   def list(targetId: Option[String]): IO[List[Run]]
@@ -297,5 +295,4 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
         case None => values -> None
         case Some(next) => values.updated(id, next) -> Some(next)
     }
-
 

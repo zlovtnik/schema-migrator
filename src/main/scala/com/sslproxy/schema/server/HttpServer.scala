@@ -8,18 +8,7 @@ import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.server.auth.{JwtMiddleware, KeycloakJwks}
 import com.sslproxy.schema.server.compress.Bzip2Middleware
 import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
-import com.sslproxy.schema.store.{
-  AuditStore,
-  KeycloakConfigStore,
-  PatchStore,
-  PostgresStores,
-  RunStore,
-  SnapshotStore,
-  SqlFileStore,
-  StateDatabase,
-  TargetStore,
-  ValidationStore
-}
+import com.sslproxy.schema.store.{KeycloakConfigStore, PostgresStores, StateDatabase}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.server.Router
