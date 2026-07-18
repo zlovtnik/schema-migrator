@@ -4,7 +4,6 @@ import cats.effect.{IO, Resource}
 import cats.effect.std.Supervisor
 import cats.syntax.all.*
 import com.comcast.ip4s.{Host, Port}
-import com.mongodb.client.MongoClients
 import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.server.auth.{JwtMiddleware, KeycloakJwks}
 import com.sslproxy.schema.server.compress.Bzip2Middleware
@@ -13,9 +12,11 @@ import com.sslproxy.schema.store.{
   AuditStore,
   KeycloakConfigStore,
   PatchStore,
+  PostgresStores,
   RunStore,
   SnapshotStore,
   SqlFileStore,
+  StateDatabase,
   TargetStore,
   ValidationStore
 }
@@ -55,24 +56,23 @@ object HttpServer:
         )
       )
       encryptKeyRing = encryptKey.map(key => AesGcm.KeyRing("current", key, Map.empty))
-      mongoConfig <- Resource.eval(
-        IO.fromEither(config.server.mongoConfig.leftMap(message => new IllegalArgumentException(message)))
+      stateStoreConfig <- Resource.eval(
+        IO.fromEither(config.server.stateStoreConfig.leftMap(message => new IllegalArgumentException(message)))
       )
-      mongoClient <- Resource.make(IO.blocking(MongoClients.create(mongoConfig.uri)))(client =>
-        IO.blocking(client.close())
-      )
+      stateDatabase <- StateDatabase.resource(stateStoreConfig)
       targetPasswordKey <- Resource.eval(
         IO.fromOption(encryptKey)(
           IllegalArgumentException("BEDROCK_ENCRYPT_KEY is required to encrypt stored target passwords")
         )
       )
-      targetStore <- TargetStore.mongo(mongoConfig, targetPasswordKey, mongoClient)
-      sqlFileStore <- SqlFileStore.mongo(mongoConfig, config.server.sqlFilesCollection, mongoClient)
-      patchStore <- PatchStore.mongo(mongoConfig, config.server.patchesCollection, mongoClient)
-      runStore <- RunStore.mongo(mongoConfig, config.server.runsCollection, mongoClient)
-      validationStore <- ValidationStore.mongo(mongoConfig, config.server.validationsCollection, mongoClient)
-      snapshotStore <- SnapshotStore.mongo(mongoConfig, config.server.snapshotsCollection, mongoClient)
-      auditStore <- AuditStore.mongo(mongoConfig, config.server.auditCollection, mongoClient)
+      stores <- PostgresStores.resource(stateDatabase, targetPasswordKey)
+      targetStore = stores.targetStore
+      sqlFileStore = stores.sqlFileStore
+      patchStore = stores.patchStore
+      runStore = stores.runStore
+      validationStore = stores.validationStore
+      snapshotStore = stores.snapshotStore
+      auditStore = stores.auditStore
       supervisor <- Supervisor[IO]
       runExecutor = RunExecutor.supervised(
         RunExecutor.real(config, patchStore, runStore, validationStore, Some(auditStore)),
@@ -80,12 +80,7 @@ object HttpServer:
         runStore
       )
       _ <- Resource.eval(
-        KeycloakConfigStore.persist(
-          config.server,
-          mongoConfig,
-          config.server.keycloakConfigCollection,
-          mongoClient
-        )
+        KeycloakConfigStore.persist(config.server, stateDatabase)
       )
       keycloakVerifier <- keycloakVerifierResource(config)
       apiRoutes = Routes.all(

@@ -73,11 +73,20 @@ final case class MigratorConfig(
         Left("customer must be a single directory name")
       case Some(_) => Right(())
 
-final case class MongoConfig(uri: String, database: String, targetsCollection: String):
+final case class StateStoreConfig(
+  url: String,
+  user: String,
+  password: String,
+  schema: String = "schema_migrator",
+  poolSize: Int = 10
+):
   def validate: Either[String, Unit] =
-    if uri.trim.isEmpty then Left("BEDROCK_MONGO_URI must not be empty")
-    else if database.trim.isEmpty then Left("BEDROCK_MONGO_DATABASE must not be empty")
-    else if targetsCollection.trim.isEmpty then Left("BEDROCK_MONGO_TARGETS_COLLECTION must not be empty")
+    if url.trim.isEmpty then Left("BEDROCK_STATE_DB_URL must not be empty")
+    else if user.trim.isEmpty then Left("BEDROCK_STATE_DB_USER must not be empty")
+    else if password.trim.isEmpty then Left("BEDROCK_STATE_DB_PASSWORD must not be empty")
+    else if !schema.matches("[A-Za-z_][A-Za-z0-9_]*") then
+      Left("BEDROCK_STATE_DB_SCHEMA must be a valid PostgreSQL identifier")
+    else if poolSize < 1 then Left("BEDROCK_STATE_DB_POOL_SIZE must be at least 1")
     else Right(())
 
 final case class ServerConfig(
@@ -96,17 +105,10 @@ final case class ServerConfig(
   dbTestAllowedHosts: Set[String],
   patchStageDir: Path,
   apiBearerToken: Option[String] = None,
-  mongo: Option[MongoConfig] = None,
-  sqlFilesCollection: String = "sql_files",
+  stateStore: Option[StateStoreConfig] = None,
   repoCacheDir: Path = Path.of(sys.props.getOrElse("java.io.tmpdir", "."), "schema-migrator-repos"),
   repoCloneTimeoutSeconds: Int = 60,
-  patchesCollection: String = "patches",
-  runsCollection: String = "runs",
-  validationsCollection: String = "validations",
-  snapshotsCollection: String = "snapshots",
-  auditCollection: String = "audit_events",
-  keycloakConfigCollection: String = "keycloak_config",
-  mongoConfigError: Option[String] = None
+  stateStoreConfigError: Option[String] = None
 ):
   def validate: Either[String, Unit] =
     if host.trim.isEmpty then Left("server host must not be empty")
@@ -120,24 +122,17 @@ final case class ServerConfig(
     else if keycloakEnabled && keycloakAudience.forall(_.trim.isEmpty) && keycloakClientId.forall(_.trim.isEmpty) then
       Left("BEDROCK_KEYCLOAK_AUDIENCE or BEDROCK_KEYCLOAK_CLIENT_ID must be set when Keycloak auth is enabled")
     else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
-    else if sqlFilesCollection.trim.isEmpty then Left("BEDROCK_SQL_FILES_COLLECTION must not be empty")
     else if repoCloneTimeoutSeconds < 1 then Left("BEDROCK_REPO_CLONE_TIMEOUT_SECONDS must be at least 1")
-    else if patchesCollection.trim.isEmpty then Left("BEDROCK_PATCHES_COLLECTION must not be empty")
-    else if runsCollection.trim.isEmpty then Left("BEDROCK_RUNS_COLLECTION must not be empty")
-    else if validationsCollection.trim.isEmpty then Left("BEDROCK_VALIDATIONS_COLLECTION must not be empty")
-    else if snapshotsCollection.trim.isEmpty then Left("BEDROCK_SNAPSHOTS_COLLECTION must not be empty")
-    else if auditCollection.trim.isEmpty then Left("BEDROCK_AUDIT_COLLECTION must not be empty")
-    else if keycloakConfigCollection.trim.isEmpty then Left("BEDROCK_KEYCLOAK_CONFIG_COLLECTION must not be empty")
     else
       validateEncryptKeyBase64()
-        .flatMap(_ => validateMongo())
+        .flatMap(_ => validateStateStore())
         .flatMap(_ => validatePatchStageDir())
         .flatMap(_ => validateRepoCacheDir())
 
-  def mongoConfig: Either[String, MongoConfig] =
-    mongo.toRight(
-      mongoConfigError.getOrElse(
-        "BEDROCK_MONGO_URI, BEDROCK_MONGO_DATABASE, and BEDROCK_MONGO_TARGETS_COLLECTION must be set"
+  def stateStoreConfig: Either[String, StateStoreConfig] =
+    stateStore.toRight(
+      stateStoreConfigError.getOrElse(
+        "BEDROCK_STATE_DB_URL, BEDROCK_STATE_DB_USER, and BEDROCK_STATE_DB_PASSWORD must be set"
       )
     )
 
@@ -152,8 +147,8 @@ final case class ServerConfig(
           else Left("AES-GCM key must decode to 32 bytes")
         catch case error: IllegalArgumentException => Left(error.getMessage)
 
-  private def validateMongo(): Either[String, Unit] =
-    mongoConfig.flatMap(_.validate)
+  private def validateStateStore(): Either[String, Unit] =
+    stateStoreConfig.flatMap(_.validate)
 
   private def validatePatchStageDir(): Either[String, Unit] =
     validateWritableDirectory(patchStageDir, "patch stage")

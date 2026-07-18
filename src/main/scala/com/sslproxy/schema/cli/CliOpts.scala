@@ -2,7 +2,7 @@ package com.sslproxy.schema.cli
 
 import cats.syntax.all.*
 import com.monovore.decline.*
-import com.sslproxy.schema.config.{DbKind, MigratorConfig, MongoConfig, ServerConfig}
+import com.sslproxy.schema.config.{DbKind, MigratorConfig, ServerConfig, StateStoreConfig}
 
 import java.nio.file.{Path, Paths}
 import java.util.Locale
@@ -170,96 +170,22 @@ object CliOpts:
           .map(_.toLowerCase(Locale.ROOT))
       )
 
-  private val mongoUriOpt: Opts[Option[String]] =
-    Opts
-      .option[String]("mongo-uri", help = "MongoDB connection URI for persisted HTTP API targets")
-      .orNone
-      .map(_.orElse(env.get("BEDROCK_MONGO_URI")).flatMap(nonBlank))
-
-  private val mongoDatabaseOpt: Opts[Option[String]] =
-    Opts
-      .option[String]("mongo-database", help = "MongoDB database for persisted HTTP API targets")
-      .orNone
-      .map(_.orElse(env.get("BEDROCK_MONGO_DATABASE")).flatMap(nonBlank))
-
-  private val mongoTargetsCollectionOpt: Opts[Option[String]] =
-    Opts
-      .option[String]("mongo-targets-collection", help = "MongoDB collection for persisted HTTP API targets")
-      .orNone
-      .map(_.orElse(env.get("BEDROCK_MONGO_TARGETS_COLLECTION")).flatMap(nonBlank))
-
-  private final case class CollectionOptions(
-    sqlFiles: String,
-    patches: String,
-    runs: String,
-    validations: String,
-    snapshots: String,
-    audit: String,
-    keycloakConfig: String
-  )
-
-  private def collectionOpt(name: String, help: String, envKey: String, defaultValue: String): Opts[String] =
-    Opts
-      .option[String](name, help = help)
-      .orNone
-      .map(_.orElse(env.get(envKey)).flatMap(nonBlank).getOrElse(defaultValue))
-
-  private val patchesCollectionOpt: Opts[String] =
-    collectionOpt(
-      "patches-collection",
-      "MongoDB collection for migration patches",
-      "BEDROCK_PATCHES_COLLECTION",
-      "patches"
-    )
-
-  private val sqlFilesCollectionOpt: Opts[String] =
-    collectionOpt(
-      "sql-files-collection",
-      "MongoDB collection for synced SQL files",
-      "BEDROCK_SQL_FILES_COLLECTION",
-      "sql_files"
-    )
-
-  private val runsCollectionOpt: Opts[String] =
-    collectionOpt("runs-collection", "MongoDB collection for migration runs", "BEDROCK_RUNS_COLLECTION", "runs")
-
-  private val validationsCollectionOpt: Opts[String] =
-    collectionOpt(
-      "validations-collection",
-      "MongoDB collection for validation results",
-      "BEDROCK_VALIDATIONS_COLLECTION",
-      "validations"
-    )
-
-  private val snapshotsCollectionOpt: Opts[String] =
-    collectionOpt(
-      "snapshots-collection",
-      "MongoDB collection for SQL manifest snapshots",
-      "BEDROCK_SNAPSHOTS_COLLECTION",
-      "snapshots"
-    )
-
-  private val auditCollectionOpt: Opts[String] =
-    collectionOpt("audit-collection", "MongoDB collection for audit events", "BEDROCK_AUDIT_COLLECTION", "audit_events")
-
-  private val keycloakConfigCollectionOpt: Opts[String] =
-    collectionOpt(
-      "keycloak-config-collection",
-      "MongoDB collection for persisted Keycloak configuration",
-      "BEDROCK_KEYCLOAK_CONFIG_COLLECTION",
-      "keycloak_config"
-    )
-
-  private val collectionOpts: Opts[CollectionOptions] =
+  private val stateStoreOpt: Opts[Either[String, Option[StateStoreConfig]]] =
     (
-      sqlFilesCollectionOpt,
-      patchesCollectionOpt,
-      runsCollectionOpt,
-      validationsCollectionOpt,
-      snapshotsCollectionOpt,
-      auditCollectionOpt,
-      keycloakConfigCollectionOpt
-    ).mapN(CollectionOptions.apply)
+      Opts.option[String]("state-db-url", help = "PostgreSQL URL for persisted HTTP API state").orNone,
+      Opts.option[String]("state-db-user", help = "PostgreSQL user for persisted HTTP API state").orNone,
+      Opts.option[String]("state-db-password", help = "PostgreSQL password for persisted HTTP API state").orNone,
+      Opts.option[String]("state-db-schema", help = "PostgreSQL schema for persisted HTTP API state").orNone,
+      Opts.option[Int]("state-db-pool-size", help = "PostgreSQL state connection pool size").orNone
+    ).mapN { (urlArg, userArg, passwordArg, schemaArg, poolArg) =>
+      stateStoreConfigFromOptions(
+        urlArg.orElse(env.get("BEDROCK_STATE_DB_URL")).flatMap(nonBlank),
+        userArg.orElse(env.get("BEDROCK_STATE_DB_USER")).flatMap(nonBlank),
+        passwordArg.orElse(env.get("BEDROCK_STATE_DB_PASSWORD")).flatMap(nonBlank),
+        schemaArg.orElse(env.get("BEDROCK_STATE_DB_SCHEMA")).flatMap(nonBlank).getOrElse("schema_migrator"),
+        poolArg.orElse(env.get("BEDROCK_STATE_DB_POOL_SIZE").flatMap(value => Either.catchNonFatal(value.toInt).toOption)).getOrElse(10)
+      )
+    }
 
   private val serverOpts: Opts[ServerConfig] =
     (
@@ -280,10 +206,7 @@ object CliOpts:
       patchStageDirOpt,
       repoCacheDirOpt,
       repoCloneTimeoutSecondsOpt,
-      mongoUriOpt,
-      mongoDatabaseOpt,
-      mongoTargetsCollectionOpt,
-      collectionOpts
+      stateStoreOpt
     ).mapN {
       (
         host,
@@ -303,12 +226,8 @@ object CliOpts:
         patchStageDir,
         repoCacheDir,
         repoCloneTimeoutSeconds,
-        mongoUri,
-        mongoDatabase,
-        mongoTargetsCollection,
-        collections
+        stateStoreResult
       ) =>
-        val mongoResult = mongoConfigFromOptions(mongoUri, mongoDatabase, mongoTargetsCollection)
         ServerConfig(
           host = host,
           port = port,
@@ -325,17 +244,10 @@ object CliOpts:
           apiBearerToken = apiBearerToken,
           dbTestAllowedHosts = dbTestAllowedHosts,
           patchStageDir = patchStageDir,
-          mongo = mongoResult.toOption.flatten,
-          sqlFilesCollection = collections.sqlFiles,
+          stateStore = stateStoreResult.toOption.flatten,
           repoCacheDir = repoCacheDir,
           repoCloneTimeoutSeconds = repoCloneTimeoutSeconds,
-          patchesCollection = collections.patches,
-          runsCollection = collections.runs,
-          validationsCollection = collections.validations,
-          snapshotsCollection = collections.snapshots,
-          auditCollection = collections.audit,
-          keycloakConfigCollection = collections.keycloakConfig,
-          mongoConfigError = mongoResult.swap.toOption
+          stateStoreConfigError = stateStoreResult.swap.toOption
         )
     }
 
@@ -443,25 +355,27 @@ object CliOpts:
   private def nonBlank(value: String): Option[String] =
     Option(value.trim).filter(_.nonEmpty)
 
-  private def mongoConfigFromOptions(
-    mongoUri: Option[String],
-    mongoDatabase: Option[String],
-    mongoTargetsCollection: Option[String]
-  ): Either[String, Option[MongoConfig]] =
+  private def stateStoreConfigFromOptions(
+    url: Option[String],
+    user: Option[String],
+    password: Option[String],
+    schema: String,
+    poolSize: Int
+  ): Either[String, Option[StateStoreConfig]] =
     val provided = List(
-      mongoUri.map(_ => "BEDROCK_MONGO_URI"),
-      mongoDatabase.map(_ => "BEDROCK_MONGO_DATABASE"),
-      mongoTargetsCollection.map(_ => "BEDROCK_MONGO_TARGETS_COLLECTION")
+      url.map(_ => "BEDROCK_STATE_DB_URL"),
+      user.map(_ => "BEDROCK_STATE_DB_USER"),
+      password.map(_ => "BEDROCK_STATE_DB_PASSWORD")
     ).flatten
     if provided.isEmpty then Right(None)
     else
       val missing = List(
-        Option.when(mongoUri.isEmpty)("BEDROCK_MONGO_URI"),
-        Option.when(mongoDatabase.isEmpty)("BEDROCK_MONGO_DATABASE"),
-        Option.when(mongoTargetsCollection.isEmpty)("BEDROCK_MONGO_TARGETS_COLLECTION")
+        Option.when(url.isEmpty)("BEDROCK_STATE_DB_URL"),
+        Option.when(user.isEmpty)("BEDROCK_STATE_DB_USER"),
+        Option.when(password.isEmpty)("BEDROCK_STATE_DB_PASSWORD")
       ).flatten
-      if missing.nonEmpty then Left(s"Mongo configuration is incomplete; missing ${missing.mkString(", ")}")
-      else Right(Some(MongoConfig(mongoUri.get, mongoDatabase.get, mongoTargetsCollection.get)))
+      if missing.nonEmpty then Left(s"State database configuration is incomplete; missing ${missing.mkString(", ")}")
+      else Right(Some(StateStoreConfig(url.get, user.get, password.get, schema, poolSize)))
 
   private def envInt(name: String, defaultValue: Int): Int =
     env
