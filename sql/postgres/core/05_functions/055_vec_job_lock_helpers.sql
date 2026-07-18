@@ -29,15 +29,20 @@ begin
     return false;
   end if;
 
-  delete from vec_job_locks
-   where job_name = p_job_name
-     and locked_at < now() - interval '5 minutes';
+  begin
+    delete from vec_job_locks
+     where job_name = p_job_name
+       and locked_at < now() - interval '5 minutes';
 
-  insert into vec_job_locks (job_name, locked_at, locked_by)
-  values (p_job_name, now(), pg_backend_pid()::text)
-  on conflict (job_name) do update
-    set locked_at = excluded.locked_at,
-        locked_by = excluded.locked_by;
+    insert into vec_job_locks (job_name, locked_at, locked_by)
+    values (p_job_name, now(), pg_backend_pid()::text)
+    on conflict (job_name) do update
+      set locked_at = excluded.locked_at,
+          locked_by = excluded.locked_by;
+  exception when others then
+    perform pg_advisory_unlock(hashtextextended(p_job_name, 0));
+    raise;
+  end;
 
   return true;
 end;
@@ -65,15 +70,20 @@ begin
     return false;
   end if;
 
-  delete from vec_job_locks
-   where job_name like 'maintenance:%'
-     and locked_at < now() - interval '5 minutes';
+  begin
+    delete from vec_job_locks
+     where job_name like 'maintenance:%'
+       and locked_at < now() - interval '5 minutes';
 
-  insert into vec_job_locks (job_name, locked_at, locked_by)
-  values ('maintenance:' || p_job_name, now(), pg_backend_pid()::text)
-  on conflict (job_name) do update
-    set locked_at = excluded.locked_at,
-        locked_by = excluded.locked_by;
+    insert into vec_job_locks (job_name, locked_at, locked_by)
+    values ('maintenance:' || p_job_name, now(), pg_backend_pid()::text)
+    on conflict (job_name) do update
+      set locked_at = excluded.locked_at,
+          locked_by = excluded.locked_by;
+  exception when others then
+    perform pg_advisory_unlock(hashtextextended(v_lock_name, 0));
+    raise;
+  end;
 
   return true;
 end;

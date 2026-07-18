@@ -97,22 +97,35 @@ object MigrationPlan:
     inspect(dbKind, dialect, discovery).flatMap(requireValid)
 
   private def requireValid(plan: MigrationPlan): IO[MigrationPlan] =
-    if plan.validation.hasErrors then
-      IO.raiseError(MigratorError.Validation(plan.validation.errors.mkString("; ")))
+    if plan.validation.hasErrors then IO.raiseError(MigratorError.Validation(plan.validation.errors.mkString("; ")))
     else IO.pure(plan)
 
   private def validateGraph(objects: List[SchemaObject]): List[String] =
-    val byName = objects.groupBy(_.objectName)
-    val duplicates = byName.collect { case (name, matches) if matches.sizeIs > 1 =>
-      s"duplicate object identity '$name' in ${matches.map(_.sourceFile).sorted.mkString(", ")}"
-    }.toList.sorted
-    val known = byName.keySet
-    val missing = objects.flatMap { objectDef =>
-      objectDef.dependsOn.filterNot(known).filterNot(isExternal).map(dependency =>
-        s"${objectDef.sourceFile}: ${objectDef.objectName} depends on missing object '$dependency'"
-      )
-    }.distinct.sorted
-    duplicates ++ missing
+    val byIdentity = objects.groupBy(_.identity)
+    val duplicates = byIdentity
+      .collect {
+        case (identity, matches) if matches.sizeIs > 1 =>
+          s"duplicate object identity '${identity.render}' in ${matches.map(_.sourceFile).sorted.mkString(", ")}"
+      }
+      .toList
+      .sorted
+    val known = byIdentity.keySet
+    val dependencyErrors = objects
+      .flatMap { objectDef =>
+        objectDef.dependsOn.filterNot(isExternal).flatMap { dependency =>
+          SchemaObject.dependencyCandidates(dependency, known).toList.sortBy(_.render) match
+            case Nil =>
+              List(s"${objectDef.sourceFile}: ${objectDef.identity.render} depends on missing object '$dependency'")
+            case _ :: Nil => Nil
+            case candidates =>
+              List(
+                s"${objectDef.sourceFile}: ${objectDef.identity.render} has ambiguous dependency '$dependency'; use ${candidates.map(_.render).mkString(" or ")}"
+              )
+        }
+      }
+      .distinct
+      .sorted
+    duplicates ++ dependencyErrors
 
   private def isExternal(dependency: String): Boolean =
     dependency.startsWith("ext:") || dependency.startsWith("external:")

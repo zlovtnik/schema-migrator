@@ -8,5 +8,5 @@ object Lock:
 
   def use[A](acquire: IO[Unit], release: IO[Unit])(action: IO[A]): IO[A] =
     acquire.bracket(_ => action)(_ =>
-      release.handleErrorWith(error => logger.warn(error)("schema lock release failed"))
+      release.handleErrorWith(error => logger.warn(error)("schema lock release failed") *> IO.raiseError(error))
     )

@@ -13,6 +13,19 @@ final case class SchemaObject(
   oracleHeaders: Map[String, String] = Map.empty
 ):
   def phase: Phase = Phase.forKind(kind)
+  def identity: SchemaObject.Identity = SchemaObject.Identity(kind, objectName)
+
+object SchemaObject:
+  final case class Identity(kind: String, objectName: String):
+    def render: String = s"$kind:$objectName"
+
+  def dependencyCandidates(reference: String, known: Set[Identity]): Set[Identity] =
+    val separator = reference.indexOf(':')
+    val knownKinds = known.map(_.kind)
+    if separator > 0 && knownKinds.contains(reference.take(separator).toLowerCase) then
+      val identity = Identity(reference.take(separator).toLowerCase, reference.drop(separator + 1))
+      Set(identity).filter(known)
+    else known.filter(_.objectName == reference)
 
 final case class PreparedObject(
   objectDef: SchemaObject,

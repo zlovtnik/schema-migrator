@@ -31,13 +31,19 @@ trait RunExecutor:
     run(target, runRecord, patch)
 
 object RunExecutor:
-  def supervised(delegate: RunExecutor, supervisor: Supervisor[IO]): RunExecutor =
+  def supervised(delegate: RunExecutor, supervisor: Supervisor[IO], runStore: RunStore): RunExecutor =
     new RunExecutor:
       override def run(target: StoredTarget, run: Run, patch: Patch): IO[Unit] =
         delegate.run(target, run, patch)
 
       override def submit(target: StoredTarget, run: Run, patch: Patch): IO[Unit] =
-        supervisor.supervise(delegate.run(target, run, patch)).void
+        supervisor.supervise(delegate.run(target, run, patch).onCancel(finalizeCanceledRun(run, runStore))).void
+
+  private def finalizeCanceledRun(run: Run, runStore: RunStore): IO[Unit] =
+    runStore.currentStatus(run.id).flatMap {
+      case Some("running") => runStore.abort(run.id).void
+      case _ => IO.unit
+    }
 
   def real(
     config: MigratorConfig,

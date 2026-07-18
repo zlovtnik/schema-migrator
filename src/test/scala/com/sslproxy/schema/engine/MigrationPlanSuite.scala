@@ -37,7 +37,7 @@ class MigrationPlanSuite extends FunSuite:
 
     val plan = MigrationPlan.inspect(DbKind.Postgres, SqlDialect.Postgres, discovery).unsafeRunSync()
 
-    assert(plan.validation.errors.exists(_.contains("duplicate object identity 'duplicate'")))
+    assert(plan.validation.errors.exists(_.contains("duplicate object identity 'function:duplicate'")))
     assert(plan.validation.errors.exists(_.contains("depends on missing object 'unknown'")))
     assert(plan.validation.errors.exists(_.contains("dependency cycle detected among")))
   }
@@ -48,6 +48,31 @@ class MigrationPlanSuite extends FunSuite:
     val plan = MigrationPlan.inspect(DbKind.Postgres, SqlDialect.Postgres, discovery).unsafeRunSync()
 
     assertEquals(plan.validation.errors, Nil)
+  }
+
+  test("keeps same-named kinds distinct and resolves kind-qualified dependencies") {
+    val discovery = DiscoveryResult(
+      List(sqlFile("consumer", "table:shared"), sqlFile("shared"), tableSqlFile("shared")),
+      Nil
+    )
+
+    val plan = MigrationPlan.inspect(DbKind.Postgres, SqlDialect.Postgres, discovery).unsafeRunSync()
+    val tableIndex = plan.objects.indexWhere(objectDef => objectDef.identity.render == "table:shared")
+    val consumerIndex = plan.objects.indexWhere(objectDef => objectDef.identity.render == "function:consumer")
+
+    assertEquals(plan.validation.errors, Nil)
+    assert(tableIndex >= 0 && tableIndex < consumerIndex)
+  }
+
+  test("requires kind qualification when a dependency name is ambiguous") {
+    val discovery = DiscoveryResult(
+      List(sqlFile("consumer", "shared"), sqlFile("shared"), tableSqlFile("shared")),
+      Nil
+    )
+
+    val plan = MigrationPlan.inspect(DbKind.Postgres, SqlDialect.Postgres, discovery).unsafeRunSync()
+
+    assert(plan.validation.errors.exists(_.contains("ambiguous dependency 'shared'")))
   }
 
   test("prepareFiles rejects invalid plans before apply") {
@@ -125,6 +150,21 @@ class MigrationPlanSuite extends FunSuite:
            |-- folder: functions
            |-- depends_on: $dependencyHeader
            |create or replace function $name() returns integer language sql as 'select 1';
+           |""".stripMargin
+      )
+    )
+
+  private def tableSqlFile(name: String): SqlFile =
+    SqlFile(
+      folder = "tables",
+      path = Path.of(s"$name.sql"),
+      name = s"$name.sql",
+      relativePath = s"tables/$name.sql",
+      content = Some(
+        s"""-- object: $name
+           |-- folder: tables
+           |-- depends_on: -
+           |create table if not exists $name(id integer);
            |""".stripMargin
       )
     )

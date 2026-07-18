@@ -1,6 +1,7 @@
 package com.sslproxy.schema.discovery
 
 import cats.effect.{Clock, IO, Resource}
+import cats.effect.kernel.Outcome
 import cats.syntax.all.*
 import com.sslproxy.schema.store.{SqlFileStore, Target, TargetStore}
 
@@ -52,8 +53,10 @@ final class RepoSyncService(
           if hasChanges then
             (sqlFileStore.replaceAll(targetId, newFiles) *>
               recordSync(targetId, commitSha, syncedAt))
-              .onError { case _ =>
-                sqlFileStore.replaceAll(targetId, currentFiles).void
+              .guaranteeCase {
+                case Outcome.Succeeded(_) => IO.unit
+                case Outcome.Errored(_) | Outcome.Canceled() =>
+                  sqlFileStore.replaceAll(targetId, currentFiles)
               }
           else recordSync(targetId, commitSha, syncedAt)
       yield result.copy(commitSha = commitSha, syncedAt = syncedAt)

@@ -6,10 +6,16 @@ import scala.collection.mutable
 
 object Graph:
   def topologicalSort(objects: List[SchemaObject]): Either[MigratorError, List[SchemaObject]] =
+    val known = objects.map(_.identity).toSet
     topologicalIndexes(
       objects.length,
-      index => objects(index).objectName,
-      index => objects(index).dependsOn
+      index => objects(index).identity,
+      index => objects(index).dependsOn,
+      dependency =>
+        SchemaObject.dependencyCandidates(dependency, known).toList match
+          case identity :: Nil => Some(identity)
+          case _ => None,
+      _.render
     ).map(indexes => indexes.map(objects))
 
   def findDependencyCycle[A](
@@ -17,23 +23,25 @@ object Graph:
     objectName: Int => String,
     dependencies: Int => List[String]
   ): Option[List[String]] =
-    topologicalIndexes(count, objectName, dependencies).left.toOption.collect {
+    topologicalIndexes(count, objectName, dependencies, Some.apply, identity).left.toOption.collect {
       case MigratorError.Apply(message, _) if message.startsWith("dependency cycle detected among: ") =>
         message.stripPrefix("dependency cycle detected among: ").split(", ").toList
     }
 
-  private def topologicalIndexes(
+  private def topologicalIndexes[Identity](
     count: Int,
-    objectName: Int => String,
-    dependencies: Int => List[String]
+    objectIdentity: Int => Identity,
+    dependencies: Int => List[String],
+    resolveDependency: String => Option[Identity],
+    renderIdentity: Identity => String
   ): Either[MigratorError, List[Int]] =
-    val nameToIndex = (0 until count).map(index => objectName(index) -> index).toMap
+    val identityToIndex = (0 until count).map(index => objectIdentity(index) -> index).toMap
     val inDegree = Array.fill(count)(0)
     val adjacency = Array.fill(count)(mutable.ListBuffer.empty[Int])
 
     (0 until count).foreach { index =>
       dependencies(index).foreach { dep =>
-        nameToIndex.get(dep).foreach { depIndex =>
+        resolveDependency(dep).flatMap(identityToIndex.get).foreach { depIndex =>
           adjacency(depIndex).append(index)
           inDegree(index) += 1
         }
@@ -61,6 +69,7 @@ object Graph:
 
     if sorted.length != count then
       val sortedSet = sorted.toSet
-      val cycle = (0 until count).filterNot(sortedSet.contains).map(objectName).mkString(", ")
+      val cycle =
+        (0 until count).filterNot(sortedSet.contains).map(index => renderIdentity(objectIdentity(index))).mkString(", ")
       Left(MigratorError.Apply(s"dependency cycle detected among: $cycle"))
     else Right(sorted.toList)

@@ -10,14 +10,15 @@ final case class TargetDescriptor(dbKind: DbKind, jdbcUrl: String, host: Option[
 object TargetDescriptor:
   def parse(rawUrl: String): Either[String, TargetDescriptor] =
     val jdbcUrl = rawUrl.trim
+    val oraclePrefix = "jdbc:oracle:thin:"
+    val unsupported = "unsupported database URL for migration execution"
     val kind =
-      if jdbcUrl.startsWith("jdbc:oracle:thin:") then Right(DbKind.Oracle)
-      else if
-        jdbcUrl.startsWith("jdbc:postgresql:") || jdbcUrl.startsWith("postgres://") || jdbcUrl.startsWith(
+      if jdbcUrl.startsWith(oraclePrefix) && jdbcUrl.stripPrefix(oraclePrefix).trim.nonEmpty then Right(DbKind.Oracle)
+      else if jdbcUrl.startsWith("jdbc:postgresql:") || jdbcUrl.startsWith("postgres://") || jdbcUrl.startsWith(
           "postgresql://"
         )
       then Right(DbKind.Postgres)
-      else Left("unsupported database URL for migration execution")
+      else Left(unsupported)
     kind.map(dbKind => TargetDescriptor(dbKind, jdbcUrl, hostFor(dbKind, jdbcUrl)))
 
   private def hostFor(dbKind: DbKind, jdbcUrl: String): Option[String] =

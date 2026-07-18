@@ -32,3 +32,12 @@ class LockSuite extends FunSuite:
 
     assertEquals(result, (Left("lock already held"), true))
   }
+
+  test("propagates a lock release failure") {
+    val result = Lock
+      .use(IO.unit, IO.raiseError(IllegalStateException("release failed")))(IO.unit)
+      .attempt
+      .unsafeRunSync()
+
+    assertEquals(result.left.map(_.getMessage), Left("release failed"))
+  }

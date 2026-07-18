@@ -18,6 +18,13 @@ class TargetDescriptorSuite extends FunSuite:
     assert(TargetDescriptor.parse("jdbc:mysql://db.example/app").isLeft)
   }
 
+  test("rejects Oracle URLs without connection content") {
+    val expected: Either[String, TargetDescriptor] = Left("unsupported database URL for migration execution")
+
+    assertEquals(TargetDescriptor.parse("jdbc:oracle:thin:"), expected)
+    assertEquals(TargetDescriptor.parse("jdbc:oracle:thin:   "), expected)
+  }
+
   test("rejects ambiguous multi-host Oracle descriptors for host allow-listing") {
     val descriptor = TargetDescriptor
       .parse(

@@ -3,24 +3,31 @@ package com.sslproxy.schema.server
 import cats.effect.{Deferred, IO}
 import cats.effect.std.Supervisor
 import cats.effect.unsafe.implicits.global
-import com.sslproxy.schema.store.{Patch, Run, StoredTarget, Target}
+import com.sslproxy.schema.store.{Patch, RunStore, StoredTarget, Target, TriggerRunPayload}
 import munit.FunSuite
 
 class RunExecutorSupervisorSuite extends FunSuite:
-  test("cancels managed run fibers when the owning resource closes") {
-    val canceled = (for
+  test("cancels managed fibers and aborts a started run when the owning resource closes") {
+    val result = (for
+      runStore <- RunStore.inMemory
+      run <- runStore.create(TriggerRunPayload(patchRecord.id, storedTarget.target.id), patchRecord, "test")
       started <- Deferred[IO, Unit]
       canceled <- Deferred[IO, Unit]
       delegate = new RunExecutor:
-        override def run(target: StoredTarget, run: Run, patch: Patch): IO[Unit] =
-          started.complete(()).void *> IO.never.onCancel(canceled.complete(()).void)
+        override def run(target: StoredTarget, runRecord: com.sslproxy.schema.store.Run, patch: Patch): IO[Unit] =
+          runStore.startRun(runRecord.id).flatMap {
+            case true => started.complete(()).void *> IO.never.onCancel(canceled.complete(()).void)
+            case false => IO.unit
+          }
       _ <- Supervisor[IO].use { supervisor =>
-        RunExecutor.supervised(delegate, supervisor).submit(storedTarget, runRecord, patchRecord) *> started.get
+        RunExecutor.supervised(delegate, supervisor, runStore).submit(storedTarget, run, patchRecord) *> started.get
       }
       wasCanceled <- canceled.tryGet
-    yield wasCanceled.nonEmpty).unsafeRunSync()
+      stored <- runStore.get(run.id)
+      retry <- runStore.create(TriggerRunPayload(patchRecord.id, storedTarget.target.id), patchRecord, "retry")
+    yield (wasCanceled.nonEmpty, stored.map(_.status), retry.target_id)).unsafeRunSync()
 
-    assert(canceled)
+    assertEquals(result, (true, Some("aborted"), storedTarget.target.id))
   }
 
   private val storedTarget = StoredTarget(
@@ -39,17 +46,6 @@ class RunExecutorSupervisorSuite extends FunSuite:
       db_kind = "postgres"
     ),
     None
-  )
-
-  private val runRecord = Run(
-    id = "run-1",
-    target_id = "target-1",
-    patch_id = "patch-1",
-    status = "pending",
-    scripts = Nil,
-    started_at = "2026-07-18T00:00:00Z",
-    ended_at = None,
-    triggered_by = "test"
   )
 
   private val patchRecord = Patch(

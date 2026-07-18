@@ -76,7 +76,8 @@ object HttpServer:
       supervisor <- Supervisor[IO]
       runExecutor = RunExecutor.supervised(
         RunExecutor.real(config, patchStore, runStore, validationStore, Some(auditStore)),
-        supervisor
+        supervisor,
+        runStore
       )
       _ <- Resource.eval(
         KeycloakConfigStore.persist(

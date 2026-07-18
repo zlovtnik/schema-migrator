@@ -1,5 +1,6 @@
 package com.sslproxy.schema.discovery
 
+import cats.effect.{Deferred, IO}
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.store.{SqlFileStore, StoredSqlFile, Target, TargetPayload, TargetStore}
 import munit.FunSuite
@@ -7,6 +8,7 @@ import org.eclipse.jgit.api.Git
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
+import scala.concurrent.duration.*
 
 class RepoSyncServiceSuite extends FunSuite:
   test("sync loads repo files and records commit, then no-diff sync preserves counts") {
@@ -85,6 +87,60 @@ class RepoSyncServiceSuite extends FunSuite:
       assertEquals[List[String], List[String]](files.map(_.path), List("tables/001_existing.sql"))
     finally deleteRecursively(cache)
   }
+
+  test("canceled metadata persistence restores the previous SQL files") {
+    val repo = Files.createTempDirectory("schema-migrator-sync-repo")
+    val cache = Files.createTempDirectory("schema-migrator-sync-cache")
+    try
+      initRepo(repo, "select 2;")
+      val existing = StoredSqlFile.fromBytes(
+        "tables/001_existing.sql",
+        "tables",
+        "001_existing.sql",
+        "select 1;".getBytes(StandardCharsets.UTF_8),
+        "2026-07-02T12:00:00Z"
+      )
+      val result = (for
+        sqlStore <- SqlFileStore.inMemory
+        targetStore <- TargetStore.inMemory
+        created <- targetStore.create(targetPayload(repo))
+        _ <- sqlStore.replaceAll(created.id, List(existing))
+        metadataStarted <- Deferred[IO, Unit]
+        blockingTargetStore = new TargetStore:
+          override def list = targetStore.list
+          override def create(payload: TargetPayload) = targetStore.create(payload)
+          override def get(id: String) = targetStore.get(id)
+          override def getStored(id: String) = targetStore.getStored(id)
+          override def update(id: String, payload: TargetPayload) = targetStore.update(id, payload)
+          override def recordRepoSync(id: String, commitSha: String, syncedAt: String) =
+            metadataStarted.complete(()).void *> IO.never
+          override def clearRepoSync(id: String) = targetStore.clearRepoSync(id)
+          override def delete(id: String) = targetStore.delete(id)
+        service = RepoSyncService(sqlStore, GitRepoLoader(), cache, 30, blockingTargetStore)
+        fiber <- service.sync(created.id, target(repo).copy(id = created.id)).start
+        _ <- metadataStarted.get.timeout(5.seconds)
+        _ <- fiber.cancel
+        files <- sqlStore.list(created.id)
+        storedTarget <- targetStore.get(created.id)
+      yield (files.map(_.path), storedTarget.flatMap(_.last_synced_commit))).unsafeRunSync()
+
+      assertEquals(result, (List("tables/001_existing.sql"), None))
+    finally
+      deleteRecursively(repo)
+      deleteRecursively(cache)
+  }
+
+  private def targetPayload(repo: Path): TargetPayload =
+    TargetPayload(
+      label = "Target",
+      app_name = "app",
+      env = "dev",
+      jdbc_url = "jdbc:postgresql://localhost:5432/app?user=app",
+      password = None,
+      repo_url = repo.toString,
+      repo_branch = "main",
+      repo_sql_path = "sql"
+    )
 
   private def target(repo: Path): Target =
     Target(
