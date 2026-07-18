@@ -71,7 +71,7 @@ lazy val root = (project in file("."))
       "org.http4s" %% "http4s-ember-client" % http4sVersion,
       "org.http4s" %% "http4s-circe" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion,
-      "com.auth0" % "java-jwt" % "4.4.0",
+      "com.auth0" % "java-jwt" % "4.6.0",
       "org.mongodb" % "mongodb-driver-sync" % mongoDriverVersion,
       "org.eclipse.jgit" % "org.eclipse.jgit" % jgitVersion,
       "org.apache.commons" % "commons-compress" % "1.27.1",
