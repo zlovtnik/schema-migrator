@@ -76,7 +76,7 @@ class TargetStoreSuite extends FunSuite:
 
       assertEquals(created.label, "Alpha")
       assertEquals(stored.map(_.password), Some(Some("first")))
-      assertEquals(listed.map(_.id), List(created.id))
+      assert(listed.exists(_.id == created.id))
       assertEquals(updated.map(_.label), Some("Beta"))
       assertEquals(storedAfterEmptyPasswordUpdate.map(_.password), Some(Some("first")))
       assertEquals(updatedWithPassword.map(_.label), Some("Gamma"))

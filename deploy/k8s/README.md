@@ -5,7 +5,7 @@ This directory defines the Kubernetes replacement stack for the schema migrator 
 - one public `LoadBalancer` service, `schema-migrator-edge`, managed by OCI/OKE
 - Traefik routing `/api` to the backend and `/` to the UI
 - Keycloak on port `8080` with the existing `middleware` realm and `bedrock-ui` client
-- MongoDB as an internal persistence dependency
+- PostgreSQL as the internal persistence dependency
 
 Before applying, replace the placeholders in `secret.template.yaml` and set the public origin in
 `stack.yaml` after OCI assigns the new load balancer address:

@@ -12,7 +12,7 @@ This file governs this `schema-migrator` repository checkout.
   checks unless an Oracle test target is explicitly available.
 - A small bundled web UI lives in `schema-migrator-ui/` (Vite + React). CI and
   local development may use the provided `docker-compose.yml` which builds
-  the `backend`, `frontend`, and `traefik` services and an accompanying `mongo`
+  the `backend`, `frontend`, and `traefik` services and an accompanying PostgreSQL
   service used by the UI/API for persisted migration targets.
 
 ## Guardrails
@@ -35,4 +35,4 @@ This file governs this `schema-migrator` repository checkout.
 - Dry-run apply (print SQL that would be executed): `sbt "run --sql-dir ./sql --dry-run apply"`
 - Check DB connectivity: `sbt "run --sql-dir ./sql check-connection"`
 - Apply migrations: `sbt "run --sql-dir ./sql apply"`
-- Docker compose (local dev for UI + API + mongo): `docker-compose up --build`
+- Docker compose (local dev for UI + API + PostgreSQL): `docker-compose up --build`

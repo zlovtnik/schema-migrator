@@ -16,16 +16,10 @@ data:
   BEDROCK_KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/middleware/protocol/openid-connect/certs"
   BEDROCK_KEYCLOAK_CLIENT_ID: "bedrock-ui"
   BEDROCK_KEYCLOAK_AUDIENCE: "bedrock-ui"
-  BEDROCK_MONGO_URI: "mongodb://mongo:27017"
-  BEDROCK_MONGO_DATABASE: "schema_migrator"
-  BEDROCK_MONGO_TARGETS_COLLECTION: "targets"
-  BEDROCK_SQL_FILES_COLLECTION: "sql_files"
-  BEDROCK_PATCHES_COLLECTION: "patches"
-  BEDROCK_RUNS_COLLECTION: "runs"
-  BEDROCK_VALIDATIONS_COLLECTION: "validations"
-  BEDROCK_SNAPSHOTS_COLLECTION: "snapshots"
-  BEDROCK_AUDIT_COLLECTION: "audit_events"
-  BEDROCK_KEYCLOAK_CONFIG_COLLECTION: "keycloak_config"
+  BEDROCK_STATE_DB_URL: "jdbc:postgresql://state-postgres:5432/schema_migrator"
+  BEDROCK_STATE_DB_USER: "schema_migrator"
+  BEDROCK_STATE_DB_SCHEMA: "public"
+  BEDROCK_STATE_DB_POOL_SIZE: "10"
   BEDROCK_DB_TEST_ALLOWED_HOSTS: "localhost,127.0.0.1,192.168.1.221"
 ---
 apiVersion: v1
@@ -183,10 +177,10 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: mongo-data
+  name: state-postgres-data
   namespace: schema-migrator
   labels:
-    app.kubernetes.io/name: mongo
+    app.kubernetes.io/name: state-postgres
 spec:
   accessModes: ["ReadWriteOnce"]
   resources:
@@ -196,72 +190,68 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mongo
+  name: state-postgres
   namespace: schema-migrator
   labels:
-    app.kubernetes.io/name: mongo
+    app.kubernetes.io/name: state-postgres
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: mongo
+      app.kubernetes.io/name: state-postgres
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: mongo
+        app.kubernetes.io/name: state-postgres
     spec:
       containers:
-        - name: mongo
-          image: mongo:7
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
+        - name: postgres
+          image: postgres:16.9-alpine3.21
+          env:
+            - name: POSTGRES_DB
+              value: schema_migrator
+            - name: POSTGRES_USER
+              value: schema_migrator
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: schema-migrator-secrets
+                  key: BEDROCK_STATE_DB_PASSWORD
           ports:
-            - containerPort: 27017
+            - containerPort: 5432
           readinessProbe:
             exec:
-              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+              command: ["pg_isready", "-U", "schema_migrator", "-d", "schema_migrator"]
             initialDelaySeconds: 10
             periodSeconds: 10
           livenessProbe:
             exec:
-              command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+              command: ["pg_isready", "-U", "schema_migrator", "-d", "schema_migrator"]
             initialDelaySeconds: 30
             periodSeconds: 20
           volumeMounts:
-            - name: mongo-data
-              mountPath: /data/db
-            - name: mongo-config
-              mountPath: /data/configdb
-            - name: mongo-tmp
-              mountPath: /tmp
+            - name: state-postgres-data
+              mountPath: /var/lib/postgresql/data
       volumes:
-        - name: mongo-data
+        - name: state-postgres-data
           persistentVolumeClaim:
-            claimName: mongo-data
-        - name: mongo-config
-          emptyDir: {}
-        - name: mongo-tmp
-          emptyDir: {}
+            claimName: state-postgres-data
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: mongo
+  name: state-postgres
   namespace: schema-migrator
   labels:
-    app.kubernetes.io/name: mongo
+    app.kubernetes.io/name: state-postgres
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: mongo
+    app.kubernetes.io/name: state-postgres
   ports:
-    - name: mongo
-      port: 27017
-      targetPort: 27017
+    - name: postgres
+      port: 5432
+      targetPort: 5432
 ---
 apiVersion: apps/v1
 kind: Deployment

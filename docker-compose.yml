@@ -1,12 +1,16 @@
 services:
 
-  mongo:
-    image: mongo:7
+  state-postgres:
+    image: postgres:16.9-alpine3.21
     restart: unless-stopped
+    environment:
+      - POSTGRES_DB=schema_migrator
+      - POSTGRES_USER=schema_migrator
+      - POSTGRES_PASSWORD=${BEDROCK_STATE_DB_PASSWORD:?BEDROCK_STATE_DB_PASSWORD is required}
     volumes:
-      - mongo-data:/data/db
+      - state-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test: ["CMD-SHELL", "pg_isready -U schema_migrator -d schema_migrator"]
       interval: 5s
       timeout: 3s
       retries: 30
@@ -33,16 +37,11 @@ services:
       - BEDROCK_KEYCLOAK_CLIENT_ID=${BEDROCK_KEYCLOAK_CLIENT_ID:-bedrock-ui}
       - BEDROCK_KEYCLOAK_AUDIENCE=${BEDROCK_KEYCLOAK_AUDIENCE:-bedrock-ui}
       - BEDROCK_API_BEARER_TOKEN=${BEDROCK_API_BEARER_TOKEN:?BEDROCK_API_BEARER_TOKEN is required}
-      - BEDROCK_MONGO_URI=${BEDROCK_MONGO_URI:-mongodb://mongo:27017}
-      - BEDROCK_MONGO_DATABASE=${BEDROCK_MONGO_DATABASE:-schema_migrator}
-      - BEDROCK_MONGO_TARGETS_COLLECTION=${BEDROCK_MONGO_TARGETS_COLLECTION:-targets}
-      - BEDROCK_SQL_FILES_COLLECTION=${BEDROCK_SQL_FILES_COLLECTION:-sql_files}
-      - BEDROCK_PATCHES_COLLECTION=${BEDROCK_PATCHES_COLLECTION:-patches}
-      - BEDROCK_RUNS_COLLECTION=${BEDROCK_RUNS_COLLECTION:-runs}
-      - BEDROCK_VALIDATIONS_COLLECTION=${BEDROCK_VALIDATIONS_COLLECTION:-validations}
-      - BEDROCK_SNAPSHOTS_COLLECTION=${BEDROCK_SNAPSHOTS_COLLECTION:-snapshots}
-      - BEDROCK_AUDIT_COLLECTION=${BEDROCK_AUDIT_COLLECTION:-audit_events}
-      - BEDROCK_KEYCLOAK_CONFIG_COLLECTION=${BEDROCK_KEYCLOAK_CONFIG_COLLECTION:-keycloak_config}
+      - BEDROCK_STATE_DB_URL=jdbc:postgresql://state-postgres:5432/schema_migrator
+      - BEDROCK_STATE_DB_USER=schema_migrator
+      - BEDROCK_STATE_DB_PASSWORD=${BEDROCK_STATE_DB_PASSWORD:?BEDROCK_STATE_DB_PASSWORD is required}
+      - BEDROCK_STATE_DB_SCHEMA=public
+      - BEDROCK_STATE_DB_POOL_SIZE=${BEDROCK_STATE_DB_POOL_SIZE:-10}
       - BEDROCK_DB_TEST_ALLOWED_HOSTS=${BEDROCK_DB_TEST_ALLOWED_HOSTS:-localhost,127.0.0.1,192.168.1.221}
       - BEDROCK_DB_URL=${BEDROCK_DB_URL:?BEDROCK_DB_URL is required}
       - BEDROCK_DB_USER=${BEDROCK_DB_USER:?BEDROCK_DB_USER is required}
@@ -65,7 +64,7 @@ services:
       retries: 30
       start_period: 30s
     depends_on:
-      mongo:
+      state-postgres:
         condition: service_healthy
       keycloak:
         condition: service_healthy
@@ -170,6 +169,6 @@ networks:
     driver: bridge
 
 volumes:
-  mongo-data:
+  state-postgres-data:
   keycloak-data:
   traefik-letsencrypt:

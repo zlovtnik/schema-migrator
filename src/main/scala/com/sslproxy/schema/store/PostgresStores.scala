@@ -189,6 +189,7 @@ private[store] object PostgresStoreSupport:
   val runScriptColumns = fr"run_id, script_id, filename, script_order, status, error::text, duration_ms"
 
   def uuid(value: String): UUID = UUID.fromString(value)
+  def uuidOption(value: String): Option[UUID] = Either.catchNonFatal(uuid(value)).toOption
   def instant(value: String): Instant = Instant.parse(value)
   def errorJson(value: Option[ScriptError]): Option[String] = value.map(_.asJson.noSpaces)
 
@@ -243,8 +244,8 @@ private[store] final class PostgresTargetStore(database: StateDatabase, password
     row(id).flatMap(_.traverse(value => crypto.decrypt(value.passwordCiphertext, value.passwordIv).map(StoredTarget(value.target, _))))
 
   override def update(id: String, payload: TargetPayload): IO[Option[Target]] =
-    payload.password.filter(_.nonEmpty).traverse(crypto.encrypt).flatMap { encrypted =>
-      val targetId = uuid(id)
+    uuidOption(id).fold(IO.pure(Option.empty[Target])) { targetId =>
+      payload.password.filter(_.nonEmpty).traverse(crypto.encrypt).flatMap { encrypted =>
       val action = for
         existing <- (fr"select" ++ targetColumns ++ fr"from targets where id = $targetId for update")
           .query[TargetRow]
@@ -273,22 +274,31 @@ private[store] final class PostgresTargetStore(database: StateDatabase, password
             """.update.run.as(Some(next))
       yield result
       action.transact(database.transactor)
+      }
     }
 
   override def recordRepoSync(id: String, commitSha: String, syncedAt: String): IO[Boolean] =
-    sql"update targets set last_synced_commit = $commitSha, last_synced_at = ${instant(syncedAt)}, updated_at = now() where id = ${uuid(id)}"
-      .update.run.map(_ > 0).transact(database.transactor)
+    uuidOption(id).fold(IO.pure(false)) { targetId =>
+      sql"update targets set last_synced_commit = $commitSha, last_synced_at = ${instant(syncedAt)}, updated_at = now() where id = $targetId"
+        .update.run.map(_ > 0).transact(database.transactor)
+    }
 
   override def clearRepoSync(id: String): IO[Boolean] =
-    sql"update targets set last_synced_commit = null, last_synced_at = null, updated_at = now() where id = ${uuid(id)}"
-      .update.run.map(_ > 0).transact(database.transactor)
+    uuidOption(id).fold(IO.pure(false)) { targetId =>
+      sql"update targets set last_synced_commit = null, last_synced_at = null, updated_at = now() where id = $targetId"
+        .update.run.map(_ > 0).transact(database.transactor)
+    }
 
   override def delete(id: String): IO[Boolean] =
-    sql"delete from targets where id = ${uuid(id)}".update.run.map(_ > 0).transact(database.transactor)
+    uuidOption(id).fold(IO.pure(false))(targetId =>
+      sql"delete from targets where id = $targetId".update.run.map(_ > 0).transact(database.transactor)
+    )
 
   private def row(id: String): IO[Option[TargetRow]] =
-    (fr"select" ++ targetColumns ++ fr"from targets where id = ${uuid(id)}")
-      .query[TargetRow].option.transact(database.transactor)
+    uuidOption(id).fold(IO.pure(Option.empty[TargetRow])) { targetId =>
+      (fr"select" ++ targetColumns ++ fr"from targets where id = $targetId")
+        .query[TargetRow].option.transact(database.transactor)
+    }
 
 private[store] final class PostgresSqlFileStore(database: StateDatabase) extends SqlFileStore:
   import PostgresStoreSupport.*

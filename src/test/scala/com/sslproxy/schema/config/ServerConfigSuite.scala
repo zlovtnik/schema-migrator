@@ -98,7 +98,7 @@ class ServerConfigSuite extends FunSuite:
         stateStore = Some(StateStoreConfig("jdbc:postgresql://localhost:5432/sync", "migrator", "secret", "bad-name"))
       )
 
-      assertEquals(config.validate, Left("BEDROCK_STATE_DB_SCHEMA must be a PostgreSQL identifier"))
+      assertEquals(config.validate, Left("BEDROCK_STATE_DB_SCHEMA must be a valid PostgreSQL identifier"))
     finally deleteIfExists(stageDir)
   }
 
