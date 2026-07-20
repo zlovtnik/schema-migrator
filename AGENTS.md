@@ -8,8 +8,6 @@ This file governs this `schema-migrator` repository checkout.
 - The CLI discovers and applies ordered SQL files from the repository `sql/`
   tree.
 - Postgres is expected to work locally with the split `sql/*` tree.
-- Oracle support is JDBC-based and should be validated with connection-level
-  checks unless an Oracle test target is explicitly available.
 - A small bundled web UI lives in `schema-migrator-ui/` (Vite + React). CI and
   local development may use the provided `docker-compose.yml` which builds
   the `backend`, `frontend`, and `traefik` services and an accompanying PostgreSQL
@@ -21,9 +19,9 @@ This file governs this `schema-migrator` repository checkout.
   materialized_views, then cron jobs.
 - Keep SQL application idempotent and retry-safe. Do not weaken schema-control
   hashing, locking, apply-log, rollback, or readiness behavior.
-- Keep Oracle wallet/JDBC handling inside this service or
-  `services/zig-coordinator`; do not add Oracle access to proxy, sync-plane, or
-  sensor code.
+- Oracle support under `sql/oracle/` is deprecated and no longer active.
+  Do not add new Oracle SQL or Oracle provider code.
+- TiDB schema lives under `sql/tidb/` and is the authoritative sink target.
 - Keep validation useful without requiring a live database where possible.
 - Build every new dialog on `components/ui/Modal.tsx`; do not add another portal or focus trap.
 - Leave `ConnectionForm.tsx` and `TargetFormPage.tsx` as single-step forms until a second real wizard flow justifies extracting them.
