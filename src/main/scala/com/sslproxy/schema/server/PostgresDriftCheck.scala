@@ -34,6 +34,21 @@ private[schema] object PostgresDriftCheck:
           )
         case DbKind.Postgres =>
           postgresReport(config, now)
+        case DbKind.TiDB =>
+          IO.pure(
+            DriftResponse(
+              target_id = targetId(config),
+              db_kind = "tidb",
+              supported = false,
+              checked_at = now,
+              control_summary = None,
+              control_objects = Nil,
+              items = Nil,
+              warnings = List(
+                "TiDB drift introspection is not implemented; use check-connection for TiDB validation."
+              )
+            )
+          )
     }
 
   private def postgresReport(config: MigratorConfig, now: String): IO[DriftResponse] =

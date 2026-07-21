@@ -45,6 +45,10 @@ final class DiscoveryService:
         val discovered = baseline ::: ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil).sortBy(_.name))
         DiscoveryResult(discovered, extraFolderWarnings)
 
+      case DbKind.TiDB =>
+        val discovered = ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil).sortBy(_.name))
+        DiscoveryResult(discovered, extraFolderWarnings)
+
   private def discoverUnsafe(sqlDir: Path, dbKind: DbKind, customer: Option[String]): DiscoveryResult =
     val engineRoot = SqlLayout.resolveEngineRoot(sqlDir, dbKind)
     if Files.isRegularFile(engineRoot.resolve("core").resolve(SqlLayout.ManifestName)) then
@@ -182,6 +186,10 @@ final class DiscoveryService:
       case DbKind.Oracle =>
         val baseline = collectOracleBaseline(sqlDir)
         val files = baseline ::: ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil))
+        DiscoveryResult(files, allWarnings)
+
+      case DbKind.TiDB =>
+        val files = ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil))
         DiscoveryResult(files, allWarnings)
 
   private def collectFolder(sqlDir: Path, folder: String): (List[SqlFile], List[String]) =

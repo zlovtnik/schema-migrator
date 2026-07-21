@@ -6,6 +6,7 @@ import com.sslproxy.schema.config.{DbKind, MigratorConfig}
 import com.sslproxy.schema.db.DbProvider
 import com.sslproxy.schema.db.oracle.OracleProvider
 import com.sslproxy.schema.db.postgres.PostgresProvider
+import com.sslproxy.schema.db.tidb.TiDBProvider
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.discovery.{BaselineGenerator, DiscoveryService}
 import com.sslproxy.schema.effect.{Lock, Retry, RetryPolicy}
@@ -141,6 +142,7 @@ object Commands:
     config.dbKind match
       case DbKind.Postgres => PostgresProvider.fromConfig(config)
       case DbKind.Oracle => OracleProvider.fromConfig(config)
+      case DbKind.TiDB => TiDBProvider.fromConfig(config)
 
   private def exitCodeFor(error: Throwable): ExitCode =
     if MigratorError.isConnectionFailure(error) then connectionFailure

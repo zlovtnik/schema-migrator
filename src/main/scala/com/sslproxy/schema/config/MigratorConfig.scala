@@ -5,13 +5,14 @@ import java.util.Base64
 import scala.concurrent.duration.FiniteDuration
 
 enum DbKind:
-  case Postgres, Oracle
+  case Postgres, Oracle, TiDB
 
 object DbKind:
   def parse(value: String): Either[String, DbKind] =
     value.trim.toLowerCase match
       case "postgres" | "postgresql" => Right(Postgres)
       case "oracle" => Right(Oracle)
+      case "tidb" | "mysql" => Right(TiDB)
       case other => Left(s"unsupported db kind '$other'")
 
 final case class MigratorConfig(
@@ -27,6 +28,8 @@ final case class MigratorConfig(
   oracleTnsAlias: Option[String],
   oracleUser: Option[String],
   oraclePasswordFile: Option[Path],
+  tidbUser: Option[String] = None,
+  tidbPassword: Option[String] = None,
   json: Boolean,
   server: ServerConfig,
   customer: Option[String] = None
@@ -58,6 +61,8 @@ final case class MigratorConfig(
         Left("Oracle requires --oracle-pass-file (or ORACLE_PASS_FILE)")
       case DbKind.Postgres if databaseUrl.isEmpty =>
         Left("Postgres requires --database-url (or DATABASE_URL)")
+      case DbKind.TiDB if databaseUrl.isEmpty =>
+        Left("TiDB requires --database-url (or DATABASE_URL)")
       case _ => Right(())
 
   private def validateSqlDir(): Either[String, Unit] =

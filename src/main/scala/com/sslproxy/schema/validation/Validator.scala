@@ -66,6 +66,7 @@ final class Validator(dbKind: DbKind):
     dbKind match
       case DbKind.Postgres => postgresHeuristics(report, file, sql)
       case DbKind.Oracle => oracleHeuristics(report, file, sql)
+      case DbKind.TiDB => postgresHeuristics(report, file, sql)
 
   private def postgresHeuristics(report: ValidationReport, file: SqlFile, sql: String): ValidationReport =
     val lower = sql.toLowerCase

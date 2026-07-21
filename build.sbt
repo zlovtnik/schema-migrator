@@ -50,6 +50,7 @@ val http4sVersion = "0.23.34"
 val jgitVersion = "7.7.0.202606012155-r"
 val oracleJdbcVersion = "23.6.0.24.10"
 val oracleOsdtVersion = "21.18.0.0"
+val r2dbcMysqlVersion = "1.3.0"
 
 lazy val root = (project in file("."))
   .settings(
@@ -80,6 +81,7 @@ lazy val root = (project in file("."))
       "com.oracle.database.security" % "oraclepki" % oracleJdbcVersion,
       "com.oracle.database.security" % "osdt_core" % oracleOsdtVersion,
       "com.oracle.database.security" % "osdt_cert" % oracleOsdtVersion,
+      "io.asyncer" % "r2dbc-mysql" % r2dbcMysqlVersion,
       "com.h2database" % "h2" % "2.4.240" % Test,
       "org.scalameta" %% "munit" % "1.3.4" % Test
     ),

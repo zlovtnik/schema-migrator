@@ -178,6 +178,18 @@ object SchemaRoutes:
                 "Oracle schema catalog introspection is not implemented; use target connection tests for Oracle validation."
             )
           )
+        case DbKind.TiDB =>
+          IO.pure(
+            SchemaCatalogResponse(
+              target_id = target.target.id,
+              db_kind = "tidb",
+              supported = false,
+              checked_at = now,
+              objects = Nil,
+              warnings = expected.warnings :+
+                "TiDB schema catalog introspection is not implemented; use target connection tests for TiDB validation."
+            )
+          )
         case DbKind.Postgres =>
           postgresSnapshot(target, expected.objects).attempt.map {
             case Right(snapshot) =>
@@ -232,6 +244,20 @@ object SchemaRoutes:
               items = Nil,
               warnings = expected.warnings :+
                 "Oracle drift introspection is not implemented; use target connection tests for Oracle validation."
+            )
+          )
+        case DbKind.TiDB =>
+          IO.pure(
+            DriftResponse(
+              target_id = target.target.id,
+              db_kind = "tidb",
+              supported = false,
+              checked_at = now,
+              control_summary = None,
+              control_objects = Nil,
+              items = Nil,
+              warnings = expected.warnings :+
+                "TiDB drift introspection is not implemented; use target connection tests for TiDB validation."
             )
           )
         case DbKind.Postgres =>
@@ -292,6 +318,8 @@ object SchemaRoutes:
         kind match
           case DbKind.Oracle =>
             RouteJson.badRequest("Oracle drift execution is not implemented")
+          case DbKind.TiDB =>
+            RouteJson.badRequest("TiDB drift execution is not implemented")
           case DbKind.Postgres =>
             (for
               expected <- expectedObjects(config, kind, targetId, sqlFileStore)

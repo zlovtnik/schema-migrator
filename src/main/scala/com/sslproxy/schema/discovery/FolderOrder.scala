@@ -37,7 +37,19 @@ object FolderOrder:
       "scheduler"
     )
 
+  val tidb: List[String] =
+    List(
+      "schemas",
+      "tables",
+      "indexes",
+      "functions",
+      "views",
+      "cron",
+      "materialized_views"
+    )
+
   def forDb(kind: DbKind): List[String] =
     kind match
       case DbKind.Postgres => postgres
       case DbKind.Oracle => oracle
+      case DbKind.TiDB => tidb
