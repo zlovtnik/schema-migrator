@@ -2,6 +2,7 @@ package com.sslproxy.schema.store
 
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
+import cats.syntax.all.*
 import com.sslproxy.schema.server.RunExecutor
 import munit.FunSuite
 
@@ -111,6 +112,43 @@ class RunStoreSuite extends FunSuite:
     assertEquals(resolved.map(_.status), Some("aborted"))
     assertEquals(resolved.flatMap(_.ended_at), Some("2026-07-11T12:00:00Z"))
     assertEquals(pendingResolve, None)
+  }
+
+  test("run claims have one winner and stale tokens cannot mutate state") {
+    val result = cats.effect.Resource
+      .make(IO.blocking(Files.createTempDirectory("schema-migrator-run-store")))(path =>
+        IO.blocking(deleteRecursively(path))
+      )
+      .use { stageDir =>
+        for
+          patchStore <- PatchStore.inMemory(stageDir)
+          runStore <- RunStore.inMemory
+          patch <- patchStore.create(
+            "target-1",
+            List(PatchUpload("001_test.sql", "select 1;".getBytes(StandardCharsets.UTF_8), 1))
+          )
+          run <- runStore.create(TriggerRunPayload(patch.id, "target-1"), patch, "test")
+          claims <- List(
+            runStore.claim(run.id, "owner-a", 40.millis),
+            runStore.claim(run.id, "owner-b", 40.millis)
+          ).parSequence
+          first = claims.flatten.head
+          _ <- IO.sleep(60.millis)
+          second <- runStore.claim(run.id, "owner-b", 1.second).map(_.get)
+          staleStart <- runStore.startRun(first)
+          currentStart <- runStore.startRun(second)
+          staleComplete <- runStore.completeRun(first, "2026-07-21T12:00:00Z", validationTriggered = true)
+          currentComplete <- runStore.completeRun(second, "2026-07-21T12:00:01Z", validationTriggered = true)
+        yield (claims.flatten.size, first.fence, second.fence, staleStart, currentStart, staleComplete, currentComplete)
+      }
+      .unsafeRunSync()
+
+    assertEquals(result._1, 1)
+    assert(result._3 > result._2)
+    assertEquals(result._4, false)
+    assertEquals(result._5, true)
+    assertEquals(result._6, None)
+    assertEquals(result._7.map(_.status), Some("completed"))
   }
 
   private def waitUntil(check: IO[Boolean], attempts: Int): IO[Unit] =

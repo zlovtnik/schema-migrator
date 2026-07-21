@@ -1,23 +1,5 @@
 services:
 
-  state-postgres:
-    image: postgres:16.9-alpine3.21
-    restart: unless-stopped
-    environment:
-      - POSTGRES_DB=schema_migrator
-      - POSTGRES_USER=schema_migrator
-      - POSTGRES_PASSWORD=${BEDROCK_STATE_DB_PASSWORD:?BEDROCK_STATE_DB_PASSWORD is required}
-    volumes:
-      - state-postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U schema_migrator -d schema_migrator"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-      start_period: 10s
-    networks:
-      - internal
-
   backend:
     build:
       context: .
@@ -31,22 +13,20 @@ services:
       - BEDROCK_JWT_SECRET=${BEDROCK_JWT_SECRET:?BEDROCK_JWT_SECRET is required}
       - BEDROCK_DEV_AUTH_ENABLED=${BEDROCK_DEV_AUTH_ENABLED:-false}
       - BEDROCK_DEV_AUTH_SECRET=${BEDROCK_DEV_AUTH_SECRET:-}
-      - BEDROCK_KEYCLOAK_ENABLED=${BEDROCK_KEYCLOAK_ENABLED:-false}
-      - BEDROCK_KEYCLOAK_ISSUER=${BEDROCK_KEYCLOAK_ISSUER:-}
+      - BEDROCK_KEYCLOAK_ENABLED=${BEDROCK_KEYCLOAK_ENABLED:-true}
+      - BEDROCK_KEYCLOAK_ISSUER=${BEDROCK_KEYCLOAK_ISSUER:?BEDROCK_KEYCLOAK_ISSUER is required}
       - BEDROCK_KEYCLOAK_JWKS_URI=${BEDROCK_KEYCLOAK_JWKS_URI:-}
       - BEDROCK_KEYCLOAK_CLIENT_ID=${BEDROCK_KEYCLOAK_CLIENT_ID:-bedrock-ui}
       - BEDROCK_KEYCLOAK_AUDIENCE=${BEDROCK_KEYCLOAK_AUDIENCE:-bedrock-ui}
       - BEDROCK_API_BEARER_TOKEN=${BEDROCK_API_BEARER_TOKEN:?BEDROCK_API_BEARER_TOKEN is required}
-      - BEDROCK_STATE_DB_URL=jdbc:postgresql://state-postgres:5432/schema_migrator
-      - BEDROCK_STATE_DB_USER=schema_migrator
+      - BEDROCK_STATE_DB_URL=${BEDROCK_STATE_DB_URL:?JDBC MySQL/TiDB URL with sslMode=VERIFY_IDENTITY is required}
+      - BEDROCK_STATE_DB_USER=${BEDROCK_STATE_DB_USER:?Dedicated TiDB state user is required}
       - BEDROCK_STATE_DB_PASSWORD=${BEDROCK_STATE_DB_PASSWORD:?BEDROCK_STATE_DB_PASSWORD is required}
-      - BEDROCK_STATE_DB_SCHEMA=public
       - BEDROCK_STATE_DB_POOL_SIZE=${BEDROCK_STATE_DB_POOL_SIZE:-10}
-      - BEDROCK_DB_TEST_ALLOWED_HOSTS=${BEDROCK_DB_TEST_ALLOWED_HOSTS:-localhost,127.0.0.1,192.168.1.221}
-      - BEDROCK_DB_URL=${BEDROCK_DB_URL:?BEDROCK_DB_URL is required}
-      - BEDROCK_DB_USER=${BEDROCK_DB_USER:?BEDROCK_DB_USER is required}
-      - BEDROCK_DB_PASSWORD=${BEDROCK_DB_PASSWORD:?BEDROCK_DB_PASSWORD is required}
-      - DATABASE_URL=${BEDROCK_DB_URL:?BEDROCK_DB_URL is required}
+      - BEDROCK_DB_TEST_ALLOWED_HOSTS=${BEDROCK_DB_TEST_ALLOWED_HOSTS:-}
+      - JAVA_TOOL_OPTIONS=-Djavax.net.ssl.trustStore=/run/tidb-tls/truststore.p12 -Djavax.net.ssl.trustStorePassword=${BEDROCK_STATE_DB_TRUSTSTORE_PASSWORD:?TiDB truststore password is required}
+    volumes:
+      - ${BEDROCK_STATE_DB_TRUSTSTORE_FILE:?TiDB PKCS12 truststore file is required}:/run/tidb-tls/truststore.p12:ro
     expose:
       - "8080"
     labels:
@@ -63,46 +43,6 @@ services:
       timeout: 3s
       retries: 30
       start_period: 30s
-    depends_on:
-      state-postgres:
-        condition: service_healthy
-      keycloak:
-        condition: service_healthy
-    networks:
-      - internal
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.2
-    restart: unless-stopped
-    command:
-      - start
-      - --import-realm
-      - --hostname=https://${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME is required}
-      - --hostname-strict=true
-      - --http-enabled=true
-    environment:
-      - KC_BOOTSTRAP_ADMIN_USERNAME=${KEYCLOAK_ADMIN:-admin}
-      - KC_BOOTSTRAP_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
-      - KC_PROXY_HEADERS=xforwarded
-    expose:
-      - "8080"
-    volumes:
-      - keycloak-data:/opt/keycloak/data
-      - ./deploy/keycloak/middleware-realm.json:/opt/keycloak/data/import/middleware-realm.json:ro
-    healthcheck:
-      test: ["CMD-SHELL", "bash -ec \"exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /realms/middleware/.well-known/openid-configuration HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3\""]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 45s
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=internal
-      - traefik.http.routers.keycloak.rule=Host(`${KEYCLOAK_HOSTNAME:?KEYCLOAK_HOSTNAME is required}`) && (PathPrefix(`/realms`) || PathPrefix(`/resources`) || PathPrefix(`/admin`))
-      - traefik.http.routers.keycloak.entrypoints=websecure
-      - traefik.http.routers.keycloak.priority=20
-      - traefik.http.routers.keycloak.tls=true
-      - traefik.http.services.keycloak.loadbalancer.server.port=8080
     networks:
       - internal
 
@@ -169,6 +109,4 @@ networks:
     driver: bridge
 
 volumes:
-  state-postgres-data:
-  keycloak-data:
   traefik-letsencrypt:

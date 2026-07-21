@@ -12,7 +12,7 @@ final class DiscoveryService:
     IO.blocking(discoverUnsafe(sqlDir, dbKind, customer))
 
   /** Discover SQL files from a pre-loaded list of SqlFile objects
-    * (e.g. from the PostgreSQL state store). The caller is responsible for
+    * (for example, from the TiDB control-state store). The caller is responsible for
     * obtaining the list from the store.
     */
   def discoverFromFiles(files: List[SqlFile], dbKind: DbKind): DiscoveryResult =

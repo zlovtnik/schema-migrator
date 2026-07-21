@@ -9,9 +9,9 @@ This file governs this `schema-migrator` repository checkout.
   tree.
 - Postgres is expected to work locally with the split `sql/*` tree.
 - A small bundled web UI lives in `schema-migrator-ui/` (Vite + React). CI and
-  local development may use the provided `docker-compose.yml` which builds
-  the `backend`, `frontend`, and `traefik` services and an accompanying PostgreSQL
-  service used by the UI/API for persisted migration targets.
+  local development may use the provided `docker-compose.yml`, which builds
+  the `backend`, `frontend`, and `traefik` services against externally
+  provisioned TiDB state and identity-provider endpoints.
 
 ## Guardrails
 - Preserve deterministic ordering. Postgres order is extensions, schemas,

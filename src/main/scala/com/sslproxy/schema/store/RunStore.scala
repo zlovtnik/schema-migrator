@@ -7,6 +7,18 @@ import fs2.concurrent.Topic
 import io.circe.Json
 
 import java.util.UUID
+import scala.concurrent.duration.FiniteDuration
+
+final case class RunLease(
+  runId: String,
+  ownerId: String,
+  token: String,
+  fence: Long,
+  attemptCount: Int,
+  expiresAt: String
+)
+
+final case class RunClaim(run: Run, lease: RunLease)
 
 trait RunStore:
   def list(targetId: Option[String]): IO[List[Run]]
@@ -21,6 +33,31 @@ trait RunStore:
   def scriptStarted(id: String, scriptId: String, filename: String, order: Int, total: Int): IO[Boolean]
   def scriptCompleted(id: String, scriptId: String, filename: String, durationMs: Long): IO[Boolean]
   def scriptFailed(id: String, scriptId: String, filename: String, error: ScriptError, durationMs: Long): IO[Boolean]
+  def claim(id: String, ownerId: String, leaseFor: FiniteDuration): IO[Option[RunLease]] =
+    IO.pure((id, ownerId, leaseFor)).as(None)
+  def claimNext(ownerId: String, leaseFor: FiniteDuration): IO[Option[RunClaim]] =
+    IO.pure(ownerId -> leaseFor).as(None)
+  def renew(lease: RunLease, leaseFor: FiniteDuration): IO[Boolean] =
+    IO.pure(lease -> leaseFor).as(false)
+  def ownsLease(lease: RunLease): IO[Boolean] = IO.pure(lease).as(false)
+  def release(lease: RunLease): IO[Boolean] = IO.pure(lease).as(false)
+  def startRun(lease: RunLease): IO[Boolean] = startRun(lease.runId)
+  def completeRun(lease: RunLease, endedAt: String, validationTriggered: Boolean): IO[Option[Run]] =
+    completeRun(lease.runId, endedAt, validationTriggered)
+  def failRun(lease: RunLease, endedAt: String, failedScriptId: String, reason: String): IO[Option[Run]] =
+    failRun(lease.runId, endedAt, failedScriptId, reason)
+  def scriptStarted(lease: RunLease, scriptId: String, filename: String, order: Int, total: Int): IO[Boolean] =
+    scriptStarted(lease.runId, scriptId, filename, order, total)
+  def scriptCompleted(lease: RunLease, scriptId: String, filename: String, durationMs: Long): IO[Boolean] =
+    scriptCompleted(lease.runId, scriptId, filename, durationMs)
+  def scriptFailed(
+    lease: RunLease,
+    scriptId: String,
+    filename: String,
+    error: ScriptError,
+    durationMs: Long
+  ): IO[Boolean] =
+    scriptFailed(lease.runId, scriptId, filename, error, durationMs)
   def log(runId: String, level: String, message: String): IO[Unit]
   def runEvents(id: String): Resource[IO, Stream[IO, RunEvent]]
 
@@ -34,8 +71,11 @@ object RunStore:
   def inMemory: IO[RunStore] =
     for
       ref <- Ref.of[IO, Map[String, Run]](Map.empty)
+      leases <- Ref.of[IO, Map[String, MemoryLeaseState]](Map.empty)
       topic <- Topic[IO, RunEvent]
-    yield InMemoryRunStore(ref, topic)
+    yield InMemoryRunStore(ref, leases, topic)
+
+private[store] final case class MemoryLeaseState(current: Option[RunLease], fence: Long, attempts: Int)
 
 private[store] object RunState:
   val terminalStatuses: Set[String] = Set("completed", "failed", "aborted")
@@ -177,7 +217,11 @@ private[store] trait RunStoreEvents:
   def runEvents(id: String): Resource[IO, Stream[IO, RunEvent]] =
     topic.subscribeAwait(1024).map(_.filter(_.run_id == id))
 
-private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected val topic: Topic[IO, RunEvent])
+private final class InMemoryRunStore(
+  ref: Ref[IO, Map[String, Run]],
+  leases: Ref[IO, Map[String, MemoryLeaseState]],
+  protected val topic: Topic[IO, RunEvent]
+)
     extends RunStore
     with RunStoreEvents:
   override def list(targetId: Option[String]): IO[List[Run]] =
@@ -216,6 +260,7 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
         else values.updated(id, run) -> true
       }
       result <- if inserted then IO.pure(run) else IO.raiseError(RunStore.ConcurrentRun(payload.target_id))
+      _ <- leases.update(_.updated(id, MemoryLeaseState(None, 0L, 0)))
     yield result
 
   override def get(id: String): IO[Option[Run]] =
@@ -225,6 +270,7 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
     for
       ended <- nowString
       result <- updateRun(id)(RunState.abort(_, ended))
+      _ <- result.traverse_(_ => clearLease(id))
       _ <- result.traverse_(_ => publishRunFailed(id, "", "aborted"))
     yield result
 
@@ -240,12 +286,14 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
   override def completeRun(id: String, endedAt: String, validationTriggered: Boolean): IO[Option[Run]] =
     for
       result <- updateRun(id)(RunState.complete(_, endedAt))
+      _ <- result.traverse_(_ => clearLease(id))
       _ <- result.traverse_(run => publishRunComplete(run, validationTriggered))
     yield result
 
   override def failRun(id: String, endedAt: String, failedScriptId: String, reason: String): IO[Option[Run]] =
     for
       result <- updateRun(id)(RunState.fail(_, endedAt, failedScriptId))
+      _ <- result.traverse_(_ => clearLease(id))
       _ <- result.traverse_(_ => publishRunFailed(id, failedScriptId, reason))
     yield result
 
@@ -286,6 +334,132 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
         else IO.unit
     yield changed
 
+  override def claim(id: String, ownerId: String, leaseFor: FiniteDuration): IO[Option[RunLease]] =
+    for
+      now <- Clock[IO].realTimeInstant
+      token <- IO.delay(UUID.randomUUID().toString)
+      active <- ref.get.map(_.get(id).exists(run => !RunState.isTerminal(run.status)))
+      result <-
+        if !active then IO.pure(None)
+        else
+          leases.modify { values =>
+            val state = values.getOrElse(id, MemoryLeaseState(None, 0L, 0))
+            val available = state.current.forall(current => !java.time.Instant.parse(current.expiresAt).isAfter(now))
+            if !available || state.attempts >= 5 then values -> None
+            else
+              val lease = RunLease(
+                id,
+                ownerId,
+                token,
+                state.fence + 1L,
+                state.attempts + 1,
+                now.plusNanos(leaseFor.toNanos).toString
+              )
+              values.updated(id, MemoryLeaseState(Some(lease), lease.fence, lease.attemptCount)) -> Some(lease)
+          }
+    yield result
+
+  override def claimNext(ownerId: String, leaseFor: FiniteDuration): IO[Option[RunClaim]] =
+    ref.get.flatMap { runs =>
+      runs.values.toList
+        .filter(run => !RunState.isTerminal(run.status))
+        .sortBy(_.started_at)
+        .foldM(Option.empty[RunClaim]) { (claimed, run) =>
+          claimed.fold(claim(run.id, ownerId, leaseFor).map(_.map(RunClaim(run, _))))(value => IO.pure(Some(value)))
+        }
+    }
+
+  override def renew(lease: RunLease, leaseFor: FiniteDuration): IO[Boolean] =
+    Clock[IO].realTimeInstant.flatMap { now =>
+      leases.modify { values =>
+        values.get(lease.runId) match
+          case Some(state) if state.current.exists(current => sameLease(current, lease) && java.time.Instant.parse(current.expiresAt).isAfter(now)) =>
+            val renewed = lease.copy(expiresAt = now.plusNanos(leaseFor.toNanos).toString)
+            values.updated(lease.runId, state.copy(current = Some(renewed))) -> true
+          case _ => values -> false
+      }
+    }
+
+  override def ownsLease(lease: RunLease): IO[Boolean] =
+    Clock[IO].realTimeInstant.flatMap { now =>
+      leases.get.map(
+        _.get(lease.runId).flatMap(_.current).exists(current =>
+          sameLease(current, lease) && java.time.Instant.parse(current.expiresAt).isAfter(now)
+        )
+      )
+    }
+
+  override def release(lease: RunLease): IO[Boolean] =
+    leases.modify { values =>
+      values.get(lease.runId) match
+        case Some(state) if state.current.exists(sameLease(_, lease)) =>
+          values.updated(lease.runId, state.copy(current = None)) -> true
+        case _ => values -> false
+    }
+
+  override def startRun(lease: RunLease): IO[Boolean] =
+    withLease(lease) {
+      updateRun(lease.runId)(run => if run.status == "running" then Some(run) else RunState.start(run)).map(_.nonEmpty)
+    }.map(_.contains(true))
+
+  override def completeRun(lease: RunLease, endedAt: String, validationTriggered: Boolean): IO[Option[Run]] =
+    withLease(lease) {
+      for
+        result <- updateRun(lease.runId)(RunState.complete(_, endedAt))
+        _ <- result.traverse_(run => clearLease(lease.runId) *> publishRunComplete(run, validationTriggered))
+      yield result
+    }.map(_.flatten)
+
+  override def failRun(
+    lease: RunLease,
+    endedAt: String,
+    failedScriptId: String,
+    reason: String
+  ): IO[Option[Run]] =
+    withLease(lease) {
+      for
+        result <- updateRun(lease.runId)(RunState.fail(_, endedAt, failedScriptId))
+        _ <- result.traverse_(_ => clearLease(lease.runId) *> publishRunFailed(lease.runId, failedScriptId, reason))
+      yield result
+    }.map(_.flatten)
+
+  override def scriptStarted(
+    lease: RunLease,
+    scriptId: String,
+    filename: String,
+    order: Int,
+    total: Int
+  ): IO[Boolean] =
+    withLease(lease)(scriptStarted(lease.runId, scriptId, filename, order, total)).map(_.contains(true))
+
+  override def scriptCompleted(
+    lease: RunLease,
+    scriptId: String,
+    filename: String,
+    durationMs: Long
+  ): IO[Boolean] =
+    withLease(lease)(scriptCompleted(lease.runId, scriptId, filename, durationMs)).map(_.contains(true))
+
+  override def scriptFailed(
+    lease: RunLease,
+    scriptId: String,
+    filename: String,
+    error: ScriptError,
+    durationMs: Long
+  ): IO[Boolean] =
+    withLease(lease)(scriptFailed(lease.runId, scriptId, filename, error, durationMs)).map(_.contains(true))
+
+  private def withLease[A](lease: RunLease)(operation: IO[A]): IO[Option[A]] =
+    ownsLease(lease).flatMap(owned => if owned then operation.map(Some(_)) else IO.pure(None))
+
+  private def sameLease(left: RunLease, right: RunLease): Boolean =
+    left.ownerId == right.ownerId && left.token == right.token && left.fence == right.fence
+
+  private def clearLease(id: String): IO[Unit] =
+    leases.update(values =>
+      values.get(id).fold(values)(state => values.updated(id, state.copy(current = None)))
+    )
+
   private def updateScript(id: String, scriptId: String)(f: ScriptRun => ScriptRun): IO[Boolean] =
     updateRun(id)(RunState.updateScript(_, scriptId)(f)).map(_.nonEmpty)
 
@@ -295,4 +469,3 @@ private final class InMemoryRunStore(ref: Ref[IO, Map[String, Run]], protected v
         case None => values -> None
         case Some(next) => values.updated(id, next) -> Some(next)
     }
-

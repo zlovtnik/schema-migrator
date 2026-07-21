@@ -6,8 +6,10 @@ import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.store.{Patch, RunStore, StoredTarget, Target, TriggerRunPayload}
 import munit.FunSuite
 
+import scala.concurrent.duration.*
+
 class RunExecutorSupervisorSuite extends FunSuite:
-  test("cancels managed fibers and aborts a started run when the owning resource closes") {
+  test("cancels managed fibers and releases a started run for durable recovery when the owner closes") {
     val result = (for
       runStore <- RunStore.inMemory
       run <- runStore.create(TriggerRunPayload(patchRecord.id, storedTarget.target.id), patchRecord, "test")
@@ -24,10 +26,10 @@ class RunExecutorSupervisorSuite extends FunSuite:
       }
       wasCanceled <- canceled.tryGet
       stored <- runStore.get(run.id)
-      retry <- runStore.create(TriggerRunPayload(patchRecord.id, storedTarget.target.id), patchRecord, "retry")
-    yield (wasCanceled.nonEmpty, stored.map(_.status), retry.target_id)).unsafeRunSync()
+      recovered <- runStore.claim(run.id, "replacement-owner", 1.second)
+    yield (wasCanceled.nonEmpty, stored.map(_.status), recovered.nonEmpty)).unsafeRunSync()
 
-    assertEquals(result, (true, Some("aborted"), storedTarget.target.id))
+    assertEquals(result, (true, Some("running"), true))
   }
 
   private val storedTarget = StoredTarget(

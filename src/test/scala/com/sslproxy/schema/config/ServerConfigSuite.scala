@@ -18,14 +18,14 @@ class ServerConfigSuite extends FunSuite:
         dbTestAllowedHosts = Set.empty,
         patchStageDir = stageDir,
         apiBearerToken = Some("api-token"),
-        stateStore = Some(StateStoreConfig("jdbc:postgresql://localhost:5432/sync", "migrator", "secret"))
+        stateStore = Some(validStateStore)
       )
 
       assert(config.validate.left.exists(_.nonEmpty))
     finally deleteIfExists(stageDir)
   }
 
-  test("server validation requires static API bearer token and PostgreSQL state store config") {
+  test("server validation requires static API bearer token and TiDB state store config") {
     val stageDir = Files.createTempDirectory("schema-migrator-config")
     try
       val missingToken = validConfig(stageDir).copy(apiBearerToken = None)
@@ -91,15 +91,44 @@ class ServerConfigSuite extends FunSuite:
     finally deleteIfExists(stageDir)
   }
 
-  test("server validation rejects invalid PostgreSQL state schema names") {
+  test("server validation rejects non-JDBC-MySQL and non-verified state URLs") {
     val stageDir = Files.createTempDirectory("schema-migrator-config")
     try
-      val config = validConfig(stageDir).copy(
-        stateStore = Some(StateStoreConfig("jdbc:postgresql://localhost:5432/sync", "migrator", "secret", "bad-name"))
+      val postgres = validConfig(stageDir).copy(
+        stateStore = Some(StateStoreConfig("jdbc:postgresql://db.example/sync", "migrator", "secret"))
+      )
+      val r2dbc = validConfig(stageDir).copy(
+        stateStore = Some(StateStoreConfig("r2dbc:mysql://db.example/schema_migrator", "migrator", "secret"))
+      )
+      val unverified = validConfig(stageDir).copy(
+        stateStore = Some(StateStoreConfig("jdbc:mysql://db.example/schema_migrator?sslMode=REQUIRED", "migrator", "secret"))
       )
 
-      assertEquals(config.validate, Left("BEDROCK_STATE_DB_SCHEMA must be a valid PostgreSQL identifier"))
+      assertEquals(
+        postgres.validate,
+        Left("BEDROCK_STATE_DB_URL must be a JDBC MySQL/TiDB URL starting with jdbc:mysql://")
+      )
+      assertEquals(
+        r2dbc.validate,
+        Left("BEDROCK_STATE_DB_URL must be a JDBC MySQL/TiDB URL starting with jdbc:mysql://")
+      )
+      assertEquals(unverified.validate, Left("BEDROCK_STATE_DB_URL must set sslMode=VERIFY_IDENTITY"))
     finally deleteIfExists(stageDir)
+  }
+
+  test("state database validation requires the canonical database and a non-root account") {
+    assertEquals(
+      validStateStore.copy(url = "jdbc:mysql://db.example/other?sslMode=VERIFY_IDENTITY").validate,
+      Left("BEDROCK_STATE_DB_URL must select the schema_migrator database")
+    )
+    assertEquals(
+      validStateStore.copy(user = "root").validate,
+      Left("BEDROCK_STATE_DB_USER must be a dedicated non-root TiDB user")
+    )
+    assertEquals(
+      validStateStore.copy(url = "jdbc:mysql://127.0.0.1:4000/schema_migrator?sslMode=VERIFY_IDENTITY").validate,
+      Left("BEDROCK_STATE_DB_URL must use an external non-loopback TiDB host")
+    )
   }
 
   private def validConfig(stageDir: java.nio.file.Path): ServerConfig =
@@ -113,8 +142,11 @@ class ServerConfigSuite extends FunSuite:
       dbTestAllowedHosts = Set.empty,
       patchStageDir = stageDir,
       apiBearerToken = Some("api-token"),
-      stateStore = Some(StateStoreConfig("jdbc:postgresql://localhost:5432/sync", "migrator", "secret"))
+      stateStore = Some(validStateStore)
     )
+
+  private val validStateStore =
+    StateStoreConfig("jdbc:mysql://tidb.example:4000/schema_migrator?sslMode=VERIFY_IDENTITY", "migrator", "secret")
 
   private def deleteIfExists(path: java.nio.file.Path): Unit =
     Files.deleteIfExists(path)

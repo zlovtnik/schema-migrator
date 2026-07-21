@@ -1,8 +1,11 @@
 package com.sslproxy.schema.config
 
 import java.nio.file.{Files, Path}
+import java.net.URI
 import java.util.Base64
+import java.util.Locale
 import scala.concurrent.duration.FiniteDuration
+import scala.util.Try
 
 enum DbKind:
   case Postgres, Oracle, TiDB
@@ -82,17 +85,44 @@ final case class StateStoreConfig(
   url: String,
   user: String,
   password: String,
-  schema: String = "schema_migrator",
   poolSize: Int = 10
 ):
   def validate: Either[String, Unit] =
     if url.trim.isEmpty then Left("BEDROCK_STATE_DB_URL must not be empty")
+    else if !url.trim.startsWith("jdbc:mysql://") then
+      Left("BEDROCK_STATE_DB_URL must be a JDBC MySQL/TiDB URL starting with jdbc:mysql://")
     else if user.trim.isEmpty then Left("BEDROCK_STATE_DB_USER must not be empty")
+    else if user.trim.equalsIgnoreCase("root") then Left("BEDROCK_STATE_DB_USER must be a dedicated non-root TiDB user")
     else if password.trim.isEmpty then Left("BEDROCK_STATE_DB_PASSWORD must not be empty")
-    else if !schema.matches("[A-Za-z_][A-Za-z0-9_]*") then
-      Left("BEDROCK_STATE_DB_SCHEMA must be a valid PostgreSQL identifier")
     else if poolSize < 1 then Left("BEDROCK_STATE_DB_POOL_SIZE must be at least 1")
-    else Right(())
+    else validateJdbcUrl
+
+  private def validateJdbcUrl: Either[String, Unit] =
+    Try(URI.create(url.trim.stripPrefix("jdbc:"))).toEither
+      .left
+      .map(_ => "BEDROCK_STATE_DB_URL must be a valid JDBC MySQL/TiDB URL")
+      .flatMap { uri =>
+        val database = Option(uri.getPath).getOrElse("").stripPrefix("/")
+        val params = Option(uri.getRawQuery)
+          .toList
+          .flatMap(_.split("&").toList)
+          .flatMap { entry =>
+            entry.split("=", 2).toList match
+              case key :: value :: Nil => Some(key.toLowerCase(Locale.ROOT) -> value)
+              case _ => None
+          }
+          .toMap
+        if Option(uri.getHost).forall(_.trim.isEmpty) then Left("BEDROCK_STATE_DB_URL must include a TiDB host")
+        else if Set("localhost", "127.0.0.1", "::1").contains(uri.getHost.toLowerCase(Locale.ROOT)) then
+          Left("BEDROCK_STATE_DB_URL must use an external non-loopback TiDB host")
+        else if Option(uri.getUserInfo).nonEmpty then
+          Left("BEDROCK_STATE_DB_URL must not contain inline credentials")
+        else if database != "schema_migrator" then
+          Left("BEDROCK_STATE_DB_URL must select the schema_migrator database")
+        else if !params.get("sslmode").exists(_.equalsIgnoreCase("VERIFY_IDENTITY")) then
+          Left("BEDROCK_STATE_DB_URL must set sslMode=VERIFY_IDENTITY")
+        else Right(())
+      }
 
 final case class ServerConfig(
   host: String,

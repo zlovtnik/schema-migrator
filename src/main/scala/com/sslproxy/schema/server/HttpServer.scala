@@ -8,12 +8,14 @@ import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.server.auth.{JwtMiddleware, KeycloakJwks}
 import com.sslproxy.schema.server.compress.Bzip2Middleware
 import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
-import com.sslproxy.schema.store.{KeycloakConfigStore, PostgresStores, StateDatabase}
+import com.sslproxy.schema.store.{KeycloakConfigStore, StateDatabase, TiDBStores}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.server.Router
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
+
+import scala.concurrent.duration.*
 
 object HttpServer:
   private given LoggerFactory[IO] = Slf4jFactory.create[IO]
@@ -54,7 +56,7 @@ object HttpServer:
           IllegalArgumentException("BEDROCK_ENCRYPT_KEY is required to encrypt stored target passwords")
         )
       )
-      stores <- PostgresStores.resource(stateDatabase, targetPasswordKey)
+      stores <- TiDBStores.resource(stateDatabase, targetPasswordKey)
       targetStore = stores.targetStore
       sqlFileStore = stores.sqlFileStore
       patchStore = stores.patchStore
@@ -68,6 +70,14 @@ object HttpServer:
         supervisor,
         runStore
       )
+      _ <- Resource.make(
+        supervisor.supervise(
+          (runExecutor
+            .recoverPending(targetStore, patchStore)
+            .handleErrorWith(error => logger.error(error)("durable run recovery scan failed")) *>
+            IO.sleep(1.second)).foreverM
+        )
+      )(_.cancel)
       _ <- Resource.eval(
         KeycloakConfigStore.persist(config.server, stateDatabase)
       )

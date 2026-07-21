@@ -178,17 +178,15 @@ object CliOpts:
 
   private val stateStoreOpt: Opts[Either[String, Option[StateStoreConfig]]] =
     (
-      Opts.option[String]("state-db-url", help = "PostgreSQL URL for persisted HTTP API state").orNone,
-      Opts.option[String]("state-db-user", help = "PostgreSQL user for persisted HTTP API state").orNone,
-      Opts.option[String]("state-db-password", help = "PostgreSQL password for persisted HTTP API state").orNone,
-      Opts.option[String]("state-db-schema", help = "PostgreSQL schema for persisted HTTP API state").orNone,
-      Opts.option[Int]("state-db-pool-size", help = "PostgreSQL state connection pool size").orNone
-    ).mapN { (urlArg, userArg, passwordArg, schemaArg, poolArg) =>
+      Opts.option[String]("state-db-url", help = "JDBC MySQL/TiDB URL for persisted HTTP API state").orNone,
+      Opts.option[String]("state-db-user", help = "Dedicated TiDB user for persisted HTTP API state").orNone,
+      Opts.option[String]("state-db-password", help = "TiDB password for persisted HTTP API state").orNone,
+      Opts.option[Int]("state-db-pool-size", help = "TiDB state connection pool size").orNone
+    ).mapN { (urlArg, userArg, passwordArg, poolArg) =>
       stateStoreConfigFromOptions(
         urlArg.orElse(env.get("BEDROCK_STATE_DB_URL")).flatMap(nonBlank),
         userArg.orElse(env.get("BEDROCK_STATE_DB_USER")).flatMap(nonBlank),
         passwordArg.orElse(env.get("BEDROCK_STATE_DB_PASSWORD")).flatMap(nonBlank),
-        schemaArg.orElse(env.get("BEDROCK_STATE_DB_SCHEMA")).flatMap(nonBlank).getOrElse("schema_migrator"),
         poolArg.orElse(env.get("BEDROCK_STATE_DB_POOL_SIZE").flatMap(value => Either.catchNonFatal(value.toInt).toOption)).getOrElse(10)
       )
     }
@@ -372,7 +370,6 @@ object CliOpts:
     url: Option[String],
     user: Option[String],
     password: Option[String],
-    schema: String,
     poolSize: Int
   ): Either[String, Option[StateStoreConfig]] =
     val provided = List(
@@ -388,7 +385,7 @@ object CliOpts:
         Option.when(password.isEmpty)("BEDROCK_STATE_DB_PASSWORD")
       ).flatten
       if missing.nonEmpty then Left(s"State database configuration is incomplete; missing ${missing.mkString(", ")}")
-      else Right(Some(StateStoreConfig(url.get, user.get, password.get, schema, poolSize)))
+      else Right(Some(StateStoreConfig(url.get, user.get, password.get, poolSize)))
 
   private def envInt(name: String, defaultValue: Int): Int =
     env

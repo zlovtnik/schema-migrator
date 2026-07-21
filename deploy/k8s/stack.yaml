@@ -8,19 +8,14 @@ metadata:
 data:
   BEDROCK_HTTP_HOST: "0.0.0.0"
   BEDROCK_HTTP_PORT: "8080"
-  BEDROCK_CORS_ORIGINS: "http://REPLACE_WITH_LOAD_BALANCER"
+  BEDROCK_CORS_ORIGINS: "https://REPLACE_WITH_PUBLIC_HOSTNAME"
   BEDROCK_DEV_AUTH_ENABLED: "false"
   BEDROCK_DEV_AUTH_SECRET: ""
   BEDROCK_KEYCLOAK_ENABLED: "true"
-  BEDROCK_KEYCLOAK_ISSUER: "http://REPLACE_WITH_LOAD_BALANCER:8080/realms/middleware"
-  BEDROCK_KEYCLOAK_JWKS_URI: "http://keycloak:8080/realms/middleware/protocol/openid-connect/certs"
   BEDROCK_KEYCLOAK_CLIENT_ID: "bedrock-ui"
   BEDROCK_KEYCLOAK_AUDIENCE: "bedrock-ui"
-  BEDROCK_STATE_DB_URL: "jdbc:postgresql://state-postgres:5432/schema_migrator"
-  BEDROCK_STATE_DB_USER: "schema_migrator"
-  BEDROCK_STATE_DB_SCHEMA: "public"
   BEDROCK_STATE_DB_POOL_SIZE: "10"
-  BEDROCK_DB_TEST_ALLOWED_HOSTS: "localhost,127.0.0.1,192.168.1.221"
+  BEDROCK_DB_TEST_ALLOWED_HOSTS: ""
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -28,83 +23,15 @@ metadata:
   name: frontend-config
   namespace: schema-migrator
   labels:
-    app.kubernetes.io/name: schema-migrator
+    app.kubernetes.io/name: frontend
 data:
   runtime-config.js: |
-    window.__SCHEMA_MIGRATOR_CONFIG__ = {
-      VITE_API_BASE_URL: "/api",
-      VITE_KEYCLOAK_URL: "http://REPLACE_WITH_LOAD_BALANCER:8080",
-      VITE_KEYCLOAK_REALM: "middleware",
-      VITE_KEYCLOAK_CLIENT_ID: "bedrock-ui",
-      VITE_KEYCLOAK_REDIRECT_URI: "http://REPLACE_WITH_LOAD_BALANCER/callback"
+    window.__BEDROCK_CONFIG__ = {
+      keycloakUrl: "https://REPLACE_WITH_EXTERNAL_IDP",
+      keycloakRealm: "middleware",
+      keycloakClientId: "bedrock-ui",
+      keycloakRedirectUri: "https://REPLACE_WITH_PUBLIC_HOSTNAME/callback"
     };
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: keycloak-realm
-  namespace: schema-migrator
-  labels:
-    app.kubernetes.io/name: schema-migrator
-data:
-  middleware-realm.json: |
-    {
-      "realm": "middleware",
-      "enabled": true,
-      "registrationAllowed": false,
-      "resetPasswordAllowed": true,
-      "loginWithEmailAllowed": true,
-      "roles": {
-        "realm": [
-          { "name": "admin" },
-          { "name": "operator" },
-          { "name": "viewer" }
-        ],
-        "client": {
-          "bedrock-ui": [
-            { "name": "admin" },
-            { "name": "operator" },
-            { "name": "viewer" }
-          ]
-        }
-      },
-      "clients": [
-        {
-          "clientId": "bedrock-ui",
-          "name": "Schema Migrator UI",
-          "enabled": true,
-          "publicClient": true,
-          "protocol": "openid-connect",
-          "standardFlowEnabled": true,
-          "directAccessGrantsEnabled": false,
-          "implicitFlowEnabled": false,
-          "serviceAccountsEnabled": false,
-          "redirectUris": [
-            "http://localhost/callback",
-            "http://localhost:5173/callback",
-            "http://REPLACE_WITH_LOAD_BALANCER/callback"
-          ],
-          "webOrigins": [
-            "http://localhost",
-            "http://localhost:5173",
-            "http://REPLACE_WITH_LOAD_BALANCER"
-          ],
-          "defaultClientScopes": [
-            "web-origins",
-            "acr",
-            "profile",
-            "roles",
-            "email"
-          ],
-          "optionalClientScopes": [
-            "address",
-            "phone",
-            "offline_access",
-            "microprofile-jwt"
-          ]
-        }
-      ]
-    }
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -112,7 +39,7 @@ metadata:
   name: traefik-config
   namespace: schema-migrator
   labels:
-    app.kubernetes.io/name: schema-migrator
+    app.kubernetes.io/name: traefik
 data:
   traefik.yaml: |
     entryPoints:
@@ -123,30 +50,25 @@ data:
             readTimeout: 300s
             writeTimeout: 0s
             idleTimeout: 3600s
-      keycloak:
-        address: ":8081"
     providers:
       file:
         filename: /etc/traefik/dynamic/dynamic.yaml
+        watch: true
     api:
       dashboard: false
   dynamic.yaml: |
     http:
       routers:
         backend:
-          rule: "PathPrefix(`/api`)"
           entryPoints: ["web"]
+          rule: "PathPrefix(`/api`)"
           priority: 10
           service: backend
         frontend:
-          rule: "PathPrefix(`/`)"
           entryPoints: ["web"]
+          rule: "PathPrefix(`/`)"
           priority: 1
           service: frontend
-        keycloak:
-          rule: "PathPrefix(`/`)"
-          entryPoints: ["keycloak"]
-          service: keycloak
       services:
         backend:
           loadBalancer:
@@ -155,192 +77,7 @@ data:
         frontend:
           loadBalancer:
             servers:
-              - url: "http://frontend:8080"
-        keycloak:
-          loadBalancer:
-            servers:
-              - url: "http://keycloak:8080"
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: keycloak-data
-  namespace: schema-migrator
-  labels:
-    app.kubernetes.io/name: keycloak
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 2Gi
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: state-postgres-data
-  namespace: schema-migrator
-  labels:
-    app.kubernetes.io/name: state-postgres
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 10Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: state-postgres
-  namespace: schema-migrator
-  labels:
-    app.kubernetes.io/name: state-postgres
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: state-postgres
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: state-postgres
-    spec:
-      containers:
-        - name: postgres
-          image: postgres:16.9-alpine3.21
-          env:
-            - name: POSTGRES_DB
-              value: schema_migrator
-            - name: POSTGRES_USER
-              value: schema_migrator
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: schema-migrator-secrets
-                  key: BEDROCK_STATE_DB_PASSWORD
-          ports:
-            - containerPort: 5432
-          readinessProbe:
-            exec:
-              command: ["pg_isready", "-U", "schema_migrator", "-d", "schema_migrator"]
-            initialDelaySeconds: 10
-            periodSeconds: 10
-          livenessProbe:
-            exec:
-              command: ["pg_isready", "-U", "schema_migrator", "-d", "schema_migrator"]
-            initialDelaySeconds: 30
-            periodSeconds: 20
-          volumeMounts:
-            - name: state-postgres-data
-              mountPath: /var/lib/postgresql/data
-      volumes:
-        - name: state-postgres-data
-          persistentVolumeClaim:
-            claimName: state-postgres-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: state-postgres
-  namespace: schema-migrator
-  labels:
-    app.kubernetes.io/name: state-postgres
-spec:
-  type: ClusterIP
-  selector:
-    app.kubernetes.io/name: state-postgres
-  ports:
-    - name: postgres
-      port: 5432
-      targetPort: 5432
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: keycloak
-  namespace: schema-migrator
-  labels:
-    app.kubernetes.io/name: keycloak
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: keycloak
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: keycloak
-    spec:
-      containers:
-        - name: keycloak
-          image: quay.io/keycloak/keycloak:26.2
-          securityContext:
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: ["ALL"]
-          args: ["start-dev", "--import-realm", "--hostname-strict=false", "--http-enabled=true"]
-          env:
-            - name: KEYCLOAK_ADMIN
-              valueFrom:
-                secretKeyRef:
-                  name: schema-migrator-secrets
-                  key: KEYCLOAK_ADMIN
-            - name: KEYCLOAK_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: schema-migrator-secrets
-                  key: KEYCLOAK_ADMIN_PASSWORD
-            - name: KC_PROXY_HEADERS
-              value: xforwarded
-          ports:
-            - containerPort: 8080
-          readinessProbe:
-            httpGet:
-              path: /realms/middleware/.well-known/openid-configuration
-              port: 8080
-            initialDelaySeconds: 45
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /realms/middleware
-              port: 8080
-            initialDelaySeconds: 60
-            periodSeconds: 20
-          volumeMounts:
-            - name: keycloak-data
-              mountPath: /opt/keycloak/data
-            - name: keycloak-realm
-              mountPath: /opt/keycloak/data/import/middleware-realm.json
-              subPath: middleware-realm.json
-              readOnly: true
-            - name: keycloak-tmp
-              mountPath: /tmp
-      volumes:
-        - name: keycloak-realm
-          configMap:
-            name: keycloak-realm
-        - name: keycloak-data
-          persistentVolumeClaim:
-            claimName: keycloak-data
-        - name: keycloak-tmp
-          emptyDir: {}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: keycloak
-  namespace: schema-migrator
-  labels:
-    app.kubernetes.io/name: keycloak
-spec:
-  type: ClusterIP
-  selector:
-    app.kubernetes.io/name: keycloak
-  ports:
-    - name: http
-      port: 8080
-      targetPort: 8080
+              - url: "http://frontend:80"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -361,7 +98,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: REPLACE_WITH_BACKEND_IMAGE
+          image: REPLACE_WITH_PINNED_BACKEND_IMAGE
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -375,31 +112,40 @@ spec:
             - secretRef:
                 name: schema-migrator-secrets
           env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: schema-migrator-secrets
-                  key: BEDROCK_DB_URL
+            - name: JAVA_TOOL_OPTIONS
+              value: >-
+                -Djavax.net.ssl.trustStore=/run/tidb-tls/truststore.p12
+                -Djavax.net.ssl.trustStorePassword=$(BEDROCK_STATE_DB_TRUSTSTORE_PASSWORD)
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
           readinessProbe:
             httpGet:
               path: /api/health
-              port: 8080
+              port: http
             initialDelaySeconds: 30
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /api/health
-              port: 8080
+              port: http
             initialDelaySeconds: 60
             periodSeconds: 20
           volumeMounts:
             - name: backend-tmp
               mountPath: /tmp
+            - name: tidb-truststore
+              mountPath: /run/tidb-tls
+              readOnly: true
       volumes:
         - name: backend-tmp
           emptyDir: {}
+        - name: tidb-truststore
+          secret:
+            secretName: schema-migrator-secrets
+            items:
+              - key: truststore.p12
+                path: truststore.p12
 ---
 apiVersion: v1
 kind: Service
@@ -415,7 +161,7 @@ spec:
   ports:
     - name: http
       port: 8080
-      targetPort: 8080
+      targetPort: http
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -436,7 +182,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: REPLACE_WITH_FRONTEND_IMAGE
+          image: REPLACE_WITH_PINNED_FRONTEND_IMAGE
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -445,17 +191,18 @@ spec:
             capabilities:
               drop: ["ALL"]
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
           readinessProbe:
             httpGet:
               path: /
-              port: 8080
+              port: http
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /
-              port: 8080
+              port: http
             initialDelaySeconds: 20
             periodSeconds: 20
           volumeMounts:
@@ -494,7 +241,7 @@ spec:
   ports:
     - name: http
       port: 80
-      targetPort: 8080
+      targetPort: http
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -526,16 +273,14 @@ spec:
           ports:
             - name: web
               containerPort: 8080
-            - name: keycloak
-              containerPort: 8081
           readinessProbe:
             tcpSocket:
-              port: 8080
+              port: web
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             tcpSocket:
-              port: 8080
+              port: web
             initialDelaySeconds: 20
             periodSeconds: 20
           volumeMounts:
@@ -547,21 +292,13 @@ spec:
               mountPath: /etc/traefik/dynamic/dynamic.yaml
               subPath: dynamic.yaml
               readOnly: true
-            - name: traefik-data
-              mountPath: /data
             - name: traefik-tmp
               mountPath: /tmp
-            - name: traefik-run
-              mountPath: /var/run
       volumes:
         - name: traefik-config
           configMap:
             name: traefik-config
-        - name: traefik-data
-          emptyDir: {}
         - name: traefik-tmp
-          emptyDir: {}
-        - name: traefik-run
           emptyDir: {}
 ---
 apiVersion: v1
@@ -580,7 +317,4 @@ spec:
   ports:
     - name: web
       port: 80
-      targetPort: 8080
-    - name: keycloak
-      port: 8080
-      targetPort: 8081
+      targetPort: web

@@ -51,6 +51,7 @@ val jgitVersion = "7.7.0.202606012155-r"
 val oracleJdbcVersion = "23.6.0.24.10"
 val oracleOsdtVersion = "21.18.0.0"
 val r2dbcMysqlVersion = "1.3.0"
+val mysqlConnectorVersion = "9.2.0"
 
 lazy val root = (project in file("."))
   .settings(
@@ -77,6 +78,7 @@ lazy val root = (project in file("."))
       "org.typelevel" %% "log4cats-slf4j" % "2.8.0",
       "org.slf4j" % "slf4j-simple" % "2.0.18",
       "org.postgresql" % "postgresql" % "42.7.7",
+      "com.mysql" % "mysql-connector-j" % mysqlConnectorVersion,
       "com.oracle.database.jdbc" % "ojdbc11" % oracleJdbcVersion,
       "com.oracle.database.security" % "oraclepki" % oracleJdbcVersion,
       "com.oracle.database.security" % "osdt_core" % oracleOsdtVersion,
