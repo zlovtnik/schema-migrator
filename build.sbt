@@ -1,6 +1,6 @@
 ThisBuild / organization := "com.sslproxy"
 ThisBuild / version := "0.1.0"
-ThisBuild / scalaVersion := "3.3.8"
+ThisBuild / scalaVersion := "3.8.4"
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 ThisBuild / evictionErrorLevel := Level.Error
@@ -72,7 +72,7 @@ lazy val root = (project in file("."))
       "org.http4s" %% "http4s-ember-client" % http4sVersion,
       "org.http4s" %% "http4s-circe" % http4sVersion,
       "org.http4s" %% "http4s-dsl" % http4sVersion,
-      "com.auth0" % "java-jwt" % "4.4.0",
+      "com.auth0" % "java-jwt" % "4.6.0",
       "org.eclipse.jgit" % "org.eclipse.jgit" % jgitVersion,
       "org.apache.commons" % "commons-compress" % "1.27.1",
       "org.typelevel" %% "log4cats-slf4j" % "2.8.0",
