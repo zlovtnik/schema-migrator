@@ -59,7 +59,9 @@ final class OracleLockManager(connection: Connection) extends LockManager[IO]:
 
   override def acquire: IO[Unit] =
     IO.blocking {
-      try executePrepared(connection, OracleStatements.lockAcquireSql)(_.setString(1, appliedBy(connection)))
+      try
+        executePrepared(connection, OracleStatements.lockAcquireSql)(_.setString(1, appliedBy))
+        ()
       catch
         case error: SQLException if error.getErrorCode == 1 =>
           val info = queryLockInfo().map(info => s" held by ${info._1} since ${info._2}").getOrElse("")
@@ -78,7 +80,7 @@ final class OracleLockManager(connection: Connection) extends LockManager[IO]:
   /** Delete only the lock row owned by this process. Returns number of rows deleted. */
   private def releaseOwned(): Int =
     executePrepared(connection, s"${OracleStatements.lockDeleteSql} and locked_by = ?") { statement =>
-      statement.setString(1, appliedBy(connection))
+      statement.setString(1, appliedBy)
     }
 
   private def queryLockInfo(): Option[(String, String)] =
@@ -86,5 +88,5 @@ final class OracleLockManager(connection: Connection) extends LockManager[IO]:
       row.getString("locked_by") -> row.getString("locked_at_char")
     }
 
-  private def appliedBy(connection: Connection): String =
+  private def appliedBy: String =
     s"${System.getenv().getOrDefault("HOSTNAME", "unknown-host")}:${ProcessHandle.current().pid()}"

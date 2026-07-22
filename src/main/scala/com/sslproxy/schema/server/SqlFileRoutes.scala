@@ -1,10 +1,9 @@
 package com.sslproxy.schema.server
 
 import cats.effect.IO
-import cats.syntax.all.*
 import com.sslproxy.schema.discovery.{GitRepoLoader, RepoSyncService, SyncResult}
 import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
-import com.sslproxy.schema.store.{RepoSyncState, RepoSyncStore, SqlFileStore, Target, TargetStore}
+import com.sslproxy.schema.store.{SqlFileStore, Target, TargetStore}
 import io.circe.Json
 import org.http4s.HttpRoutes
 import org.http4s.dsl.io.*
@@ -20,7 +19,6 @@ object SqlFileRoutes:
   def routes(
     sqlFileStore: SqlFileStore,
     targetStore: TargetStore,
-    repoSyncStore: RepoSyncStore,
     repoSyncService: RepoSyncService,
     gitRepoLoader: GitRepoLoader
   ): HttpRoutes[IO] =
@@ -66,8 +64,7 @@ object SqlFileRoutes:
           targetId match
             case Some(id) =>
               sqlFileStore.clear(id) *>
-                repoSyncStore.clear(id) *>
-                targetStore.recordRepoSync(id, "", "").attempt.void *>
+                targetStore.clearRepoSync(id).attempt.void *>
                 NoContent()
             case None => RouteJson.badRequest("target_id is required")
         }
@@ -94,9 +91,8 @@ object SqlFileRoutes:
         targetStore.get(id).flatMap {
           case Some(target) =>
             for
-              state <- repoSyncStore.getSyncState(id)
               remote <- gitRepoLoader.remoteHead(target.repo_url, target.repo_branch).attempt
-              response <- RouteJson.ok(syncStatusJson(target, state, remote))
+              response <- RouteJson.ok(syncStatusJson(target, remote))
             yield response
           case None => RouteJson.notFound(s"target '$id' was not found")
         }
@@ -114,18 +110,17 @@ object SqlFileRoutes:
 
   private def syncStatusJson(
     target: Target,
-    state: Option[RepoSyncState],
     remote: Either[Throwable, Option[String]]
   ): Json =
     val remoteHead = remote.toOption.flatten
-    val drift = remoteHead.exists(head => state.forall(_.commit_sha != head))
+    val drift = remoteHead.exists(head => target.last_synced_commit.forall(_ != head))
     Json.obj(
       "target_id" -> Json.fromString(target.id),
       "repo_url" -> Json.fromString(target.repo_url),
       "repo_branch" -> Json.fromString(target.repo_branch),
       "repo_sql_path" -> Json.fromString(target.repo_sql_path),
-      "last_synced_commit" -> state.map(_.commit_sha).fold(Json.Null)(Json.fromString),
-      "last_synced_at" -> state.map(_.synced_at).fold(Json.Null)(Json.fromString),
+      "last_synced_commit" -> target.last_synced_commit.fold(Json.Null)(Json.fromString),
+      "last_synced_at" -> target.last_synced_at.fold(Json.Null)(Json.fromString),
       "remote_head_commit" -> remoteHead.fold(Json.Null)(Json.fromString),
       "drift" -> Json.fromBoolean(drift),
       "remote_error" -> remote.swap.toOption.map(_.getMessage).fold(Json.Null)(Json.fromString)

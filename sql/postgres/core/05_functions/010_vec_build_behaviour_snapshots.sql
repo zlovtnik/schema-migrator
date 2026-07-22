@@ -228,22 +228,37 @@ begin
     left join cross_mac cm
       on cm.location_id is not distinct from r.location_id
      and cm.window_start = r.window_start
+  ),
+  upserted as (
+    insert into vec_behaviour_snapshots (
+      snapshot_key, source_mac, location_id, sensor_id, window_start, window_end,
+      event_count, text_summary, embedding_text, created_at, updated_at
+    )
+    select
+      snapshot_key, source_mac, location_id, sensor_id, window_start, window_end,
+      event_count, text_summary, embedding_text, now(), now()
+    from prepared
+    on conflict (snapshot_key) do update set
+      sensor_id = excluded.sensor_id,
+      event_count = excluded.event_count,
+      text_summary = excluded.text_summary,
+      embedding_text = excluded.embedding_text,
+      updated_at = now()
+    returning snapshot_id, snapshot_key
   )
-  insert into vec_behaviour_snapshots (
-    snapshot_key, source_mac, location_id, sensor_id, window_start, window_end,
-    event_count, protocol_mix, frame_type_distribution, signal_min_dbm, signal_max_dbm,
+  insert into vec_behaviour_snapshot_stats (
+    snapshot_id, protocol_mix, frame_type_distribution, signal_min_dbm, signal_max_dbm,
     signal_avg_dbm, retry_count, protected_count, unprotected_count, unique_bssid_count,
-    mac_rotation_indicators, text_summary, embedding_text, created_at, updated_at
+    mac_rotation_indicators
   )
   select
-    snapshot_key, source_mac, location_id, sensor_id, window_start, window_end,
-    event_count, protocol_mix, frame_type_distribution, signal_min_dbm, signal_max_dbm,
-    signal_avg_dbm, retry_count, protected_count, unprotected_count, unique_bssid_count,
-    mac_rotation_indicators, text_summary, embedding_text, now(), now()
-  from prepared
-  on conflict (snapshot_key) do update set
-    sensor_id = excluded.sensor_id,
-    event_count = excluded.event_count,
+    upserted.snapshot_id, prepared.protocol_mix, prepared.frame_type_distribution,
+    prepared.signal_min_dbm, prepared.signal_max_dbm, prepared.signal_avg_dbm,
+    prepared.retry_count, prepared.protected_count, prepared.unprotected_count,
+    prepared.unique_bssid_count, prepared.mac_rotation_indicators
+  from upserted
+  join prepared using (snapshot_key)
+  on conflict (snapshot_id) do update set
     protocol_mix = excluded.protocol_mix,
     frame_type_distribution = excluded.frame_type_distribution,
     signal_min_dbm = excluded.signal_min_dbm,
@@ -253,10 +268,7 @@ begin
     protected_count = excluded.protected_count,
     unprotected_count = excluded.unprotected_count,
     unique_bssid_count = excluded.unique_bssid_count,
-    mac_rotation_indicators = excluded.mac_rotation_indicators,
-    text_summary = excluded.text_summary,
-    embedding_text = excluded.embedding_text,
-    updated_at = now();
+    mac_rotation_indicators = excluded.mac_rotation_indicators;
 
   get diagnostics v_count = row_count;
   perform vec_finish_job('vec_build_behaviour_snapshots');

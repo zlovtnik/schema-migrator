@@ -14,6 +14,7 @@ object SqlLayout:
     dbKind match
       case DbKind.Postgres => "postgres"
       case DbKind.Oracle => "oracle"
+      case DbKind.TiDB => "tidb"
 
   def resolveEngineRoot(sqlDir: Path, dbKind: DbKind): Path =
     val engine = sqlDir.resolve(engineName(dbKind))

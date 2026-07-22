@@ -44,8 +44,6 @@ export const useSession = (): SessionState => {
   }, [token]);
 };
 
-export const roleAtLeast = (role: UserRole, required: UserRole): boolean => roleOrder[role] >= roleOrder[required];
-
 const roleFromClaims = (claims: Record<string, unknown> | null): UserRole | undefined => {
   if (!claims) {
     return undefined;

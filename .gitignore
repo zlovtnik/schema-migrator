@@ -21,6 +21,8 @@ target/streams/
 .env
 .env.*
 !.env.example
+deploy/instance/runtime-config.js
+deploy/keycloak/middleware-realm.json
 *.log
 *.tmp
 .DS_Store

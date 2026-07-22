@@ -34,7 +34,7 @@ begin
       greatest(e.updated_at, coalesce(frame.updated_at, e.updated_at)) as event_updated_at,
       greatest(e.updated_at, coalesce(frame.updated_at, e.updated_at)) as cursor_updated_at
     from sync_events e
-    left join wireless_frames frame on frame.dedupe_key = e.dedupe_key
+    left join wireless_frames_expanded frame on frame.dedupe_key = e.dedupe_key
     where e.stream_name = 'wireless.audit'
       and e.status = 'batched'
       and greatest(e.updated_at, coalesce(frame.updated_at, e.updated_at)) > v_event_cursor
@@ -54,7 +54,7 @@ begin
        alert.metadata->>'dedupe_key' = e.dedupe_key
        or alert.metadata->>'source_key' = e.dedupe_key
      )
-    left join wireless_frames frame on frame.dedupe_key = e.dedupe_key
+    left join wireless_frames_expanded frame on frame.dedupe_key = e.dedupe_key
     order by cursor_updated_at, e.dedupe_key
   ),
   event_keys as (
@@ -72,12 +72,12 @@ begin
     from event_keys keys
     join sync_events_expanded source
       on source.dedupe_key = keys.dedupe_key
-    left join vec_embeddings existing
+    left join vec_embeddings_expanded existing
       on existing.source_table = 'sync_events'
      and existing.source_key = source.dedupe_key
      and existing.embedding_model = p_model
      and existing.embedding_kind = 'event'
-    left join vec_embedding_jobs existing_job
+    left join vec_embedding_jobs_expanded existing_job
       on existing_job.source_table = 'sync_events'
      and existing_job.source_key = source.dedupe_key
      and existing_job.embedding_model = p_model
@@ -132,12 +132,12 @@ begin
       'device'::text as embedding_kind,
       30 as priority
     from devices source
-    left join vec_embeddings existing
+    left join vec_embeddings_expanded existing
       on existing.source_table = 'devices'
      and existing.source_key = source.mac_id
      and existing.embedding_model = p_model
      and existing.embedding_kind = 'device'
-    left join vec_embedding_jobs existing_job
+    left join vec_embedding_jobs_expanded existing_job
       on existing_job.source_table = 'devices'
      and existing_job.source_key = source.mac_id
      and existing_job.embedding_model = p_model
@@ -159,13 +159,13 @@ begin
       p_model as embedding_model,
       'behaviour_window'::text as embedding_kind,
       20 as priority
-    from vec_behaviour_snapshots source
-    left join vec_embeddings existing
+    from vec_behaviour_snapshots_expanded source
+    left join vec_embeddings_expanded existing
       on existing.source_table = 'vec_behaviour_snapshots'
      and existing.source_key = source.snapshot_id::text
      and existing.embedding_model = p_model
      and existing.embedding_kind = 'behaviour_window'
-    left join vec_embedding_jobs existing_job
+    left join vec_embedding_jobs_expanded existing_job
       on existing_job.source_table = 'vec_behaviour_snapshots'
      and existing_job.source_key = source.snapshot_id::text
      and existing_job.embedding_model = p_model
@@ -188,12 +188,12 @@ begin
       'frame_sequence'::text as embedding_kind,
       18 as priority
     from vec_frame_sequences fs
-    left join vec_embeddings existing
+    left join vec_embeddings_expanded existing
       on existing.source_table = 'vec_frame_sequences'
      and existing.source_key = fs.session_key
      and existing.embedding_model = p_model
      and existing.embedding_kind = 'frame_sequence'
-    left join vec_embedding_jobs existing_job
+    left join vec_embedding_jobs_expanded existing_job
       on existing_job.source_table = 'vec_frame_sequences'
      and existing_job.source_key = fs.session_key
      and existing_job.embedding_model = p_model
@@ -215,13 +215,13 @@ begin
       p_model as embedding_model,
       'timing_profile'::text as embedding_kind,
       17 as priority
-    from vec_timing_profiles tp
-    left join vec_embeddings existing
+    from vec_timing_profiles_expanded tp
+    left join vec_embeddings_expanded existing
       on existing.source_table = 'vec_timing_profiles'
      and existing.source_key = tp.profile_id::text
      and existing.embedding_model = p_model
      and existing.embedding_kind = 'timing_profile'
-    left join vec_embedding_jobs existing_job
+    left join vec_embedding_jobs_expanded existing_job
       on existing_job.source_table = 'vec_timing_profiles'
      and existing_job.source_key = tp.profile_id::text
      and existing_job.embedding_model = p_model
@@ -257,12 +257,12 @@ begin
       'infrastructure_subgraph'::text as embedding_kind,
       15 as priority
     from graph_keys keys
-    left join vec_embeddings existing
+    left join vec_embeddings_expanded existing
       on existing.source_table = 'vec_infrastructure_graph'
      and existing.source_key = keys.source_key
      and existing.embedding_model = p_model
      and existing.embedding_kind = 'infrastructure_subgraph'
-    left join vec_embedding_jobs existing_job
+    left join vec_embedding_jobs_expanded existing_job
       on existing_job.source_table = 'vec_infrastructure_graph'
      and existing_job.source_key = keys.source_key
      and existing_job.embedding_model = p_model
@@ -289,7 +289,7 @@ begin
       select count(*) as new_frame_count
       from (
         select source.dedupe_key
-        from wireless_frames source
+        from wireless_frames_expanded source
         join sync_events event on event.dedupe_key = source.dedupe_key
         where source.bssid is not null
           and lower(source.bssid) = bp.bssid
@@ -297,7 +297,7 @@ begin
           and event.status = 'batched'
         union
         select source.dedupe_key
-        from wireless_frames source
+        from wireless_frames_expanded source
         join sync_events event on event.dedupe_key = source.dedupe_key
         where source.destination_bssid is not null
           and lower(source.destination_bssid) = bp.bssid
@@ -305,12 +305,12 @@ begin
           and event.status = 'batched'
       ) source
     ) frames on true
-    left join vec_embeddings existing
+    left join vec_embeddings_expanded existing
       on existing.source_table = 'vec_baseline_profiles'
      and existing.source_key = bp.bssid
      and existing.embedding_model = p_model
      and existing.embedding_kind = 'baseline_profile'
-    left join vec_embedding_jobs existing_job
+    left join vec_embedding_jobs_expanded existing_job
       on existing_job.source_table = 'vec_baseline_profiles'
      and existing_job.source_key = bp.bssid
      and existing_job.embedding_model = p_model
@@ -330,7 +330,8 @@ begin
   ),
   inserted as (
     insert into vec_embedding_jobs (
-      source_table, source_key, embedding_model, embedding_kind, priority, status, due_at, created_at, updated_at
+      source_table, source_key, embedding_model, embedding_kind,
+      priority, status, created_at, updated_at
     )
     select
       source_table,
@@ -339,7 +340,6 @@ begin
       embedding_kind,
       min(priority) as priority,
       'pending',
-      now(),
       now(),
       now()
     from (
@@ -360,14 +360,24 @@ begin
     group by source_table, source_key, embedding_model, embedding_kind
     on conflict (source_table, source_key, embedding_model, embedding_kind) do update set
       status = 'pending',
-      due_at = least(vec_embedding_jobs.due_at, now()),
       priority = least(vec_embedding_jobs.priority, excluded.priority),
-      completed_at = null,
       content_sha256 = null,
-      attempts = 0,
       updated_at = now()
     where vec_embedding_jobs.status = 'completed'
-    returning source_table, source_key, embedding_kind
+    returning job_id, source_table, source_key, embedding_kind
+  ),
+  leases_reset as (
+    update vec_embedding_job_leases lease
+       set due_at = least(lease.due_at, now()),
+           completed_at = null,
+           attempts = 0,
+           lease_token = null,
+           leased_at = null,
+           locked_by = null,
+           last_error = null
+      from inserted
+     where lease.job_id = inserted.job_id
+    returning lease.job_id
   )
   select
     (select count(*) from inserted),

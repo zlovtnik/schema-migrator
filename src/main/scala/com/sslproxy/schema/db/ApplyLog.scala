@@ -28,32 +28,32 @@ final class PostgresApplyLog(
   appliedBy: String
 ):
   def recordApplied(obj: SchemaObject, oldSha: Option[String], durationMs: Int): ConnectionIO[Unit] =
-    setStatusApplied(obj, oldSha) *>
+    setStatusApplied(obj) *>
       insert(obj, "applied", oldSha, Some(durationMs), None)
 
   def recordFailed(obj: SchemaObject, oldSha: Option[String], durationMs: Int, error: String): ConnectionIO[Unit] =
-    setStatusFailed(obj, oldSha, error) *>
+    setStatusFailed(obj, error) *>
       insert(obj, "failed", oldSha, Some(durationMs), Some(error))
 
   def recordSkipped(obj: SchemaObject, oldSha: Option[String]): ConnectionIO[Unit] =
-    setStatusSkipped(obj, oldSha) *>
+    setStatusSkipped(obj) *>
       insert(obj, "skipped", oldSha, None, None)
 
   def recordRolledBack(target: RollbackTarget, durationMs: Int): ConnectionIO[Unit] =
     setRollbackStatus(target) *> insertRollback(target, durationMs)
 
-  private def setStatusApplied(obj: SchemaObject, oldSha: Option[String]): ConnectionIO[Unit] =
-    setStatus("applied", null, obj, oldSha)
+  private def setStatusApplied(obj: SchemaObject): ConnectionIO[Unit] =
+    setStatus("applied", null, obj)
 
-  private def setStatusFailed(obj: SchemaObject, oldSha: Option[String], error: String): ConnectionIO[Unit] =
-    setStatus("failed", error, obj, oldSha)
+  private def setStatusFailed(obj: SchemaObject, error: String): ConnectionIO[Unit] =
+    setStatus("failed", error, obj)
 
-  private def setStatusSkipped(obj: SchemaObject, oldSha: Option[String]): ConnectionIO[Unit] =
+  private def setStatusSkipped(obj: SchemaObject): ConnectionIO[Unit] =
     Update[(String, String)](PostgresStatements.updateStatusSkippedSql)
       .run((obj.kind, obj.objectName))
       .void
 
-  private def setStatus(status: String, error: String, obj: SchemaObject, oldSha: Option[String]): ConnectionIO[Unit] =
+  private def setStatus(status: String, error: String, obj: SchemaObject): ConnectionIO[Unit] =
     Update[(String, Option[Timestamp], Option[String], String, String)](PostgresStatements.updateStatusSql)
       .run(
         (
@@ -119,19 +119,19 @@ final class OracleApplyLog(
 
   override def recordApplied(obj: SchemaObject, oldSha: Option[String], durationMs: Int): IO[Unit] =
     inApplyLogTransaction {
-      setStatusApplied(obj, oldSha)
+      setStatusApplied(obj)
       insert(obj, "applied", oldSha, Some(durationMs), None)
     }
 
   override def recordFailed(obj: SchemaObject, oldSha: Option[String], durationMs: Int, error: String): IO[Unit] =
     inApplyLogTransaction {
-      setStatusFailed(obj, oldSha, error)
+      setStatusFailed(obj, error)
       insert(obj, "failed", oldSha, Some(durationMs), Some(error))
     }
 
   override def recordSkipped(obj: SchemaObject, oldSha: Option[String]): IO[Unit] =
     inApplyLogTransaction {
-      setStatusSkipped(obj, oldSha)
+      setStatusSkipped(obj)
       insert(obj, "skipped", oldSha, None, None)
     }
 
@@ -158,19 +158,20 @@ final class OracleApplyLog(
         finally connection.setAutoCommit(true)
     }
 
-  private def setStatusApplied(obj: SchemaObject, oldSha: Option[String]): Unit =
-    setStatus("applied", null, obj, oldSha)
+  private def setStatusApplied(obj: SchemaObject): Unit =
+    setStatus("applied", null, obj)
 
-  private def setStatusFailed(obj: SchemaObject, oldSha: Option[String], error: String): Unit =
-    setStatus("failed", error, obj, oldSha)
+  private def setStatusFailed(obj: SchemaObject, error: String): Unit =
+    setStatus("failed", error, obj)
 
-  private def setStatusSkipped(obj: SchemaObject, oldSha: Option[String]): Unit =
+  private def setStatusSkipped(obj: SchemaObject): Unit =
     executePrepared(connection, OracleStatements.updateStatusSkippedSql) { statement =>
       statement.setString(1, obj.kind)
       statement.setString(2, obj.objectName)
     }
+    ()
 
-  private def setStatus(status: String, error: String, obj: SchemaObject, oldSha: Option[String]): Unit =
+  private def setStatus(status: String, error: String, obj: SchemaObject): Unit =
     executePrepared(connection, OracleStatements.updateStatusSql) { statement =>
       statement.setString(1, status)
       statement.setString(2, status)
@@ -178,12 +179,14 @@ final class OracleApplyLog(
       statement.setString(4, obj.kind)
       statement.setString(5, obj.objectName)
     }
+    ()
 
   private def setRollbackStatus(target: RollbackTarget): Unit =
     executePrepared(connection, OracleStatements.rollbackStatusSql) { statement =>
       statement.setString(1, target.kind)
       statement.setString(2, target.objectName)
     }
+    ()
 
   private def insert(
     obj: SchemaObject,
@@ -203,6 +206,7 @@ final class OracleApplyLog(
       errorText.fold(statement.setNull(8, Types.CLOB))(statement.setString(8, _))
       statement.setString(9, appliedBy)
     }
+    ()
 
   private def insertRollback(target: RollbackTarget, durationMs: Int): Unit =
     executePrepared(connection, OracleStatements.applyLogSql) { statement =>
@@ -216,3 +220,4 @@ final class OracleApplyLog(
       statement.setNull(8, Types.CLOB)
       statement.setString(9, appliedBy)
     }
+    ()

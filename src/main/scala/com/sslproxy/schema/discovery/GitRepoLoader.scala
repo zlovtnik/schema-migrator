@@ -1,7 +1,6 @@
 package com.sslproxy.schema.discovery
 
 import cats.effect.{Clock, IO, Resource}
-import cats.syntax.all.*
 import com.sslproxy.schema.store.StoredSqlFile
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.lib.ObjectId

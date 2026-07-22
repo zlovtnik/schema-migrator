@@ -1,8 +1,9 @@
 package com.sslproxy.schema.discovery
 
 import cats.effect.{Clock, IO, Resource}
+import cats.effect.kernel.Outcome
 import cats.syntax.all.*
-import com.sslproxy.schema.store.{RepoSyncStore, SqlFileStore, Target, TargetStore}
+import com.sslproxy.schema.store.{SqlFileStore, Target, TargetStore}
 
 import java.nio.file.Path
 import java.util.concurrent.Semaphore
@@ -19,7 +20,6 @@ final case class SyncResult(
 
 final class RepoSyncService(
   sqlFileStore: SqlFileStore,
-  repoSyncStore: RepoSyncStore,
   loader: GitRepoLoader,
   cacheDir: Path,
   cloneTimeoutSeconds: Int,
@@ -51,28 +51,21 @@ final class RepoSyncService(
         hasChanges = result.added > 0 || result.removed > 0 || result.changed > 0
         _ <-
           if hasChanges then
-            sqlFileStore.replaceAll(targetId, newFiles) *>
-              (repoSyncStore.recordSync(targetId, commitSha, syncedAt) *>
-                targetStore.recordRepoSync(targetId, commitSha, syncedAt))
-                .flatMap {
-                  case true => IO.unit
-                  case false =>
-                    // targetStore.recordRepoSync returned false — compensate by restoring old files
-                    sqlFileStore.replaceAll(targetId, currentFiles) *>
-                      IO.raiseError(IllegalStateException(s"targetStore.recordRepoSync failed for target $targetId"))
-                }
-                .onError { case _ =>
-                  // Compensate: restore previous files if any metadata write fails
-                  sqlFileStore.replaceAll(targetId, currentFiles).void
-                }
-          else
-            repoSyncStore.recordSync(targetId, commitSha, syncedAt) *>
-              targetStore.recordRepoSync(targetId, commitSha, syncedAt).flatMap {
-                case true => IO.unit
-                case false =>
-                  IO.raiseError(IllegalStateException(s"targetStore.recordRepoSync failed for target $targetId"))
+            (sqlFileStore.replaceAll(targetId, newFiles) *>
+              recordSync(targetId, commitSha, syncedAt))
+              .guaranteeCase {
+                case Outcome.Succeeded(_) => IO.unit
+                case Outcome.Errored(_) | Outcome.Canceled() =>
+                  sqlFileStore.replaceAll(targetId, currentFiles)
               }
+          else recordSync(targetId, commitSha, syncedAt)
       yield result.copy(commitSha = commitSha, syncedAt = syncedAt)
+    }
+
+  private def recordSync(targetId: String, commitSha: String, syncedAt: String): IO[Unit] =
+    targetStore.recordRepoSync(targetId, commitSha, syncedAt).flatMap {
+      case true => IO.unit
+      case false => IO.raiseError(IllegalStateException(s"target '$targetId' no longer exists"))
     }
 
   private def diff(current: Map[String, String], next: Map[String, String]): IO[SyncResult] =
@@ -95,10 +88,9 @@ final class RepoSyncService(
 object RepoSyncService:
   def apply(
     sqlFileStore: SqlFileStore,
-    repoSyncStore: RepoSyncStore,
     loader: GitRepoLoader,
     cacheDir: Path,
     cloneTimeoutSeconds: Int,
     targetStore: TargetStore
   ): RepoSyncService =
-    new RepoSyncService(sqlFileStore, repoSyncStore, loader, cacheDir, cloneTimeoutSeconds, targetStore)
+    new RepoSyncService(sqlFileStore, loader, cacheDir, cloneTimeoutSeconds, targetStore)

@@ -40,7 +40,7 @@ select
   right_snapshot.snapshot_id as right_snapshot_id,
   right_snapshot.window_start as right_window_start,
   right_snapshot.window_end as right_window_end
-from vec_similarity_pairs pair
+from vec_similarity_pairs_expanded pair
 left join sync_events_expanded left_event
   on pair.left_source_table = 'sync_events'
  and left_event.dedupe_key = pair.left_source_key
@@ -53,9 +53,9 @@ left join devices left_device
 left join devices right_device
   on right_device.mac_id = pair.right_source_key
   or right_device.mac_id = lower(pair.right_source_mac)
-left join vec_behaviour_snapshots left_snapshot
+left join vec_behaviour_snapshots_expanded left_snapshot
   on pair.left_source_table = 'vec_behaviour_snapshots'
  and left_snapshot.snapshot_id::text = pair.left_source_key
-left join vec_behaviour_snapshots right_snapshot
+left join vec_behaviour_snapshots_expanded right_snapshot
   on pair.right_source_table = 'vec_behaviour_snapshots'
  and right_snapshot.snapshot_id::text = pair.right_source_key;

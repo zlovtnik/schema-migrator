@@ -12,7 +12,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   state: ErrorBoundaryState = { errorId: undefined };
 
   static getDerivedStateFromError(): ErrorBoundaryState {
-    return { errorId: crypto.randomUUID() };
+    const errorId =
+      typeof crypto?.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `error-${Date.now().toString(36)}`;
+    return { errorId };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {

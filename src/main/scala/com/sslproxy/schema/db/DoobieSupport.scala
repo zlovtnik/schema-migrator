@@ -1,7 +1,6 @@
 package com.sslproxy.schema.db
 
 import cats.effect.{IO, Resource}
-import cats.syntax.all.*
 import com.sslproxy.schema.error.MigratorError
 import doobie.Transactor
 import doobie.free.FC

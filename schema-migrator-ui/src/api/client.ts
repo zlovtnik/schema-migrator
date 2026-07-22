@@ -1,3 +1,4 @@
+import { gcm } from "@noble/ciphers/aes.js";
 import { runtimeConfig } from "../runtimeConfig";
 
 export class ApiError extends Error {
@@ -9,6 +10,13 @@ export class ApiError extends Error {
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
+  }
+}
+
+export class ResponseDecryptionError extends Error {
+  constructor() {
+    super("Encrypted response could not be decrypted with the configured AES-GCM key");
+    this.name = "ResponseDecryptionError";
   }
 }
 
@@ -128,21 +136,29 @@ const decryptEnvelope = async (text: string): Promise<string> => {
   }
 
   const envelope = JSON.parse(text) as EncryptedEnvelope;
-  const cryptoKey = await window.crypto.subtle.importKey("raw", toArrayBuffer(base64ToBytes(key)), "AES-GCM", false, [
-    "decrypt"
-  ]);
-  const plain = await window.crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: toArrayBuffer(base64ToBytes(envelope.iv)) },
-    cryptoKey,
-    toArrayBuffer(base64ToBytes(envelope.data))
-  );
-  return new TextDecoder().decode(plain);
+  const keyBytes = base64ToBytes(key);
+  const iv = base64ToBytes(envelope.iv);
+  const data = base64ToBytes(envelope.data);
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    const cryptoKey = await subtle.importKey("raw", toArrayBuffer(keyBytes), "AES-GCM", false, ["decrypt"]);
+    const plain = await subtle.decrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, cryptoKey, toArrayBuffer(data));
+    return new TextDecoder().decode(plain);
+  }
+
+  // LAN deployments can use application-layer encryption from an HTTP origin,
+  // where browsers do not expose SubtleCrypto.
+  return new TextDecoder().decode(gcm(keyBytes, iv).decrypt(data));
 };
 
 const readResponseText = async (response: Response): Promise<string> => {
   const text = await response.text();
   if (response.headers.get("X-Bedrock-Encrypted") === "1") {
-    return decryptEnvelope(text);
+    try {
+      return await decryptEnvelope(text);
+    } catch {
+      throw new ResponseDecryptionError();
+    }
   }
   return text;
 };

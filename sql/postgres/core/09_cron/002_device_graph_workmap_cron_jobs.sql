@@ -1,6 +1,6 @@
 -- object: device_graph_workmap_cron_jobs
 -- folder: cron
--- depends_on: extensions, vec_device_graph_retention, vec_job_lock_ttl_helpers, vec_dns_violation_summary
+-- depends_on: extensions, vec_device_graph_retention, vec_job_lock_helpers, vec_dns_violation_summary
 
 create or replace function vec_refresh_dns_violation_summary()
 returns void

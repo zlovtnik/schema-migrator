@@ -3,9 +3,10 @@ package com.sslproxy.schema.server
 import cats.effect.{Clock, IO}
 import cats.syntax.all.*
 import com.sslproxy.schema.config.{DbKind, MigratorConfig}
+import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.discovery.{DiscoveryService, SqlFile}
+import com.sslproxy.schema.engine.MigrationPlan
 import com.sslproxy.schema.validation.ValidationReport
-import com.sslproxy.schema.validation.Validator
 import com.sslproxy.schema.server.auth.{AuthContext, UserRole}
 import com.sslproxy.schema.store.{
   AuditStore,
@@ -80,18 +81,16 @@ object ValidationRoutes:
                         selectSourceFiles(payload.source_files, files) match
                           case Left(message) => RouteJson.badRequest(message)
                           case Right(selectedFiles) =>
-                            val discovery = DiscoveryService[IO]().discoverFromFiles(selectedFiles, dbKind)
-                            Validator[IO](dbKind).validate(discovery.files).flatMap { report =>
+                            val discovery = DiscoveryService().discoverFromFiles(selectedFiles, dbKind)
+                            MigrationPlan.inspect(dbKind, SqlDialect.forDbKind(dbKind), discovery).flatMap { plan =>
                               for
                                 checkedAt <- Clock[IO].realTimeInstant.map(_.toString)
-                                reportWithDiscoveryWarnings =
-                                  report.copy(warnings = discovery.warnings ++ report.warnings)
                                 result = sqlFilesValidationResult(
                                   payload.target_id,
                                   dbKind.toString.toLowerCase,
                                   checkedAt,
                                   discovery.files.length,
-                                  reportWithDiscoveryWarnings
+                                  plan.validation
                                 )
                                 _ <- auditStore.record(
                                   claims.subject,
@@ -175,16 +174,15 @@ object ValidationRoutes:
               case Left(message) => RouteJson.badRequest(message)
               case Right(()) =>
                 for
-                  discovery <- DiscoveryService[IO]().discover(path, dbKind, customer)
-                  report <- Validator[IO](dbKind).validate(discovery.files)
+                  discovery <- DiscoveryService().discover(path, dbKind, customer)
+                  plan <- MigrationPlan.inspect(dbKind, SqlDialect.forDbKind(dbKind), discovery)
                   checkedAt <- Clock[IO].realTimeInstant.map(_.toString)
-                  reportWithDiscoveryWarnings = report.copy(warnings = discovery.warnings ++ report.warnings)
                   result = sqlFilesValidationResult(
                     targetId = "filesystem",
                     dbKind = dbKind.toString.toLowerCase,
                     checkedAt = checkedAt,
                     fileCount = discovery.files.length,
-                    report = reportWithDiscoveryWarnings
+                    report = plan.validation
                   )
                   _ <- auditStore.record(
                     claims.subject,

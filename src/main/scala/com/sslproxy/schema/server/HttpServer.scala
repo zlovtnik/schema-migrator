@@ -1,29 +1,21 @@
 package com.sslproxy.schema.server
 
 import cats.effect.{IO, Resource}
+import cats.effect.std.Supervisor
 import cats.syntax.all.*
 import com.comcast.ip4s.{Host, Port}
-import com.mongodb.client.MongoClients
 import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.server.auth.{JwtMiddleware, KeycloakJwks}
 import com.sslproxy.schema.server.compress.Bzip2Middleware
 import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
-import com.sslproxy.schema.store.{
-  AuditStore,
-  KeycloakConfigStore,
-  PatchStore,
-  RepoSyncStore,
-  RunStore,
-  SnapshotStore,
-  SqlFileStore,
-  TargetStore,
-  ValidationStore
-}
+import com.sslproxy.schema.store.{KeycloakConfigStore, StateDatabase, TiDBStores}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.server.Router
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
+
+import scala.concurrent.duration.*
 
 object HttpServer:
   private given LoggerFactory[IO] = Slf4jFactory.create[IO]
@@ -55,32 +47,39 @@ object HttpServer:
         )
       )
       encryptKeyRing = encryptKey.map(key => AesGcm.KeyRing("current", key, Map.empty))
-      mongoConfig <- Resource.eval(
-        IO.fromEither(config.server.mongoConfig.leftMap(message => new IllegalArgumentException(message)))
+      stateStoreConfig <- Resource.eval(
+        IO.fromEither(config.server.stateStoreConfig.leftMap(message => new IllegalArgumentException(message)))
       )
-      mongoClient <- Resource.make(IO.blocking(MongoClients.create(mongoConfig.uri)))(client =>
-        IO.blocking(client.close())
-      )
+      stateDatabase <- StateDatabase.resource(stateStoreConfig)
       targetPasswordKey <- Resource.eval(
         IO.fromOption(encryptKey)(
           IllegalArgumentException("BEDROCK_ENCRYPT_KEY is required to encrypt stored target passwords")
         )
       )
-      targetStore <- TargetStore.mongo(mongoConfig, targetPasswordKey, mongoClient)
-      sqlFileStore <- SqlFileStore.mongo(mongoConfig, config.server.sqlFilesCollection, mongoClient)
-      repoSyncStore <- RepoSyncStore.mongo(mongoConfig, config.server.repoSyncCollection, mongoClient)
-      patchStore <- PatchStore.mongo(mongoConfig, config.server.patchesCollection, mongoClient)
-      runStore <- RunStore.mongo(mongoConfig, config.server.runsCollection, mongoClient)
-      validationStore <- ValidationStore.mongo(mongoConfig, config.server.validationsCollection, mongoClient)
-      snapshotStore <- SnapshotStore.mongo(mongoConfig, config.server.snapshotsCollection, mongoClient)
-      auditStore <- AuditStore.mongo(mongoConfig, config.server.auditCollection, mongoClient)
-      _ <- Resource.eval(
-        KeycloakConfigStore.persist(
-          config.server,
-          mongoConfig,
-          config.server.keycloakConfigCollection,
-          mongoClient
+      stores <- TiDBStores.resource(stateDatabase, targetPasswordKey)
+      targetStore = stores.targetStore
+      sqlFileStore = stores.sqlFileStore
+      patchStore = stores.patchStore
+      runStore = stores.runStore
+      validationStore = stores.validationStore
+      snapshotStore = stores.snapshotStore
+      auditStore = stores.auditStore
+      supervisor <- Supervisor[IO]
+      runExecutor = RunExecutor.supervised(
+        RunExecutor.real(config, patchStore, runStore, validationStore, Some(auditStore)),
+        supervisor,
+        runStore
+      )
+      _ <- Resource.make(
+        supervisor.supervise(
+          (runExecutor
+            .recoverPending(targetStore, patchStore)
+            .handleErrorWith(error => logger.error(error)("durable run recovery scan failed")) *>
+            IO.sleep(1.second)).foreverM
         )
+      )(_.cancel)
+      _ <- Resource.eval(
+        KeycloakConfigStore.persist(config.server, stateDatabase)
       )
       keycloakVerifier <- keycloakVerifierResource(config)
       apiRoutes = Routes.all(
@@ -90,9 +89,9 @@ object HttpServer:
         runStore,
         validationStore,
         sqlFileStore,
-        repoSyncStore,
         snapshotStore,
-        auditStore
+        auditStore,
+        runExecutor
       )
       routed = Router("/api" -> apiRoutes)
       authed = JwtMiddleware(config.server, keycloakVerifier)(routed)

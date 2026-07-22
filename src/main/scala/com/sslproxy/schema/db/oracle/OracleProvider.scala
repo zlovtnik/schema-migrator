@@ -20,13 +20,13 @@ import com.sslproxy.schema.validation.RollbackValidator
 import java.nio.file.{Files, Path}
 import java.sql.{Connection, SQLException}
 
-final class OracleProvider(config: JdbcConnectionConfig) extends DbProvider[IO]:
+final class OracleProvider(config: JdbcConnectionConfig) extends DbProvider:
   override val dialect: SqlDialect = SqlDialect.Oracle
 
-  override def session: Resource[IO, DbSession[IO]] =
+  override def session: Resource[IO, DbSession] =
     JdbcSupport.connection(config).map(OracleSession(_))
 
-final class OracleSession(connection: Connection) extends DbSession[IO]:
+final class OracleSession(connection: Connection) extends DbSession:
   import JdbcSupport.*
 
   private val lockManager = LockManager.oracle(connection)
@@ -46,10 +46,9 @@ final class OracleSession(connection: Connection) extends DbSession[IO]:
   override def acquireLock: IO[Unit] = lockManager.acquire
   override def releaseLock: IO[Unit] = lockManager.release
   override def prepare(objects: List[SchemaObject]): IO[List[PreparedObject]] = store.prepare(objects)
+  override def retire(objects: List[SchemaObject]): IO[Unit] = store.retire(objects)
   override def fetchStatus: IO[List[ObjectStatus]] = store.fetchStatus
   override def fetchReady: IO[SchemaReadyStatus] = store.fetchReady
-  override def checkReady: IO[Boolean] = fetchReady.map(_.ready)
-
   override def recordSkipped(prepared: PreparedObject): IO[Unit] =
     applyLog.recordSkipped(prepared.objectDef, prepared.oldSha256)
 

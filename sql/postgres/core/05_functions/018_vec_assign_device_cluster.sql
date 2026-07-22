@@ -3,7 +3,7 @@
 -- depends_on: device_identity_clusters
 -- Function to assign or find a cluster for a given MAC.
 -- Returns the cluster_id the MAC belongs to (creating one if needed).
--- Uses rotation indicators from vec_behaviour_snapshots to identify
+-- Uses rotation indicators from vec_behaviour_snapshots_expanded to identify
 -- related MACs that belong to the same physical device.
 create or replace function vec_assign_device_cluster(
   p_mac_id text
@@ -33,14 +33,14 @@ begin
   --    within the last 24 hours.
   with related as (
     select distinct lb.source_mac as related_mac
-    from vec_behaviour_snapshots lb
+    from vec_behaviour_snapshots_expanded lb
     where lb.source_mac = p_mac_id
       and lb.window_start > now() - interval '24 hours'
       and lb.mac_rotation_indicators is not null
       and lb.mac_rotation_indicators != '{}'::jsonb
     intersect
     select distinct rb.source_mac
-    from vec_behaviour_snapshots rb
+    from vec_behaviour_snapshots_expanded rb
     where rb.source_mac != p_mac_id
       and rb.window_start > now() - interval '24 hours'
       and rb.mac_rotation_indicators is not null

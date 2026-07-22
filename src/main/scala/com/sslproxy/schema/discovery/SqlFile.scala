@@ -14,7 +14,11 @@ final case class SqlFile(
   def readString: String =
     content.getOrElse(Files.readString(path))
 
-final case class DiscoveryResult(files: List[SqlFile], warnings: List[String])
+final case class DiscoveryResult(
+  files: List[SqlFile],
+  warnings: List[String],
+  retiredFiles: List[SqlFile] = Nil
+)
 
 object SqlPathNormalizer:
   final case class NormalizedPath(path: String, folder: String, filename: String)
@@ -31,19 +35,23 @@ object SqlPathNormalizer:
       case DbKind.Oracle =>
         normalizeForEngine(file, normalized, DbKind.Oracle)
 
+      case DbKind.TiDB =>
+        normalizeForEngine(file, normalized, DbKind.TiDB)
+
   private def normalizeForEngine(
     file: SqlFile,
     normalized: NormalizedPath,
     dbKind: DbKind
   ): Either[String, Option[SqlFile]] =
     val engine = SqlLayout.engineName(dbKind)
-    val otherEngines = List("postgres", "oracle").filterNot(_ == engine)
+    val otherEngines = List("postgres", "oracle", "tidb").filterNot(_ == engine)
     if otherEngines.exists(other => normalized.folder == other || normalized.folder.startsWith(s"$other/")) then
       Right(None)
     else if normalized.folder == "baseline" then
       dbKind match
         case DbKind.Oracle => Right(Some(withNormalizedPath(file, "baseline", normalized)))
         case DbKind.Postgres => Right(None)
+        case DbKind.TiDB => Right(None)
     else if SqlLayout.isAuxiliaryPath(normalized.path) then Right(None)
     else
       val category = SqlLayout.folderFromPath(normalized.path, dbKind)

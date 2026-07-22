@@ -4,10 +4,14 @@ import { LiveRunCard } from "../../components/LiveRunCard";
 import { StatusBadge } from "../../components/StatusBadge";
 import { TargetSelector } from "../../components/TargetSelector";
 import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
+import { useAuditEvents } from "../../hooks/useAudit";
+import { usePatches } from "../../hooks/usePatches";
 import { useAbortRun, useResolveRun, useRuns } from "../../hooks/useRuns";
 import { useSelectedTargetId } from "../../hooks/useSelectedTarget";
 import { useSession } from "../../hooks/useSession";
+import { useTargets } from "../../hooks/useTargets";
 import { runStatusOptions, type Run, type RunStatus } from "../../types";
+import { formatRunSource, runFailureReason, runOutcomeFallback } from "../../utils/runPresentation";
 
 const formatDuration = (startedAt: string, endedAt?: string) => {
   if (!endedAt) {
@@ -23,9 +27,12 @@ export const RunListPage = () => {
   const rawStatusFilter = searchParams.get("status");
   const statusFilter = runStatusOptions.includes(rawStatusFilter as RunStatus) ? (rawStatusFilter as RunStatus) : null;
   const { data: runs = [], isLoading, error } = useRuns(targetId);
+  const { data: patches = [] } = usePatches(targetId);
+  const { data: targets = [] } = useTargets();
   const abortRun = useAbortRun();
   const resolveRun = useResolveRun();
-  const { canMutate } = useSession();
+  const { canMutate, canViewAudit } = useSession();
+  const { data: auditEvents = [] } = useAuditEvents({ limit: 250 }, canViewAudit);
 
   useEffect(() => {
     if (!rawStatusFilter || statusFilter) {
@@ -58,12 +65,39 @@ export const RunListPage = () => {
   };
 
   const columns: DataTableColumn<Run>[] = [
-    { id: "target", header: "Target", sortValue: (run) => run.target_id, cell: (run) => run.target_id },
+    {
+      id: "target",
+      header: "Target",
+      sortValue: (run) => targets.find((target) => target.id === run.target_id)?.label ?? "Removed target",
+      cell: (run) => {
+        const target = targets.find((item) => item.id === run.target_id);
+        return target ? (
+          <Link to={`/targets/${target.id}/overview`} title={`Target ID: ${target.id}`}>
+            {target.label}
+          </Link>
+        ) : (
+          <span title={`Target ID: ${run.target_id}`}>Removed target</span>
+        );
+      }
+    },
     {
       id: "source",
       header: "Run source",
-      sortValue: (run) => run.patch_id,
-      cell: (run) => <Link to={`/runs/${run.id}`}>{run.patch_id}</Link>
+      sortValue: (run) =>
+        formatRunSource(
+          run,
+          patches.find((patch) => patch.id === run.patch_id),
+          auditEvents
+        ),
+      cell: (run) => (
+        <Link to={`/runs/${run.id}`} title={`Patch ID: ${run.patch_id}`}>
+          {formatRunSource(
+            run,
+            patches.find((patch) => patch.id === run.patch_id),
+            auditEvents
+          )}
+        </Link>
+      )
     },
     {
       id: "started",
@@ -77,6 +111,21 @@ export const RunListPage = () => {
       header: "Status",
       sortValue: (run) => run.status,
       cell: (run) => <StatusBadge status={run.status} />
+    },
+    {
+      id: "outcome",
+      header: "Outcome",
+      sortValue: (run) => runFailureReason(run) ?? runOutcomeFallback(run.status),
+      cell: (run) => {
+        const reason = runFailureReason(run);
+        return reason ? (
+          <Link className="run-reason-link" to={`/runs/${run.id}#failure-reason`} title={reason}>
+            {reason}
+          </Link>
+        ) : (
+          <span className="cell-subtle">{runOutcomeFallback(run.status)}</span>
+        );
+      }
     },
     {
       id: "action",
@@ -120,7 +169,16 @@ export const RunListPage = () => {
       </header>
 
       {activeRun ? (
-        <LiveRunCard run={activeRun} onAbort={(runId) => abortRun.mutate(runId)} aborting={abortRun.isPending} />
+        <LiveRunCard
+          run={activeRun}
+          sourceLabel={formatRunSource(
+            activeRun,
+            patches.find((patch) => patch.id === activeRun.patch_id),
+            auditEvents
+          )}
+          onAbort={(runId) => abortRun.mutate(runId)}
+          aborting={abortRun.isPending}
+        />
       ) : null}
 
       {error ? <div className="status-banner status-banner--error">Unable to load runs.</div> : null}

@@ -1,6 +1,6 @@
 -- object: coordinator.upsert_wireless_frame_from_payload
 -- folder: functions
--- depends_on: wireless_frames, sync_events
+-- depends_on: wireless_frames, wireless_frame_radio, wireless_frame_qos, wireless_frame_network, wireless_frame_app_signals, wireless_frame_identity, wireless_frame_security, sync_events
 create or replace function coordinator.upsert_wireless_frame_from_payload(
   p_dedupe_key text,
   p_stream_name text,
@@ -15,27 +15,14 @@ begin
   end if;
 
   insert into wireless_frames (
-    dedupe_key, sensor_id, location_id, username, event_type, schema_version, frame_type, frame_subtype,
+    dedupe_key, sensor_id, location_id, schema_version, frame_type, frame_subtype,
     source_mac, transmitter_mac, receiver_mac, bssid, destination_bssid, ssid,
-    signal_dbm, noise_dbm, frequency_mhz, channel_flags, data_rate_kbps, antenna_id, tsft,
-    fragment_number, channel_number, signal_status, adjacent_mac_hint, qos_tid, qos_eosp,
-    qos_ack_policy, qos_ack_policy_label, qos_amsdu, llc_oui, ethertype,
-    ethertype_name, src_ip, dst_ip, ip_ttl, ip_protocol, ip_protocol_name,
-    src_port, dst_port, transport_protocol, transport_length, transport_checksum,
-    app_protocol, ssdp_message_type, ssdp_st, ssdp_mx, ssdp_usn,
-    dhcp_requested_ip, dhcp_hostname, dhcp_vendor_class, dns_query_name,
-    mdns_name, session_key, retransmit_key, frame_fingerprint, payload_visibility,
-    tsft_delta_us, wall_clock_delta_ms, large_frame, mixed_encryption,
-    dedupe_or_replay_suspect, raw_len, frame_control_flags, more_data, retry,
-    power_save, protected, security_flags, risk_score, identity_source, tags,
-    wps_device_name, wps_manufacturer,
-    wps_model_name, device_fingerprint, handshake_captured, created_at, updated_at
-  ) values (
+    created_at, updated_at
+  )
+  values (
     p_dedupe_key,
     nullif(p_payload->>'sensor_id', ''),
     nullif(p_payload->>'location_id', ''),
-    nullif(p_payload->>'username', ''),
-    nullif(coalesce(p_payload->>'event_type', p_payload->>'type'), ''),
     coalesce(coordinator.safe_int(p_payload->>'schema_version'), 1),
     nullif(p_payload->>'frame_type', ''),
     nullif(p_payload->>'frame_subtype', ''),
@@ -45,6 +32,30 @@ begin
     lower(nullif(p_payload->>'bssid', '')),
     lower(nullif(coalesce(p_payload->>'destination_bssid', p_payload->>'destination_mac'), '')),
     nullif(p_payload->>'ssid', ''),
+    now(),
+    now()
+  )
+  on conflict (dedupe_key) do update set
+    sensor_id = excluded.sensor_id,
+    location_id = excluded.location_id,
+    schema_version = excluded.schema_version,
+    frame_type = excluded.frame_type,
+    frame_subtype = excluded.frame_subtype,
+    source_mac = excluded.source_mac,
+    transmitter_mac = excluded.transmitter_mac,
+    receiver_mac = excluded.receiver_mac,
+    bssid = excluded.bssid,
+    destination_bssid = excluded.destination_bssid,
+    ssid = excluded.ssid,
+    updated_at = now();
+
+  insert into wireless_frame_radio (
+    dedupe_key, signal_dbm, noise_dbm, frequency_mhz, channel_flags,
+    data_rate_kbps, antenna_id, tsft, fragment_number, channel_number,
+    tsft_delta_us, wall_clock_delta_ms
+  )
+  values (
+    p_dedupe_key,
     coordinator.safe_int(p_payload->>'signal_dbm'),
     coordinator.safe_int(p_payload->>'noise_dbm'),
     coordinator.safe_int(p_payload->>'frequency_mhz'),
@@ -54,13 +65,58 @@ begin
     coordinator.safe_bigint(p_payload->>'tsft'),
     coordinator.safe_int(p_payload->>'fragment_number'),
     coordinator.safe_int(coalesce(p_payload->>'channel_number', p_payload->>'channel')),
-    nullif(p_payload->>'signal_status', ''),
-    lower(nullif(p_payload->>'adjacent_mac_hint', '')),
+    coordinator.safe_bigint(p_payload->>'tsft_delta_us'),
+    coordinator.safe_bigint(p_payload->>'wall_clock_delta_ms')
+  )
+  on conflict (dedupe_key) do update set
+    signal_dbm = excluded.signal_dbm,
+    noise_dbm = excluded.noise_dbm,
+    frequency_mhz = excluded.frequency_mhz,
+    channel_flags = excluded.channel_flags,
+    data_rate_kbps = excluded.data_rate_kbps,
+    antenna_id = excluded.antenna_id,
+    tsft = excluded.tsft,
+    fragment_number = excluded.fragment_number,
+    channel_number = excluded.channel_number,
+    tsft_delta_us = excluded.tsft_delta_us,
+    wall_clock_delta_ms = excluded.wall_clock_delta_ms;
+
+  insert into wireless_frame_qos (
+    dedupe_key, qos_tid, qos_eosp, qos_ack_policy, qos_ack_policy_label,
+    qos_amsdu, more_data, retry, power_save, protected, frame_control_flags
+  )
+  values (
+    p_dedupe_key,
     coordinator.safe_int(p_payload->>'qos_tid'),
     coordinator.safe_bool(p_payload->>'qos_eosp'),
     coordinator.safe_int(p_payload->>'qos_ack_policy'),
     nullif(p_payload->>'qos_ack_policy_label', ''),
     coordinator.safe_bool(p_payload->>'qos_amsdu'),
+    coalesce(coordinator.safe_bool(p_payload->>'more_data'), false),
+    coalesce(coordinator.safe_bool(p_payload->>'retry'), false),
+    coalesce(coordinator.safe_bool(p_payload->>'power_save'), false),
+    coalesce(coordinator.safe_bool(p_payload->>'protected'), false),
+    coalesce(coordinator.safe_int(p_payload->>'frame_control_flags'), 0)
+  )
+  on conflict (dedupe_key) do update set
+    qos_tid = excluded.qos_tid,
+    qos_eosp = excluded.qos_eosp,
+    qos_ack_policy = excluded.qos_ack_policy,
+    qos_ack_policy_label = excluded.qos_ack_policy_label,
+    qos_amsdu = excluded.qos_amsdu,
+    more_data = excluded.more_data,
+    retry = excluded.retry,
+    power_save = excluded.power_save,
+    protected = excluded.protected,
+    frame_control_flags = excluded.frame_control_flags;
+
+  insert into wireless_frame_network (
+    dedupe_key, llc_oui, ethertype, ethertype_name, src_ip, dst_ip,
+    ip_ttl, ip_protocol, ip_protocol_name, src_port, dst_port,
+    transport_protocol, transport_length, transport_checksum, app_protocol
+  )
+  values (
+    p_dedupe_key,
     nullif(p_payload->>'llc_oui', ''),
     coordinator.safe_int(p_payload->>'ethertype'),
     nullif(p_payload->>'ethertype_name', ''),
@@ -74,73 +130,9 @@ begin
     nullif(p_payload->>'transport_protocol', ''),
     coordinator.safe_int(p_payload->>'transport_length'),
     coordinator.safe_int(p_payload->>'transport_checksum'),
-    nullif(p_payload->>'app_protocol', ''),
-    nullif(p_payload->>'ssdp_message_type', ''),
-    nullif(p_payload->>'ssdp_st', ''),
-    nullif(p_payload->>'ssdp_mx', ''),
-    nullif(p_payload->>'ssdp_usn', ''),
-    nullif(p_payload->>'dhcp_requested_ip', ''),
-    nullif(p_payload->>'dhcp_hostname', ''),
-    nullif(p_payload->>'dhcp_vendor_class', ''),
-    nullif(p_payload->>'dns_query_name', ''),
-    nullif(p_payload->>'mdns_name', ''),
-    nullif(p_payload->>'session_key', ''),
-    nullif(p_payload->>'retransmit_key', ''),
-    nullif(p_payload->>'frame_fingerprint', ''),
-    nullif(p_payload->>'payload_visibility', ''),
-    coordinator.safe_bigint(p_payload->>'tsft_delta_us'),
-    coordinator.safe_bigint(p_payload->>'wall_clock_delta_ms'),
-    coalesce(coordinator.safe_bool(p_payload->>'large_frame'), false),
-    coordinator.safe_bool(p_payload->>'mixed_encryption'),
-    coalesce(coordinator.safe_bool(p_payload->>'dedupe_or_replay_suspect'), false),
-    coalesce(coordinator.safe_int(p_payload->>'raw_len'), 0),
-    coalesce(coordinator.safe_int(p_payload->>'frame_control_flags'), 0),
-    coalesce(coordinator.safe_bool(p_payload->>'more_data'), false),
-    coalesce(coordinator.safe_bool(p_payload->>'retry'), false),
-    coalesce(coordinator.safe_bool(p_payload->>'power_save'), false),
-    coalesce(coordinator.safe_bool(p_payload->>'protected'), false),
-    coalesce(coordinator.safe_int(p_payload->>'security_flags'), 0),
-    coordinator.safe_double(p_payload->>'risk_score'),
-    nullif(p_payload->>'identity_source', ''),
-    case when jsonb_typeof(p_payload->'tags') = 'array' then p_payload->'tags' else '[]'::jsonb end,
-    nullif(p_payload->>'wps_device_name', ''),
-    nullif(p_payload->>'wps_manufacturer', ''),
-    nullif(p_payload->>'wps_model_name', ''),
-    nullif(p_payload->>'device_fingerprint', ''),
-    coalesce(coordinator.safe_bool(p_payload->>'handshake_captured'), false),
-    now(),
-    now()
+    nullif(p_payload->>'app_protocol', '')
   )
   on conflict (dedupe_key) do update set
-    sensor_id = excluded.sensor_id,
-    location_id = excluded.location_id,
-    username = excluded.username,
-    event_type = excluded.event_type,
-    schema_version = excluded.schema_version,
-    frame_type = excluded.frame_type,
-    frame_subtype = excluded.frame_subtype,
-    source_mac = excluded.source_mac,
-    transmitter_mac = excluded.transmitter_mac,
-    receiver_mac = excluded.receiver_mac,
-    bssid = excluded.bssid,
-    destination_bssid = excluded.destination_bssid,
-    ssid = excluded.ssid,
-    signal_dbm = excluded.signal_dbm,
-    noise_dbm = excluded.noise_dbm,
-    frequency_mhz = excluded.frequency_mhz,
-    channel_flags = excluded.channel_flags,
-    data_rate_kbps = excluded.data_rate_kbps,
-    antenna_id = excluded.antenna_id,
-    tsft = excluded.tsft,
-    fragment_number = excluded.fragment_number,
-    channel_number = excluded.channel_number,
-    signal_status = excluded.signal_status,
-    adjacent_mac_hint = excluded.adjacent_mac_hint,
-    qos_tid = excluded.qos_tid,
-    qos_eosp = excluded.qos_eosp,
-    qos_ack_policy = excluded.qos_ack_policy,
-    qos_ack_policy_label = excluded.qos_ack_policy_label,
-    qos_amsdu = excluded.qos_amsdu,
     llc_oui = excluded.llc_oui,
     ethertype = excluded.ethertype,
     ethertype_name = excluded.ethertype_name,
@@ -154,7 +146,25 @@ begin
     transport_protocol = excluded.transport_protocol,
     transport_length = excluded.transport_length,
     transport_checksum = excluded.transport_checksum,
-    app_protocol = excluded.app_protocol,
+    app_protocol = excluded.app_protocol;
+
+  insert into wireless_frame_app_signals (
+    dedupe_key, ssdp_message_type, ssdp_st, ssdp_mx, ssdp_usn,
+    dhcp_requested_ip, dhcp_hostname, dhcp_vendor_class, dns_query_name, mdns_name
+  )
+  values (
+    p_dedupe_key,
+    nullif(p_payload->>'ssdp_message_type', ''),
+    nullif(p_payload->>'ssdp_st', ''),
+    nullif(p_payload->>'ssdp_mx', ''),
+    nullif(p_payload->>'ssdp_usn', ''),
+    nullif(p_payload->>'dhcp_requested_ip', ''),
+    nullif(p_payload->>'dhcp_hostname', ''),
+    nullif(p_payload->>'dhcp_vendor_class', ''),
+    nullif(p_payload->>'dns_query_name', ''),
+    nullif(p_payload->>'mdns_name', '')
+  )
+  on conflict (dedupe_key) do update set
     ssdp_message_type = excluded.ssdp_message_type,
     ssdp_st = excluded.ssdp_st,
     ssdp_mx = excluded.ssdp_mx,
@@ -163,30 +173,67 @@ begin
     dhcp_hostname = excluded.dhcp_hostname,
     dhcp_vendor_class = excluded.dhcp_vendor_class,
     dns_query_name = excluded.dns_query_name,
-    mdns_name = excluded.mdns_name,
+    mdns_name = excluded.mdns_name;
+
+  insert into wireless_frame_identity (
+    dedupe_key, username, event_type, session_key, retransmit_key,
+    frame_fingerprint, payload_visibility, identity_source, device_fingerprint,
+    wps_device_name, wps_manufacturer, wps_model_name, handshake_captured
+  )
+  values (
+    p_dedupe_key,
+    nullif(p_payload->>'username', ''),
+    nullif(coalesce(p_payload->>'event_type', p_payload->>'type'), ''),
+    nullif(p_payload->>'session_key', ''),
+    nullif(p_payload->>'retransmit_key', ''),
+    nullif(p_payload->>'frame_fingerprint', ''),
+    nullif(p_payload->>'payload_visibility', ''),
+    nullif(p_payload->>'identity_source', ''),
+    nullif(p_payload->>'device_fingerprint', ''),
+    nullif(p_payload->>'wps_device_name', ''),
+    nullif(p_payload->>'wps_manufacturer', ''),
+    nullif(p_payload->>'wps_model_name', ''),
+    coalesce(coordinator.safe_bool(p_payload->>'handshake_captured'), false)
+  )
+  on conflict (dedupe_key) do update set
+    username = excluded.username,
+    event_type = excluded.event_type,
     session_key = excluded.session_key,
     retransmit_key = excluded.retransmit_key,
     frame_fingerprint = excluded.frame_fingerprint,
     payload_visibility = excluded.payload_visibility,
-    tsft_delta_us = excluded.tsft_delta_us,
-    wall_clock_delta_ms = excluded.wall_clock_delta_ms,
-    large_frame = excluded.large_frame,
-    mixed_encryption = excluded.mixed_encryption,
-    raw_len = excluded.raw_len,
-    frame_control_flags = excluded.frame_control_flags,
-    more_data = excluded.more_data,
-    retry = excluded.retry,
-    power_save = excluded.power_save,
-    protected = excluded.protected,
-    security_flags = excluded.security_flags,
-    risk_score = excluded.risk_score,
     identity_source = excluded.identity_source,
-    tags = excluded.tags,
+    device_fingerprint = excluded.device_fingerprint,
     wps_device_name = excluded.wps_device_name,
     wps_manufacturer = excluded.wps_manufacturer,
     wps_model_name = excluded.wps_model_name,
-    device_fingerprint = excluded.device_fingerprint,
-    handshake_captured = excluded.handshake_captured,
-    updated_at = now();
+    handshake_captured = excluded.handshake_captured;
+
+  insert into wireless_frame_security (
+    dedupe_key, large_frame, mixed_encryption, dedupe_or_replay_suspect,
+    raw_len, security_flags, risk_score, tags, signal_status, adjacent_mac_hint
+  )
+  values (
+    p_dedupe_key,
+    coalesce(coordinator.safe_bool(p_payload->>'large_frame'), false),
+    coordinator.safe_bool(p_payload->>'mixed_encryption'),
+    coalesce(coordinator.safe_bool(p_payload->>'dedupe_or_replay_suspect'), false),
+    coalesce(coordinator.safe_int(p_payload->>'raw_len'), 0),
+    coalesce(coordinator.safe_int(p_payload->>'security_flags'), 0),
+    coordinator.safe_double(p_payload->>'risk_score'),
+    case when jsonb_typeof(p_payload->'tags') = 'array' then p_payload->'tags' else '[]'::jsonb end,
+    nullif(p_payload->>'signal_status', ''),
+    lower(nullif(p_payload->>'adjacent_mac_hint', ''))
+  )
+  on conflict (dedupe_key) do update set
+    large_frame = excluded.large_frame,
+    mixed_encryption = excluded.mixed_encryption,
+    dedupe_or_replay_suspect = wireless_frame_security.dedupe_or_replay_suspect or excluded.dedupe_or_replay_suspect,
+    raw_len = excluded.raw_len,
+    security_flags = excluded.security_flags,
+    risk_score = excluded.risk_score,
+    tags = excluded.tags,
+    signal_status = excluded.signal_status,
+    adjacent_mac_hint = excluded.adjacent_mac_hint;
 end;
 $$;

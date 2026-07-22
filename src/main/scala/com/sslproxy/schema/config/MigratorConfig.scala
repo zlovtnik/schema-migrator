@@ -1,17 +1,21 @@
 package com.sslproxy.schema.config
 
 import java.nio.file.{Files, Path}
+import java.net.URI
 import java.util.Base64
+import java.util.Locale
 import scala.concurrent.duration.FiniteDuration
+import scala.util.Try
 
 enum DbKind:
-  case Postgres, Oracle
+  case Postgres, Oracle, TiDB
 
 object DbKind:
   def parse(value: String): Either[String, DbKind] =
     value.trim.toLowerCase match
       case "postgres" | "postgresql" => Right(Postgres)
       case "oracle" => Right(Oracle)
+      case "tidb" | "mysql" => Right(TiDB)
       case other => Left(s"unsupported db kind '$other'")
 
 final case class MigratorConfig(
@@ -27,6 +31,8 @@ final case class MigratorConfig(
   oracleTnsAlias: Option[String],
   oracleUser: Option[String],
   oraclePasswordFile: Option[Path],
+  tidbUser: Option[String] = None,
+  tidbPassword: Option[String] = None,
   json: Boolean,
   server: ServerConfig,
   customer: Option[String] = None
@@ -58,6 +64,8 @@ final case class MigratorConfig(
         Left("Oracle requires --oracle-pass-file (or ORACLE_PASS_FILE)")
       case DbKind.Postgres if databaseUrl.isEmpty =>
         Left("Postgres requires --database-url (or DATABASE_URL)")
+      case DbKind.TiDB if databaseUrl.isEmpty =>
+        Left("TiDB requires --database-url (or DATABASE_URL)")
       case _ => Right(())
 
   private def validateSqlDir(): Either[String, Unit] =
@@ -73,12 +81,48 @@ final case class MigratorConfig(
         Left("customer must be a single directory name")
       case Some(_) => Right(())
 
-final case class MongoConfig(uri: String, database: String, targetsCollection: String):
+final case class StateStoreConfig(
+  url: String,
+  user: String,
+  password: String,
+  poolSize: Int = 10
+):
   def validate: Either[String, Unit] =
-    if uri.trim.isEmpty then Left("BEDROCK_MONGO_URI must not be empty")
-    else if database.trim.isEmpty then Left("BEDROCK_MONGO_DATABASE must not be empty")
-    else if targetsCollection.trim.isEmpty then Left("BEDROCK_MONGO_TARGETS_COLLECTION must not be empty")
-    else Right(())
+    if url.trim.isEmpty then Left("BEDROCK_STATE_DB_URL must not be empty")
+    else if !url.trim.startsWith("jdbc:mysql://") then
+      Left("BEDROCK_STATE_DB_URL must be a JDBC MySQL/TiDB URL starting with jdbc:mysql://")
+    else if user.trim.isEmpty then Left("BEDROCK_STATE_DB_USER must not be empty")
+    else if user.trim.equalsIgnoreCase("root") then Left("BEDROCK_STATE_DB_USER must be a dedicated non-root TiDB user")
+    else if password.trim.isEmpty then Left("BEDROCK_STATE_DB_PASSWORD must not be empty")
+    else if poolSize < 1 then Left("BEDROCK_STATE_DB_POOL_SIZE must be at least 1")
+    else validateJdbcUrl
+
+  private def validateJdbcUrl: Either[String, Unit] =
+    Try(URI.create(url.trim.stripPrefix("jdbc:"))).toEither
+      .left
+      .map(_ => "BEDROCK_STATE_DB_URL must be a valid JDBC MySQL/TiDB URL")
+      .flatMap { uri =>
+        val database = Option(uri.getPath).getOrElse("").stripPrefix("/")
+        val params = Option(uri.getRawQuery)
+          .toList
+          .flatMap(_.split("&").toList)
+          .flatMap { entry =>
+            entry.split("=", 2).toList match
+              case key :: value :: Nil => Some(key.toLowerCase(Locale.ROOT) -> value)
+              case _ => None
+          }
+          .toMap
+        if Option(uri.getHost).forall(_.trim.isEmpty) then Left("BEDROCK_STATE_DB_URL must include a TiDB host")
+        else if Set("localhost", "127.0.0.1", "::1").contains(uri.getHost.toLowerCase(Locale.ROOT)) then
+          Left("BEDROCK_STATE_DB_URL must use an external non-loopback TiDB host")
+        else if Option(uri.getUserInfo).nonEmpty then
+          Left("BEDROCK_STATE_DB_URL must not contain inline credentials")
+        else if database != "schema_migrator" then
+          Left("BEDROCK_STATE_DB_URL must select the schema_migrator database")
+        else if !params.get("sslmode").exists(_.equalsIgnoreCase("VERIFY_IDENTITY")) then
+          Left("BEDROCK_STATE_DB_URL must set sslMode=VERIFY_IDENTITY")
+        else Right(())
+      }
 
 final case class ServerConfig(
   host: String,
@@ -96,18 +140,10 @@ final case class ServerConfig(
   dbTestAllowedHosts: Set[String],
   patchStageDir: Path,
   apiBearerToken: Option[String] = None,
-  mongo: Option[MongoConfig] = None,
-  sqlFilesCollection: String = "sql_files",
-  repoSyncCollection: String = "repo_sync_state",
+  stateStore: Option[StateStoreConfig] = None,
   repoCacheDir: Path = Path.of(sys.props.getOrElse("java.io.tmpdir", "."), "schema-migrator-repos"),
   repoCloneTimeoutSeconds: Int = 60,
-  patchesCollection: String = "patches",
-  runsCollection: String = "runs",
-  validationsCollection: String = "validations",
-  snapshotsCollection: String = "snapshots",
-  auditCollection: String = "audit_events",
-  keycloakConfigCollection: String = "keycloak_config",
-  mongoConfigError: Option[String] = None
+  stateStoreConfigError: Option[String] = None
 ):
   def validate: Either[String, Unit] =
     if host.trim.isEmpty then Left("server host must not be empty")
@@ -121,25 +157,17 @@ final case class ServerConfig(
     else if keycloakEnabled && keycloakAudience.forall(_.trim.isEmpty) && keycloakClientId.forall(_.trim.isEmpty) then
       Left("BEDROCK_KEYCLOAK_AUDIENCE or BEDROCK_KEYCLOAK_CLIENT_ID must be set when Keycloak auth is enabled")
     else if apiBearerToken.forall(_.trim.isEmpty) then Left("BEDROCK_API_BEARER_TOKEN must not be empty")
-    else if sqlFilesCollection.trim.isEmpty then Left("BEDROCK_SQL_FILES_COLLECTION must not be empty")
-    else if repoSyncCollection.trim.isEmpty then Left("BEDROCK_REPO_SYNC_COLLECTION must not be empty")
     else if repoCloneTimeoutSeconds < 1 then Left("BEDROCK_REPO_CLONE_TIMEOUT_SECONDS must be at least 1")
-    else if patchesCollection.trim.isEmpty then Left("BEDROCK_PATCHES_COLLECTION must not be empty")
-    else if runsCollection.trim.isEmpty then Left("BEDROCK_RUNS_COLLECTION must not be empty")
-    else if validationsCollection.trim.isEmpty then Left("BEDROCK_VALIDATIONS_COLLECTION must not be empty")
-    else if snapshotsCollection.trim.isEmpty then Left("BEDROCK_SNAPSHOTS_COLLECTION must not be empty")
-    else if auditCollection.trim.isEmpty then Left("BEDROCK_AUDIT_COLLECTION must not be empty")
-    else if keycloakConfigCollection.trim.isEmpty then Left("BEDROCK_KEYCLOAK_CONFIG_COLLECTION must not be empty")
     else
       validateEncryptKeyBase64()
-        .flatMap(_ => validateMongo())
+        .flatMap(_ => validateStateStore())
         .flatMap(_ => validatePatchStageDir())
         .flatMap(_ => validateRepoCacheDir())
 
-  def mongoConfig: Either[String, MongoConfig] =
-    mongo.toRight(
-      mongoConfigError.getOrElse(
-        "BEDROCK_MONGO_URI, BEDROCK_MONGO_DATABASE, and BEDROCK_MONGO_TARGETS_COLLECTION must be set"
+  def stateStoreConfig: Either[String, StateStoreConfig] =
+    stateStore.toRight(
+      stateStoreConfigError.getOrElse(
+        "BEDROCK_STATE_DB_URL, BEDROCK_STATE_DB_USER, and BEDROCK_STATE_DB_PASSWORD must be set"
       )
     )
 
@@ -154,8 +182,8 @@ final case class ServerConfig(
           else Left("AES-GCM key must decode to 32 bytes")
         catch case error: IllegalArgumentException => Left(error.getMessage)
 
-  private def validateMongo(): Either[String, Unit] =
-    mongoConfig.flatMap(_.validate)
+  private def validateStateStore(): Either[String, Unit] =
+    stateStoreConfig.flatMap(_.validate)
 
   private def validatePatchStageDir(): Either[String, Unit] =
     validateWritableDirectory(patchStageDir, "patch stage")
@@ -167,7 +195,9 @@ final case class ServerConfig(
     try
       if Files.exists(path) && !Files.isDirectory(path) then Left(s"$label path '$path' is not a directory")
       else
-        if Files.notExists(path) then Files.createDirectories(path)
+        if Files.notExists(path) then
+          Files.createDirectories(path)
+          ()
         if !Files.isDirectory(path) then Left(s"$label path '$path' is not a directory")
         else if !Files.isWritable(path) then Left(s"$label directory '$path' is not writable")
         else Right(())

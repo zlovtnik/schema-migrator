@@ -1,14 +1,14 @@
 # Schema Migrator Kubernetes Stack
 
-This directory defines the Kubernetes replacement stack for the schema migrator UI/API:
+This standalone stack deploys only the schema-migrator backend, UI, and edge router. It does not deploy PostgreSQL, MongoDB, TiDB, or Keycloak.
 
-- one public `LoadBalancer` service, `schema-migrator-edge`, managed by OCI/OKE
-- Traefik routing `/api` to the backend and `/` to the UI
-- Keycloak on port `8080` with the existing `middleware` realm and `bedrock-ui` client
-- MongoDB as an internal persistence dependency
+Before applying it:
 
-Before applying, replace the placeholders in `secret.template.yaml` and set the public origin in
-`stack.yaml` after OCI assigns the new load balancer address:
+1. Provision an external TiDB v8.5+ `schema_migrator` database and dedicated non-root application user.
+2. Apply the canonical `sql/tidb/schema_migrator` migrations with the repository provisioning schema job and its separate DDL credential. The application never creates or migrates its own tables.
+3. Create a PKCS12 truststore containing the TiDB server CA. Put its base64 value and password in `secret.template.yaml`.
+4. Set a JDBC URL ending in `/schema_migrator` with `sslMode=VERIFY_IDENTITY`, plus the external OIDC issuer/JWKS values.
+5. Replace the pinned image and public-origin placeholders in `stack.yaml`.
 
 ```bash
 kubectl apply -f namespace.yaml
@@ -17,23 +17,4 @@ kubectl apply -f stack.yaml
 kubectl -n schema-migrator get svc schema-migrator-edge -w
 ```
 
-Once `EXTERNAL-IP` is assigned, update these values and roll the affected deployments:
-
-- `BEDROCK_CORS_ORIGINS`
-- `BEDROCK_KEYCLOAK_ISSUER`
-- `VITE_KEYCLOAK_URL`
-- `VITE_KEYCLOAK_REDIRECT_URI`
-
-The deployment requires an HTTPS hostname backed by a valid load-balancer or
-Traefik certificate. Replace the plaintext IP example below with your assigned
-`https://` origin (e.g. `https://schema.example.com`) and reuse that single
-origin for the issuer, UI URL, and redirect URI:
-
-```text
-BEDROCK_KEYCLOAK_ISSUER=https://schema.example.com/realms/middleware
-VITE_KEYCLOAK_URL=https://schema.example.com
-VITE_KEYCLOAK_REDIRECT_URI=https://schema.example.com/callback
-```
-
-The backend reads Keycloak keys through the internal `BEDROCK_KEYCLOAK_JWKS_URI`, so only the issuer
-must match the browser-facing token issuer.
+Backend startup fails closed when TiDB is older than v8.5, the session is not UTC, or the canonical migration ledger/readiness checksum is missing or mismatched. External migration target credentials are entered per target and encrypted in TiDB; no global PostgreSQL target credential is mounted.

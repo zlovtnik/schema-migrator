@@ -38,25 +38,42 @@ private[schema] object PostgresCatalogReader:
     connection: Connection,
     expected: List[ExpectedObject]
   ): (List[ExpectedObject], List[String]) =
-    val results = expected.zipWithIndex.map { case (item, index) =>
-      item.expectedDdl match
-        case Some(ddl) if isViewType(item.key.objectType) =>
-          canonicalViewDdl(connection, item.key, ddl, s"expected_$index") match
-            case Right(canonical) => item.copy(expectedDdl = Some(canonical)) -> None
-            case Left(message) => item -> Some(message)
-        case _ => item -> None
-    }
-    results.map(_._1) -> results.flatMap(_._2).distinct
+    canonicalizeViews(
+      connection,
+      expected,
+      _.key,
+      _.expectedDdl,
+      (item, canonical) => item.copy(expectedDdl = Some(canonical)),
+      "expected"
+    )
 
   private def canonicalizeControlViews(
     connection: Connection,
     control: List[ControlObject]
   ): (List[ControlObject], List[String]) =
-    val results = control.zipWithIndex.map { case (item, index) =>
-      item.expectedDdl match
-        case Some(ddl) if isViewType(item.key.objectType) =>
-          canonicalViewDdl(connection, item.key, ddl, s"control_$index") match
-            case Right(canonical) => item.copy(expectedDdl = Some(canonical)) -> None
+    canonicalizeViews(
+      connection,
+      control,
+      _.key,
+      _.expectedDdl,
+      (item, canonical) => item.copy(expectedDdl = Some(canonical)),
+      "control"
+    )
+
+  private def canonicalizeViews[A](
+    connection: Connection,
+    items: List[A],
+    itemKey: A => ObjectKey,
+    itemDdl: A => Option[String],
+    updateDdl: (A, String) => A,
+    probePrefix: String
+  ): (List[A], List[String]) =
+    val results = items.zipWithIndex.map { case (item, index) =>
+      val key = itemKey(item)
+      itemDdl(item) match
+        case Some(ddl) if isViewType(key.objectType) =>
+          canonicalViewDdl(connection, key, ddl, s"${probePrefix}_$index") match
+            case Right(canonical) => updateDdl(item, canonical) -> None
             case Left(message) => item -> Some(message)
         case _ => item -> None
     }
@@ -99,7 +116,9 @@ private[schema] object PostgresCatalogReader:
 
   private def dropTemporaryView(connection: Connection, probeName: String): Unit =
     val statement = connection.createStatement()
-    try statement.execute(s"drop view if exists pg_temp.$probeName")
+    try
+      statement.execute(s"drop view if exists pg_temp.$probeName")
+      ()
     catch case NonFatal(_) => ()
     finally statement.close()
 

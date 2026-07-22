@@ -81,7 +81,7 @@ begin
     now(),
     now()
   )
-  on conflict (dedupe_key)
+  on conflict (dedupe_key, stream_name)
   do update set
     observed_at = excluded.observed_at,
     payload_ref = excluded.payload_ref,

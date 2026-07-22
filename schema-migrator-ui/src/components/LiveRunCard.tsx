@@ -10,6 +10,7 @@ import { ProgressBar } from "./ui/ProgressBar";
 
 interface LiveRunCardProps {
   run: Run;
+  sourceLabel?: string;
   onAbort: (runId: string) => void;
   aborting?: boolean;
 }
@@ -20,7 +21,7 @@ const formatElapsed = (seconds: number) => {
   return `${minutes}:${remaining.toString().padStart(2, "0")}`;
 };
 
-export const LiveRunCard = ({ run, onAbort, aborting = false }: LiveRunCardProps) => {
+export const LiveRunCard = ({ run, sourceLabel = "Schema apply", onAbort, aborting = false }: LiveRunCardProps) => {
   const queryClient = useQueryClient();
   const stream = useRunStream(run.id, run, {
     enabled: run.status === "running" || run.status === "pending",
@@ -56,7 +57,7 @@ export const LiveRunCard = ({ run, onAbort, aborting = false }: LiveRunCardProps
       <div className="live-run__header">
         <div>
           <span className="eyebrow">Active run</span>
-          <h2>Run {run.patch_id}</h2>
+          <h2 title={`Patch ID: ${run.patch_id}`}>{sourceLabel}</h2>
         </div>
         <StatusBadge status={stream.runStatus} />
       </div>

@@ -28,13 +28,13 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 import java.sql.SQLException
 
-final class PostgresProvider(config: JdbcConnectionConfig) extends DbProvider[IO]:
+final class PostgresProvider(config: JdbcConnectionConfig) extends DbProvider:
   override val dialect: SqlDialect = SqlDialect.Postgres
 
-  override def session: Resource[IO, DbSession[IO]] =
+  override def session: Resource[IO, DbSession] =
     DoobieSupport.postgresSessionTransactor(config).map(PostgresSession(_))
 
-final class PostgresSession(transactor: Transactor[IO]) extends DbSession[IO]:
+final class PostgresSession(transactor: Transactor[IO]) extends DbSession:
   private val nonTransactionalTransactor = DoobieSupport.withoutTransaction(transactor)
 
   private val lockManager = LockManager.postgres(PostgresSession.applyLockKey, PostgresSession.applyLockNamespace)
@@ -53,10 +53,9 @@ final class PostgresSession(transactor: Transactor[IO]) extends DbSession[IO]:
   override def releaseLock: IO[Unit] = lockManager.release.transact(transactor)
   override def prepare(objects: List[SchemaObject]): IO[List[PreparedObject]] =
     store.prepare(objects).transact(transactor)
+  override def retire(objects: List[SchemaObject]): IO[Unit] = store.retire(objects).transact(transactor)
   override def fetchStatus: IO[List[ObjectStatus]] = store.fetchStatus.transact(transactor)
   override def fetchReady: IO[SchemaReadyStatus] = store.fetchReady.transact(transactor)
-  override def checkReady: IO[Boolean] = fetchReady.map(_.ready)
-
   override def recordSkipped(prepared: PreparedObject): IO[Unit] =
     applyLog.recordSkipped(prepared.objectDef, prepared.oldSha256).transact(transactor)
 

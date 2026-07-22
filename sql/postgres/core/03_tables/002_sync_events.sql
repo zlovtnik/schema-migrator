@@ -2,7 +2,7 @@
 -- folder: tables
 -- depends_on: sync_cursors
 create table if not exists sync_events (
-  dedupe_key text primary key,
+  dedupe_key text not null,
   stream_name text not null,
   observed_at timestamptz not null,
   payload_ref text not null,
@@ -15,8 +15,33 @@ create table if not exists sync_events (
   event_kind text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  constraint sync_events_pkey primary key (dedupe_key, stream_name),
   constraint chk_sync_events_status check (status in ('pending','processing','batched','failed'))
 );
+
+do $$
+begin
+  if exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'sync_events'::regclass
+      and contype = 'p'
+      and pg_get_constraintdef(oid) <> 'PRIMARY KEY (dedupe_key, stream_name)'
+  ) then
+    alter table sync_events drop constraint sync_events_pkey;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'sync_events'::regclass
+      and contype = 'p'
+  ) then
+    alter table sync_events
+      add constraint sync_events_pkey primary key (dedupe_key, stream_name);
+  end if;
+end;
+$$;
 
 alter table sync_events set (
   autovacuum_vacuum_scale_factor = 0.005,

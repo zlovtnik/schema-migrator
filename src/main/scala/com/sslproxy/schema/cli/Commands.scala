@@ -3,17 +3,17 @@ package com.sslproxy.schema.cli
 import cats.effect.{ExitCode, IO}
 import cats.syntax.all.*
 import com.sslproxy.schema.config.{DbKind, MigratorConfig}
-import com.sslproxy.schema.db.{DbProvider, JdbcSupport}
+import com.sslproxy.schema.db.DbProvider
 import com.sslproxy.schema.db.oracle.OracleProvider
 import com.sslproxy.schema.db.postgres.PostgresProvider
+import com.sslproxy.schema.db.tidb.TiDBProvider
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.discovery.{BaselineGenerator, DiscoveryService}
 import com.sslproxy.schema.effect.{Lock, Retry, RetryPolicy}
-import com.sslproxy.schema.engine.{ApplyCallbacks, MigrationEngine}
+import com.sslproxy.schema.engine.{ApplyCallbacks, MigrationEngine, MigrationPlan}
 import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.output.{JsonReporter, ReportPrinter}
 import com.sslproxy.schema.server.{HttpServer, PostgresDriftCheck}
-import com.sslproxy.schema.validation.Validator
 import io.circe.Json
 import io.circe.syntax.*
 
@@ -44,7 +44,7 @@ object Commands:
           HttpServer.serve(config).as(success)
 
         case CliCommand.ListFiles =>
-          val discovery = DiscoveryService[IO]().discover(config.sqlDir, config.dbKind, config.customer)
+          val discovery = DiscoveryService().discover(config.sqlDir, config.dbKind, config.customer)
           discovery
             .flatMap { result =>
               if config.json then JsonReporter.discovery(result) else ReportPrinter.discovery(result)
@@ -53,7 +53,7 @@ object Commands:
 
         case CliCommand.GenerateBaseline =>
           for
-            discovery <- DiscoveryService[IO]().discover(config.sqlDir, config.dbKind, config.customer)
+            discovery <- DiscoveryService().discover(config.sqlDir, config.dbKind, config.customer)
             _ <- if config.json then IO.unit else ReportPrinter.warnings(discovery.warnings)
             path <- BaselineGenerator.write(config.sqlDir, config.dbKind, discovery.files)
             _ <-
@@ -63,9 +63,9 @@ object Commands:
 
         case CliCommand.Validate =>
           for
-            discovery <- DiscoveryService[IO]().discover(config.sqlDir, config.dbKind, config.customer)
-            _ <- if config.json then IO.unit else ReportPrinter.warnings(discovery.warnings)
-            report <- Validator[IO](config.dbKind).validate(discovery.files)
+            discovery <- DiscoveryService().discover(config.sqlDir, config.dbKind, config.customer)
+            plan <- MigrationPlan.inspect(config.dbKind, SqlDialect.forDbKind(config.dbKind), discovery)
+            report = plan.validation
             _ <- if config.json then JsonReporter.validation(report) else ReportPrinter.validation(report)
           yield if report.hasErrors then partialFailure else success
 
@@ -73,7 +73,7 @@ object Commands:
           if config.dryRun then dryRun(config).as(success)
           else
             withProvider(config) { provider =>
-              val engine = MigrationEngine(provider, DiscoveryService[IO]())
+              val engine = MigrationEngine(provider, DiscoveryService())
               engine.apply(config, ApplyCallbacks.console(config)).flatMap { report =>
                 val print = if config.json then JsonReporter.applyReport(report) else ReportPrinter.applyReport(report)
                 print.as(if report.failedFiles == 0 then success else partialFailure)
@@ -93,9 +93,10 @@ object Commands:
           withSession(config) { session =>
             session.bootstrap *>
               Lock
-                .fromAcquireRelease(session.acquireLock, session.releaseLock)
-                .withLock(session.rollbackObject(config.sqlDir, objectName))
-                .as(success)
+                .use(session.acquireLock, session.releaseLock)(session.rollbackObject(config.sqlDir, objectName))
+                .as(
+                  success
+                )
           }
 
         case CliCommand.Ready(strict) =>
@@ -126,10 +127,10 @@ object Commands:
       case CliCommand.Apply if config.dryRun => config.validateSqlOnly
       case _ => config.validate
 
-  private def withProvider[A](config: MigratorConfig)(use: DbProvider[IO] => IO[A]): IO[A] =
+  private def withProvider[A](config: MigratorConfig)(use: DbProvider => IO[A]): IO[A] =
     providerFor(config).flatMap(use)
 
-  private def withSession[A](config: MigratorConfig)(use: com.sslproxy.schema.db.DbSession[IO] => IO[A]): IO[A] =
+  private def withSession[A](config: MigratorConfig)(use: com.sslproxy.schema.db.DbSession => IO[A]): IO[A] =
     providerFor(config).flatMap { provider =>
       Retry.withBackoff(
         RetryPolicy(config.connectRetries + 1, config.connectRetryBackoff),
@@ -137,10 +138,11 @@ object Commands:
       )(provider.session.use(use))
     }
 
-  private def providerFor(config: MigratorConfig): IO[DbProvider[IO]] =
+  private def providerFor(config: MigratorConfig): IO[DbProvider] =
     config.dbKind match
       case DbKind.Postgres => PostgresProvider.fromConfig(config)
       case DbKind.Oracle => OracleProvider.fromConfig(config)
+      case DbKind.TiDB => TiDBProvider.fromConfig(config)
 
   private def exitCodeFor(error: Throwable): ExitCode =
     if MigratorError.isConnectionFailure(error) then connectionFailure
@@ -150,9 +152,9 @@ object Commands:
 
   private def dryRun(config: MigratorConfig): IO[Unit] =
     for
-      discovery <- DiscoveryService[IO]().discover(config.sqlDir, config.dbKind, config.customer)
-      _ <- if config.json then IO.unit else ReportPrinter.warnings(discovery.warnings)
-      previews <- discovery.files.traverse { file =>
+      plan <- MigrationPlan.prepare(config, SqlDialect.forDbKind(config.dbKind), DiscoveryService())
+      _ <- if config.json then IO.unit else ReportPrinter.warnings(plan.warnings)
+      previews <- plan.files.traverse { file =>
         IO.blocking {
           val sql = file.readString
           val compact = sql.split("\\s+").filter(_.nonEmpty).mkString(" ")

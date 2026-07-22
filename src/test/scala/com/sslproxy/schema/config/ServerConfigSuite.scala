@@ -18,25 +18,25 @@ class ServerConfigSuite extends FunSuite:
         dbTestAllowedHosts = Set.empty,
         patchStageDir = stageDir,
         apiBearerToken = Some("api-token"),
-        mongo = Some(MongoConfig("mongodb://localhost:27017", "schema_migrator", "targets"))
+        stateStore = Some(validStateStore)
       )
 
       assert(config.validate.left.exists(_.nonEmpty))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
-  test("server validation requires static API bearer token and Mongo config") {
+  test("server validation requires static API bearer token and TiDB state store config") {
     val stageDir = Files.createTempDirectory("schema-migrator-config")
     try
       val missingToken = validConfig(stageDir).copy(apiBearerToken = None)
-      val missingMongo = validConfig(stageDir).copy(mongo = None)
+      val missingStateStore = validConfig(stageDir).copy(stateStore = None)
 
       assertEquals(missingToken.validate, Left("BEDROCK_API_BEARER_TOKEN must not be empty"))
       assertEquals(
-        missingMongo.validate,
-        Left("BEDROCK_MONGO_URI, BEDROCK_MONGO_DATABASE, and BEDROCK_MONGO_TARGETS_COLLECTION must be set")
+        missingStateStore.validate,
+        Left("BEDROCK_STATE_DB_URL, BEDROCK_STATE_DB_USER, and BEDROCK_STATE_DB_PASSWORD must be set")
       )
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation requires encryption key for persisted targets") {
@@ -45,7 +45,7 @@ class ServerConfigSuite extends FunSuite:
       val missingEncryptKey = validConfig(stageDir).copy(encryptKeyBase64 = None)
 
       assertEquals(missingEncryptKey.validate, Left("BEDROCK_ENCRYPT_KEY must not be empty"))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation only requires dev auth secret when dev auth is enabled") {
@@ -56,7 +56,7 @@ class ServerConfigSuite extends FunSuite:
 
       assertEquals(disabled.validate, Right(()))
       assertEquals(enabled.validate, Left("BEDROCK_DEV_AUTH_SECRET must not be empty when dev auth is enabled"))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation requires Keycloak issuer when Keycloak auth is enabled") {
@@ -67,7 +67,7 @@ class ServerConfigSuite extends FunSuite:
 
       assertEquals(disabled.validate, Right(()))
       assertEquals(enabled.validate, Left("BEDROCK_KEYCLOAK_ISSUER must not be empty when Keycloak auth is enabled"))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
   test("server validation requires a Keycloak audience or client id when Keycloak auth is enabled") {
@@ -88,16 +88,47 @@ class ServerConfigSuite extends FunSuite:
       )
       assertEquals(withAudience.validate, Right(()))
       assertEquals(withClientId.validate, Right(()))
-    finally Files.deleteIfExists(stageDir)
+    finally deleteIfExists(stageDir)
   }
 
-  test("server validation requires Keycloak config collection name") {
+  test("server validation rejects non-JDBC-MySQL and non-verified state URLs") {
     val stageDir = Files.createTempDirectory("schema-migrator-config")
     try
-      val config = validConfig(stageDir).copy(keycloakConfigCollection = "")
+      val postgres = validConfig(stageDir).copy(
+        stateStore = Some(StateStoreConfig("jdbc:postgresql://db.example/sync", "migrator", "secret"))
+      )
+      val r2dbc = validConfig(stageDir).copy(
+        stateStore = Some(StateStoreConfig("r2dbc:mysql://db.example/schema_migrator", "migrator", "secret"))
+      )
+      val unverified = validConfig(stageDir).copy(
+        stateStore = Some(StateStoreConfig("jdbc:mysql://db.example/schema_migrator?sslMode=REQUIRED", "migrator", "secret"))
+      )
 
-      assertEquals(config.validate, Left("BEDROCK_KEYCLOAK_CONFIG_COLLECTION must not be empty"))
-    finally Files.deleteIfExists(stageDir)
+      assertEquals(
+        postgres.validate,
+        Left("BEDROCK_STATE_DB_URL must be a JDBC MySQL/TiDB URL starting with jdbc:mysql://")
+      )
+      assertEquals(
+        r2dbc.validate,
+        Left("BEDROCK_STATE_DB_URL must be a JDBC MySQL/TiDB URL starting with jdbc:mysql://")
+      )
+      assertEquals(unverified.validate, Left("BEDROCK_STATE_DB_URL must set sslMode=VERIFY_IDENTITY"))
+    finally deleteIfExists(stageDir)
+  }
+
+  test("state database validation requires the canonical database and a non-root account") {
+    assertEquals(
+      validStateStore.copy(url = "jdbc:mysql://db.example/other?sslMode=VERIFY_IDENTITY").validate,
+      Left("BEDROCK_STATE_DB_URL must select the schema_migrator database")
+    )
+    assertEquals(
+      validStateStore.copy(user = "root").validate,
+      Left("BEDROCK_STATE_DB_USER must be a dedicated non-root TiDB user")
+    )
+    assertEquals(
+      validStateStore.copy(url = "jdbc:mysql://127.0.0.1:4000/schema_migrator?sslMode=VERIFY_IDENTITY").validate,
+      Left("BEDROCK_STATE_DB_URL must use an external non-loopback TiDB host")
+    )
   }
 
   private def validConfig(stageDir: java.nio.file.Path): ServerConfig =
@@ -111,5 +142,12 @@ class ServerConfigSuite extends FunSuite:
       dbTestAllowedHosts = Set.empty,
       patchStageDir = stageDir,
       apiBearerToken = Some("api-token"),
-      mongo = Some(MongoConfig("mongodb://localhost:27017", "schema_migrator", "targets"))
+      stateStore = Some(validStateStore)
     )
+
+  private val validStateStore =
+    StateStoreConfig("jdbc:mysql://tidb.example:4000/schema_migrator?sslMode=VERIFY_IDENTITY", "migrator", "secret")
+
+  private def deleteIfExists(path: java.nio.file.Path): Unit =
+    Files.deleteIfExists(path)
+    ()

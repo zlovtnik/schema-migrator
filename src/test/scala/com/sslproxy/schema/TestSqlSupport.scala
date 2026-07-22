@@ -71,3 +71,4 @@ trait TestSqlSupport:
         try children.iterator().asScala.foreach(deleteRecursively)
         finally children.close()
       Files.deleteIfExists(path)
+      ()

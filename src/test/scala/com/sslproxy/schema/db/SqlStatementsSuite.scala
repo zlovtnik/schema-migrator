@@ -16,3 +16,15 @@ class SqlStatementsSuite extends FunSuite:
     assert(postgres.values.forall(_.trim.nonEmpty))
     assert(oracle.values.forall(_.trim.nonEmpty))
   }
+
+  test("retired objects do not block schema readiness") {
+    val postgresBootstrap = PostgresStatements.bootstrapSql.toLowerCase
+    val oracleReady = OracleStatements.viewSchemaReady.toLowerCase
+
+    assert(PostgresStatements.retireSql.toLowerCase.contains("apply_status = 'retired'"))
+    assert(OracleStatements.retireSql.toLowerCase.contains("apply_status = 'retired'"))
+    assert(postgresBootstrap.contains("apply_status <> 'retired'"))
+    assert(postgresBootstrap.contains("'applied', 'skipped', 'retired'"))
+    assert(oracleReady.contains("apply_status <> 'retired'"))
+    assert(oracleReady.contains("'applied', 'skipped', 'retired'"))
+  }

@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { createPatchFromSqlFiles, deletePatch, getPatch, listPatches, uploadPatch } from "../api/patches";
+import { createPatchFromSqlFiles, deletePatch, getPatch, listPatches } from "../api/patches";
 import { triggerRun } from "../api/runs";
 import { runKeys } from "./useRuns";
-import type { CreatePatchFromSqlFilesPayload, TriggerRunPayload, UploadPatchPayload } from "../types";
+import type { CreatePatchFromSqlFilesPayload, TriggerRunPayload } from "../types";
 
 export const patchKeys = {
   all: ["patches"] as const,
@@ -28,17 +28,6 @@ export const useCreatePatchFromSqlFiles = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: CreatePatchFromSqlFilesPayload) => createPatchFromSqlFiles(payload),
-    onSuccess: (patch) => {
-      void queryClient.invalidateQueries({ queryKey: patchKeys.all });
-      void queryClient.invalidateQueries({ queryKey: patchKeys.detail(patch.id) });
-    }
-  });
-};
-
-export const useUploadPatch = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: UploadPatchPayload) => uploadPatch(payload),
     onSuccess: (patch) => {
       void queryClient.invalidateQueries({ queryKey: patchKeys.all });
       void queryClient.invalidateQueries({ queryKey: patchKeys.detail(patch.id) });

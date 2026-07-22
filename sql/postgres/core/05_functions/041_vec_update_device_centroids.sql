@@ -21,7 +21,7 @@ begin
       lower(source_mac) as source_mac,
       embedding::vector(768) as emb,
       embedded_at
-    from vec_embeddings
+    from vec_embeddings_expanded
     where embedding_kind = 'event'
       and embedding_model = p_model
       and embedding_dimensions = 768

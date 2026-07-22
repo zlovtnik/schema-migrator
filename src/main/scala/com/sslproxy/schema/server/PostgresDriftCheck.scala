@@ -34,14 +34,29 @@ private[schema] object PostgresDriftCheck:
           )
         case DbKind.Postgres =>
           postgresReport(config, now)
+        case DbKind.TiDB =>
+          IO.pure(
+            DriftResponse(
+              target_id = targetId(config),
+              db_kind = "tidb",
+              supported = false,
+              checked_at = now,
+              control_summary = None,
+              control_objects = Nil,
+              items = Nil,
+              warnings = List(
+                "TiDB drift introspection is not implemented; use check-connection for TiDB validation."
+              )
+            )
+          )
     }
 
   private def postgresReport(config: MigratorConfig, now: String): IO[DriftResponse] =
     for
       jdbc <- jdbcConfig(config)
       _ <- PostgresProvider(jdbc).session.use(_.bootstrap)
-      discovery <- DiscoveryService[IO]().discover(config.sqlDir, DbKind.Postgres, config.customer)
-      manifest <- ManifestBuilder[IO](SqlDialect.Postgres).build(discovery.files)
+      discovery <- DiscoveryService().discover(config.sqlDir, DbKind.Postgres, config.customer)
+      manifest <- ManifestBuilder(SqlDialect.Postgres).build(discovery.files)
       expected = manifest.flatMap(expectedFromManifest)
       snapshot <- PostgresCatalogReader.snapshot(jdbc, expected)
       comparableExpected = snapshot.expected

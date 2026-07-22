@@ -1,6 +1,6 @@
 -- object: vec_install_cron_jobs
 -- folder: cron
--- depends_on: extensions, vec job lock helpers, vec_build_behaviour_snapshots, vec_build_frame_sequences, vec_build_timing_profiles, vec_build_baseline_profiles, vec_build_infrastructure_graph, vec_detect_rogue_clusters, vec_enqueue_embedding_jobs, coordinator event retention, vec_prune_retention, vec_materialize_similarity_pairs, vec_apply_similarity_flags, vec_fuse_device_identities, v_device_repetition_score, vec_release_expired_leases, vec_reap_stale_workers, vec_update_transition_model, vec_update_device_centroids, mv_ap_risk_score, check_high_risk_aps, search_purge_expired_queries
+-- depends_on: extensions, vec_job_lock_helpers, vec_build_behaviour_snapshots, vec_build_frame_sequences, vec_build_timing_profiles, vec_build_baseline_profiles, vec_build_infrastructure_graph, vec_detect_rogue_clusters, vec_enqueue_embedding_jobs, coordinator event retention, vec_prune_retention, vec_materialize_similarity_pairs, vec_apply_similarity_flags, vec_fuse_device_identities, v_device_repetition_score, vec_release_expired_leases, vec_reap_stale_workers, vec_update_transition_model, vec_update_device_centroids, mv_ap_risk_score, check_high_risk_aps, search_purge_expired_queries
 create or replace function vec_refresh_device_repetition_score()
 returns void
 language plpgsql

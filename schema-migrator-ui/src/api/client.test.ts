@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { ApiError, apiRequest, setApiBaseUrl, setAuthToken, setAuthTokenProvider, validateEncryptKey } from "./client";
+import {
+  ApiError,
+  ResponseDecryptionError,
+  apiRequest,
+  setApiBaseUrl,
+  setAuthToken,
+  setAuthTokenProvider,
+  setEncryptKey,
+  validateEncryptKey
+} from "./client";
 
 const jsonResponse = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), {
@@ -13,6 +22,7 @@ const jsonResponse = (body: unknown, status = 200): Response =>
 describe("apiRequest", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     setAuthToken("");
     setAuthTokenProvider(undefined);
     window.sessionStorage.clear();
@@ -77,7 +87,29 @@ describe("apiRequest", () => {
     });
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(encrypted));
 
-    await expect(apiRequest("/targets")).rejects.toThrow("Encrypted response received but no AES key is configured");
+    await expect(apiRequest("/targets")).rejects.toBeInstanceOf(ResponseDecryptionError);
+  });
+
+  test("decrypts encrypted responses without native SubtleCrypto", async () => {
+    setEncryptKey("MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY=");
+    vi.stubGlobal("crypto", {} as Crypto);
+    const encrypted = new Response(
+      JSON.stringify({
+        data: "IKKS2OEFdZ5Mu7IClXu1+3PrVZizzBTRJeS8EACe",
+        iv: "AAECAwQFBgcICQoL",
+        key_version: "current"
+      }),
+      {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "X-Bedrock-Encrypted": "1"
+        }
+      }
+    );
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(encrypted));
+
+    await expect(apiRequest("/targets")).resolves.toEqual({ targets: [] });
   });
 });
 

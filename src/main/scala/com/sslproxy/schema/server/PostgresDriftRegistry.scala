@@ -48,6 +48,7 @@ private[schema] object PostgresDriftRegistry:
       connection,
       PostgresStatements.deleteCustomerRowsSql
     )(_.setString(1, customer))
+    ()
 
   private def insertRows(connection: Connection, rows: List[RegistryRow]): Unit =
     if rows.nonEmpty then

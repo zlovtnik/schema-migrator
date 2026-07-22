@@ -2,6 +2,7 @@ package com.sslproxy.schema.store
 
 import io.circe.{Decoder, Encoder, Json}
 import io.circe.generic.semiauto.*
+import com.sslproxy.schema.db.TargetDescriptor
 
 private def redacted(value: Option[String]): String =
   value.fold("None")(_ => "Some(<redacted>)")
@@ -27,10 +28,34 @@ final case class Target(
   repo_branch: String,
   repo_sql_path: String,
   last_synced_commit: Option[String],
-  last_synced_at: Option[String]
+  last_synced_at: Option[String],
+  db_kind: String = ""
 ):
   override def toString: String =
-    s"Target(id=$id, label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, created_at=$created_at, repo_url=$repo_url, repo_branch=$repo_branch, repo_sql_path=$repo_sql_path, last_synced_commit=$last_synced_commit, last_synced_at=$last_synced_at)"
+    s"Target(id=$id, label=$label, app_name=$app_name, env=$env, db_kind=$db_kind, jdbc_url=${redactedJdbcUrl(jdbc_url)}, created_at=$created_at, repo_url=$repo_url, repo_branch=$repo_branch, repo_sql_path=$repo_sql_path, last_synced_commit=$last_synced_commit, last_synced_at=$last_synced_at)"
+
+object Target:
+  private[store] def fromPayload(id: String, createdAt: String, payload: TargetPayload): Target =
+    Target(
+      id = id,
+      label = payload.label,
+      app_name = payload.app_name,
+      env = payload.env,
+      jdbc_url = payload.jdbc_url,
+      created_at = createdAt,
+      repo_url = payload.repo_url,
+      repo_branch = payload.repo_branch,
+      repo_sql_path = payload.repo_sql_path,
+      last_synced_commit = None,
+      last_synced_at = None,
+      db_kind = dbKindFor(payload)
+    )
+
+  private[store] def dbKindFor(payload: TargetPayload): String =
+    payload.db_kind
+      .orElse(TargetDescriptor.parse(payload.jdbc_url).toOption.map(_.dbKind.toString))
+      .getOrElse("")
+      .toLowerCase
 
 final case class TargetPayload(
   label: String,
@@ -40,10 +65,11 @@ final case class TargetPayload(
   password: Option[String],
   repo_url: String,
   repo_branch: String,
-  repo_sql_path: String
+  repo_sql_path: String,
+  db_kind: Option[String] = None
 ):
   override def toString: String =
-    s"TargetPayload(label=$label, app_name=$app_name, env=$env, jdbc_url=${redactedJdbcUrl(jdbc_url)}, password=${redacted(password)}, repo_url=${redactedRepoUrl(repo_url)}, repo_branch=$repo_branch, repo_sql_path=$repo_sql_path)"
+    s"TargetPayload(label=$label, app_name=$app_name, env=$env, db_kind=$db_kind, jdbc_url=${redactedJdbcUrl(jdbc_url)}, password=${redacted(password)}, repo_url=${redactedRepoUrl(repo_url)}, repo_branch=$repo_branch, repo_sql_path=$repo_sql_path)"
 
 object TargetPayload:
   def rejectInlineCredentials(jdbcUrl: String): Either[String, Unit] =
@@ -312,6 +338,16 @@ object Models:
   given Decoder[CreateSnapshotPayload] = deriveDecoder
   given Decoder[RollbackToSnapshotPayload] = deriveDecoder
   given Decoder[AuthTokenRequest] = deriveDecoder
+  given Decoder[ScriptError] = deriveDecoder
+  given Decoder[Script] = deriveDecoder
+  given Decoder[Patch] = deriveDecoder
+  given Decoder[ScriptRun] = deriveDecoder
+  given Decoder[Run] = deriveDecoder
+  given Decoder[SnapshotFile] = deriveDecoder
+  given Decoder[Snapshot] = deriveDecoder
+  given Decoder[AuditEvent] = deriveDecoder
+  given Decoder[InvalidObject] = deriveDecoder
+  given Decoder[ValidationResult] = deriveDecoder
 
   given Encoder[Target] = deriveEncoder
   given Encoder[ConnectionTestResult] = deriveEncoder

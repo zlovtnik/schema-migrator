@@ -35,6 +35,17 @@ apply_order:
   - 03_tables/029_sync_event_payload_archives.sql
   - 03_tables/030_sync_event_tombstones.sql
   - 03_tables/031_device_graph_workmap_hardening.sql
+  - 03_tables/032_vec_timing_profile_stats.sql
+  - 03_tables/033_vec_behaviour_snapshot_stats.sql
+  - 03_tables/034_vec_embedding_sources.sql
+  - 03_tables/035_vec_embedding_job_leases.sql
+  - 03_tables/036_vec_similarity_pair_meta.sql
+  - 03_tables/037_wireless_frame_radio.sql
+  - 03_tables/038_wireless_frame_qos.sql
+  - 03_tables/039_wireless_frame_network.sql
+  - 03_tables/040_wireless_frame_app_signals.sql
+  - 03_tables/041_wireless_frame_identity.sql
+  - 03_tables/042_wireless_frame_security.sql
   - 04_indexes/001_sync_events_indexes.sql
   - 04_indexes/002_wireless_frames_indexes.sql
   - 04_indexes/003_vec_embeddings_indexes.sql
@@ -55,7 +66,6 @@ apply_order:
   - 05_functions/001_sync_stable_uuid.sql
   - 05_functions/002_coordinator_safe_helpers.sql
   - 05_functions/003_upsert_wireless_frame.sql
-  - 05_functions/003_vec_job_lock_helpers.sql
   - 05_functions/004_vec_update_transition_model.sql
   - 05_functions/005_vec_score_sequence.sql
   - 05_functions/006_vec_build_infrastructure_graph.sql
@@ -65,26 +75,21 @@ apply_order:
   - 05_functions/010_vec_build_behaviour_snapshots.sql
   - 05_functions/011_vec_enqueue_embedding_jobs.sql
   - 05_functions/012_vec_lease_embedding_jobs.sql
-  - 05_functions/013_vec_complete_embedding_batch.sql
+  - 05_functions/012a_vec_upsert_embedding.sql
+  - 05_functions/013b_vec_upsert_similarity_pair_batch.sql
   - 05_functions/014_vec_materialize_similarity_pairs.sql
   - 05_functions/015_vec_reembed_changed_jobs.sql
   - 05_functions/016_vec_release_expired_leases.sql
   - 05_functions/017_vec_reap_stale_workers.sql
-  - 05_functions/018_vec_assign_device_cluster.sql
   - 05_functions/019_check_high_risk_aps.sql
   - 05_functions/020_coordinator_ensure_cursor.sql
-  - 05_functions/021_coordinator_record_scan_request.sql
-  - 05_functions/022_coordinator_record_scan_request_batch.sql
   - 05_functions/023_coordinator_process_ingest_ledger.sql
   - 05_functions/024_coordinator_recover_stale_dispatched_batches.sql
   - 05_functions/025_coordinator_release_batch_dispatch.sql
   - 05_functions/026_coordinator_mark_batch_dispatch_failed.sql
   - 05_functions/027_coordinator_get_next_batch.sql
   - 05_functions/028_coordinator_generate_shadow_alerts.sql
-  - 05_functions/029_coordinator_process_batch_result.sql
   - 05_functions/030_coordinator_process_batch_results.sql
-  - 05_functions/031_coordinator_save_backlog_entry.sql
-  - 05_functions/032_coordinator_list_pending_backlog.sql
   - 05_functions/033_coordinator_mark_backlog_synced.sql
   - 05_functions/034_coordinator_prune_backlog.sql
   - 05_functions/035_coordinator_lookup_device_by_mac.sql
@@ -102,10 +107,16 @@ apply_order:
   - 05_functions/047_coordinator_event_retention.sql
   - 05_functions/048_vec_prune_retention.sql
   - 05_functions/049_coordinator_backlog_retry_caps.sql
-  - 05_functions/050_vec_job_lock_ttl_helpers.sql
   - 05_functions/051_vec_device_graph_retention.sql
-  - 05_functions/052_coordinator_flush_probe_batch_bigint.sql
-  - 05_functions/053_coordinator_record_scan_request_batch_tombstone_frames.sql
+  - 05_functions/054_coordinator_record_scan_request_batch_deduplicate.sql
+  - 05_functions/055_vec_job_lock_helpers.sql
+  - 05_functions/056_retire_unused_routines.sql
+  - 06_views/000_wireless_frames_expanded.sql
+  - 06_views/000a_vec_embeddings_expanded.sql
+  - 06_views/000b_vec_behaviour_snapshots_expanded.sql
+  - 06_views/000c_vec_embedding_jobs_expanded.sql
+  - 06_views/000d_vec_similarity_pairs_expanded.sql
+  - 06_views/000e_vec_timing_profiles_expanded.sql
   - 06_views/001_sync_events_expanded.sql
   - 06_views/002_v_wireless_audit_with_devices.sql
   - 06_views/003_v_wireless_threats.sql
@@ -124,3 +135,16 @@ apply_order:
   - 07_materialized_views/003_vec_dns_violation_summary.sql
   - 09_cron/001_vec_install_cron_jobs.sql
   - 09_cron/002_device_graph_workmap_cron_jobs.sql
+retired:
+  - 04_indexes/018_vec_embedding_jobs_indexes_rebuild.sql
+  - 05_functions/003_vec_job_lock_helpers.sql
+  - 05_functions/013_vec_complete_embedding_batch.sql
+  - 05_functions/013a_vec_upsert_similarity_pair.sql
+  - 05_functions/018_vec_assign_device_cluster.sql
+  - 05_functions/021_coordinator_record_scan_request.sql
+  - 05_functions/022_coordinator_record_scan_request_batch.sql
+  - 05_functions/029_coordinator_process_batch_result.sql
+  - 05_functions/031_coordinator_save_backlog_entry.sql
+  - 05_functions/032_coordinator_list_pending_backlog.sql
+  - 05_functions/050_vec_job_lock_ttl_helpers.sql
+  - 05_functions/053_coordinator_record_scan_request_batch_tombstone_frames.sql

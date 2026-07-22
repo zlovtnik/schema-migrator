@@ -88,7 +88,7 @@ export const router = createBrowserRouter([
           {
             path: "overview",
             element: routeElement(OverviewPage),
-            handle: { breadcrumb: "Overview", title: "Overview" }
+            handle: { breadcrumb: "Overview", hideBreadcrumb: true, title: "Overview" }
           },
           {
             path: "schema",

@@ -8,12 +8,14 @@ import { DataTable, type DataTableColumn } from "../../components/ui/DataTable";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
+import { usePatches } from "../../hooks/usePatches";
 import { useRuns } from "../../hooks/useRuns";
 import { useSession } from "../../hooks/useSession";
 import { useSnapshots } from "../../hooks/useSnapshots";
 import { useTarget } from "../../hooks/useTargets";
-import type { Run, Snapshot } from "../../types";
+import type { Patch, Run, Snapshot } from "../../types";
 import { isOracleTarget } from "../../utils/dbKind";
+import { formatRunSource } from "../../utils/runPresentation";
 import { ORACLE_LIMITATION_BANNER } from "./oracleLimitations";
 
 type TargetTab = "overview" | "runs" | "validation" | "snapshots";
@@ -31,6 +33,7 @@ export const TargetDetailPage = () => {
   const [activeTab, setActiveTab] = useState<TargetTab>("overview");
   const { data: target, isLoading: targetLoading, error: targetError } = useTarget(id);
   const { data: runs = [], isLoading: runsLoading } = useRuns(id);
+  const { data: patches = [], isLoading: patchesLoading } = usePatches(id);
   const { data: snapshots = [], isLoading: snapshotsLoading } = useSnapshots(id);
 
   const sortedRuns = useMemo(
@@ -104,12 +107,17 @@ export const TargetDetailPage = () => {
           snapshotCount={snapshots.length}
           latestCompletedRun={latestCompletedRun}
           loading={runsLoading || snapshotsLoading}
+          patches={patches}
           recentRuns={sortedRuns.slice(0, 5)}
           recentSnapshots={sortedSnapshots.slice(0, 5)}
         />
       ) : null}
-      {activeTab === "runs" ? <RunTable runs={sortedRuns} loading={runsLoading} /> : null}
-      {activeTab === "validation" ? <ValidationTab runs={sortedRuns} loading={runsLoading} /> : null}
+      {activeTab === "runs" ? (
+        <RunTable runs={sortedRuns} patches={patches} loading={runsLoading || patchesLoading} />
+      ) : null}
+      {activeTab === "validation" ? (
+        <ValidationTab runs={sortedRuns} patches={patches} loading={runsLoading || patchesLoading} />
+      ) : null}
       {activeTab === "snapshots" ? <SnapshotTable snapshots={sortedSnapshots} loading={snapshotsLoading} /> : null}
     </section>
   );
@@ -118,6 +126,7 @@ export const TargetDetailPage = () => {
 const TargetOverviewTab = ({
   latestCompletedRun,
   loading,
+  patches,
   recentRuns,
   recentSnapshots,
   runCount,
@@ -125,6 +134,7 @@ const TargetOverviewTab = ({
 }: {
   latestCompletedRun: Run | undefined;
   loading: boolean;
+  patches: Patch[];
   recentRuns: Run[];
   recentSnapshots: Snapshot[];
   runCount: number;
@@ -146,7 +156,13 @@ const TargetOverviewTab = ({
       <div>
         <span className="field-label">Latest validation</span>
         {latestCompletedRun ? (
-          <Link to={`/validation/${latestCompletedRun.id}`}>Run {latestCompletedRun.id}</Link>
+          <Link to={`/validation/${latestCompletedRun.id}`} title={`Run ID: ${latestCompletedRun.id}`}>
+            {formatRunSource(
+              latestCompletedRun,
+              patches.find((patch) => patch.id === latestCompletedRun.patch_id)
+            )}{" "}
+            validation
+          </Link>
         ) : (
           <span className="cell-subtle">No completed run</span>
         )}
@@ -164,18 +180,29 @@ const TargetOverviewTab = ({
     <div className="target-overview-grid">
       <section className="section-block">
         <h2>Recent runs</h2>
-        <RunTable runs={recentRuns} loading={loading} compact />
+        <RunTable runs={recentRuns} patches={patches} loading={loading} compact />
       </section>
     </div>
   </div>
 );
 
-const runColumns: DataTableColumn<Run>[] = [
+const runColumns = (patches: Patch[]): DataTableColumn<Run>[] => [
   {
     id: "patch",
     header: "Run source",
-    sortValue: (run) => run.patch_id,
-    cell: (run) => <Link to={`/runs/${run.id}`}>{run.patch_id}</Link>
+    sortValue: (run) =>
+      formatRunSource(
+        run,
+        patches.find((patch) => patch.id === run.patch_id)
+      ),
+    cell: (run) => (
+      <Link to={`/runs/${run.id}`} title={`Patch ID: ${run.patch_id}`}>
+        {formatRunSource(
+          run,
+          patches.find((patch) => patch.id === run.patch_id)
+        )}
+      </Link>
+    )
   },
   {
     id: "started",
@@ -191,12 +218,22 @@ const runColumns: DataTableColumn<Run>[] = [
   }
 ];
 
-const RunTable = ({ compact = false, loading, runs }: { compact?: boolean; loading: boolean; runs: Run[] }) => {
+const RunTable = ({
+  compact = false,
+  loading,
+  patches,
+  runs
+}: {
+  compact?: boolean;
+  loading: boolean;
+  patches: Patch[];
+  runs: Run[];
+}) => {
   if (loading) return <Skeleton rows={compact ? 3 : 6} label="Loading runs" />;
   return (
     <DataTable
       caption="Target runs"
-      columns={runColumns}
+      columns={runColumns(patches)}
       rows={runs}
       rowKey={(run) => run.id}
       empty="No runs recorded for this target."
@@ -204,7 +241,7 @@ const RunTable = ({ compact = false, loading, runs }: { compact?: boolean; loadi
   );
 };
 
-const ValidationTab = ({ loading, runs }: { loading: boolean; runs: Run[] }) => {
+const ValidationTab = ({ loading, patches, runs }: { loading: boolean; patches: Patch[]; runs: Run[] }) => {
   const completedRuns = runs.filter((run) => run.status === "completed");
   if (loading) return <Skeleton rows={6} label="Loading validation links" />;
   if (completedRuns.length === 0) {
@@ -214,7 +251,7 @@ const ValidationTab = ({ loading, runs }: { loading: boolean; runs: Run[] }) => 
       </EmptyState>
     );
   }
-  return <RunTable runs={completedRuns} loading={false} />;
+  return <RunTable runs={completedRuns} patches={patches} loading={false} />;
 };
 
 const snapshotColumns: DataTableColumn<Snapshot>[] = [

@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { getApiBaseUrl, getEncryptKey, setApiBaseUrl, setEncryptKey, validateEncryptKey } from "../../api/client";
+import {
+  ResponseDecryptionError,
+  getApiBaseUrl,
+  getEncryptKey,
+  setApiBaseUrl,
+  setEncryptKey,
+  validateEncryptKey
+} from "../../api/client";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useTargets } from "../../hooks/useTargets";
 
@@ -149,7 +156,13 @@ export const SettingsPage = () => {
               </div>
             </div>
 
-            {targetsError ? <div className="status-banner status-banner--error">Unable to load targets.</div> : null}
+            {targetsError ? (
+              <div className="status-banner status-banner--error">
+                {targetsError instanceof ResponseDecryptionError
+                  ? "Enter the current AES-GCM key above and save settings to load targets."
+                  : "Unable to load targets."}
+              </div>
+            ) : null}
 
             {!targetsError && !targetsLoading && targets.length === 0 ? (
               <div className="empty-state">No targets configured.</div>

@@ -8,6 +8,7 @@ type RouteLabel = string | ((match: RouteLabelContext) => string | undefined);
 export interface RouteHandle {
   breadcrumb?: RouteLabel;
   breadcrumbTo?: string;
+  hideBreadcrumb?: boolean;
   parents?: BreadcrumbDefinition[];
   targetAware?: boolean;
   title?: RouteLabel;

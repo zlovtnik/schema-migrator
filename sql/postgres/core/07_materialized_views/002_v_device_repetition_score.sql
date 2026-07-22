@@ -18,7 +18,7 @@ WITH device_pairs AS (
         p.cosine_distance,
         p.left_embedding_id AS embedding_id,
         p.computed_at
-    FROM vec_similarity_pairs p
+    FROM vec_similarity_pairs_expanded p
     WHERE (
         (p.pair_kind = 'event_event' AND p.cosine_distance < 0.05)
         OR (p.pair_kind = 'device_device' AND p.embedding_kind = 'behaviour_window' AND p.cosine_distance < 0.12)
@@ -35,7 +35,7 @@ WITH device_pairs AS (
         p.cosine_distance,
         p.right_embedding_id AS embedding_id,
         p.computed_at
-    FROM vec_similarity_pairs p
+    FROM vec_similarity_pairs_expanded p
     WHERE (
         (p.pair_kind = 'event_event' AND p.cosine_distance < 0.05)
         OR (p.pair_kind = 'device_device' AND p.embedding_kind = 'behaviour_window' AND p.cosine_distance < 0.12)

@@ -92,7 +92,7 @@ begin
       array_agg(distinct lower(coalesce(nullif(wf.bssid, ''), nullif(wf.destination_bssid, '')))) as bssids,
       array_agg(distinct wf.bssid_oui) as vendor_ouis,
       count(distinct wf.bssid_oui) as vendor_count
-    from wireless_frames wf
+    from wireless_frames_expanded wf
     join sync_events se on se.dedupe_key = wf.dedupe_key
     where se.stream_name = 'wireless.audit'
       and se.status = 'batched'

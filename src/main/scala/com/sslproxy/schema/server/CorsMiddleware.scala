@@ -15,7 +15,7 @@ object CorsMiddleware:
   def apply(config: ServerConfig)(routes: HttpRoutes[IO]): HttpRoutes[IO] =
     HttpRoutes { request =>
       origin(request) match
-        case Some(value) if !config.corsOrigins.contains(value) =>
+        case Some(value) if !isSameOrigin(request, value) && !config.corsOrigins.contains(value) =>
           OptionT.liftF(Forbidden(Json.obj("error" -> Json.fromString("CORS origin is not allowed"))))
         case allowed if request.method == Method.OPTIONS =>
           OptionT.liftF(NoContent().map(response => withCorsHeaders(response, allowed)))
@@ -25,6 +25,19 @@ object CorsMiddleware:
 
   private def origin(request: Request[IO]): Option[String] =
     request.headers.headers.find(_.name == CIString("Origin")).map(_.value)
+
+  /** Returns true when the Origin header value matches the request's own
+    * scheme + host + port, i.e. the request is same-origin and CORS
+    * restrictions do not apply.
+    */
+  private def isSameOrigin(request: Request[IO], originValue: String): Boolean =
+    val scheme = request.uri.scheme.map(_.value).getOrElse("http")
+    val host = request.uri.host.map(_.value).getOrElse("")
+    val port = request.uri.port
+    val selfOrigin = port match
+      case Some(p) if p != 80 && p != 443 => s"$scheme://$host:$p"
+      case _                              => s"$scheme://$host"
+    originValue.equalsIgnoreCase(selfOrigin)
 
   private def withCorsHeaders(response: Response[IO], origin: Option[String]): Response[IO] =
     origin match

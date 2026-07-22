@@ -60,6 +60,7 @@ class GitRepoLoaderSuite extends FunSuite:
     try
       git.add().addFilepattern(".").call()
       git.commit().setMessage("initial").setAuthor("Test", "test@example.com").call()
+      ()
     finally git.close()
 
   private def deleteRecursively(path: Path): Unit =

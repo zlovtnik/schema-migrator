@@ -6,8 +6,6 @@ import com.sslproxy.schema.parser.HeaderParser
 import java.nio.file.{Files, Path}
 
 object RollbackValidator:
-  private val ErrorPrefix = "__ROLLBACK_VALIDATION_ERROR__"
-
   def validate(files: List[SqlFile]): List[String] =
     val results = scala.collection.mutable.ListBuffer.empty[String]
     files.foreach { file =>
@@ -35,7 +33,7 @@ object RollbackValidator:
 
   def resolveExistingRollbackPath(file: SqlFile, rollback: String): Option[Path] =
     try candidates(file, rollback).find(Files.exists(_))
-    catch case error: Exception => None
+    catch case _: Exception => None
 
   def candidates(file: SqlFile, rollback: String): List[Path] =
     val reference = Path.of(rollback)

@@ -6,7 +6,10 @@ import { EmptyState } from "../../components/ui/EmptyState";
 import { Icon } from "../../components/ui/Icon";
 import { Skeleton } from "../../components/ui/Skeleton";
 import { useAuditEvents } from "../../hooks/useAudit";
+import { usePatches } from "../../hooks/usePatches";
+import { useRuns } from "../../hooks/useRuns";
 import { useSession } from "../../hooks/useSession";
+import { useTargets } from "../../hooks/useTargets";
 
 export const AuditLogPage = () => {
   const { canViewAudit } = useSession();
@@ -26,6 +29,10 @@ export const AuditLogPage = () => {
     [actor, entityId, entityType, limit, targetId]
   );
   const { data: events = [], isLoading, error } = useAuditEvents(filters, canViewAudit);
+  const { data: referenceEvents = [] } = useAuditEvents({ limit: 250 }, canViewAudit);
+  const { data: patches = [] } = usePatches();
+  const { data: runs = [] } = useRuns();
+  const { data: targets = [] } = useTargets();
 
   if (!canViewAudit) {
     return (
@@ -104,7 +111,16 @@ export const AuditLogPage = () => {
         </div>
       ) : null}
 
-      {!isLoading ? <ActivityTable events={events} empty="No audit events match these filters." /> : null}
+      {!isLoading ? (
+        <ActivityTable
+          events={events}
+          patches={patches}
+          referenceEvents={referenceEvents}
+          runs={runs}
+          targets={targets}
+          empty="No audit events match these filters."
+        />
+      ) : null}
     </section>
   );
 };

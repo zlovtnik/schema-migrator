@@ -26,6 +26,7 @@ as $$
   from sync_events event
   left join sync_event_payload_archives archive
     on archive.dedupe_key = event.dedupe_key
+   and archive.stream_name = event.stream_name
   where event.stream_name = 'wireless.audit'
     and event.status = 'batched'
     and event.payload is not null
@@ -60,6 +61,7 @@ begin
     into v_event
     from sync_events
    where dedupe_key = p_dedupe_key
+     and stream_name = 'wireless.audit'
      and payload is not null
    for update;
 
@@ -95,7 +97,7 @@ begin
     now(),
     now()
   )
-  on conflict (dedupe_key) do update set
+  on conflict (dedupe_key, stream_name) do update set
     payload_sha256 = excluded.payload_sha256,
     archive_uri = excluded.archive_uri,
     payload_bytes = excluded.payload_bytes,
@@ -106,6 +108,7 @@ begin
      set payload = null,
          updated_at = now()
    where dedupe_key = p_dedupe_key
+     and stream_name = v_event.stream_name
      and payload is not null
      and (
        p_payload_sha256 is null
@@ -148,6 +151,7 @@ begin
           select 1
           from sync_event_payload_archives archive
           where archive.dedupe_key = event.dedupe_key
+            and archive.stream_name = event.stream_name
         )
       )
     order by event.observed_at asc, event.dedupe_key asc
@@ -172,8 +176,7 @@ begin
       now(),
       now()
     from candidates
-    on conflict (dedupe_key) do update set
-      stream_name = excluded.stream_name,
+    on conflict (dedupe_key, stream_name) do update set
       payload_sha256 = excluded.payload_sha256,
       observed_at = excluded.observed_at,
       expires_at = greatest(sync_event_tombstones.expires_at, excluded.expires_at),
@@ -183,7 +186,7 @@ begin
   select count(*) into v_tombstoned from tombstoned;
 
   with candidates as materialized (
-    select event.dedupe_key
+    select event.dedupe_key, event.stream_name
     from sync_events event
     where event.observed_at < now() - make_interval(days => greatest(coalesce(p_event_retention_days, 30), 1))
       and event.status not in ('pending', 'processing')
@@ -191,6 +194,7 @@ begin
         select 1
         from sync_event_tombstones tombstone
         where tombstone.dedupe_key = event.dedupe_key
+          and tombstone.stream_name = event.stream_name
       )
       and (
         event.stream_name <> 'wireless.audit'
@@ -199,6 +203,7 @@ begin
           select 1
           from sync_event_payload_archives archive
           where archive.dedupe_key = event.dedupe_key
+            and archive.stream_name = event.stream_name
         )
       )
     order by event.observed_at asc, event.dedupe_key asc
@@ -208,12 +213,13 @@ begin
     delete from wireless_frames frame
     using candidates
     where frame.dedupe_key = candidates.dedupe_key
+      and candidates.stream_name = 'wireless.audit'
     returning 1
   )
   select count(*) into v_wireless_frames_deleted from wireless_deleted;
 
   with candidates as materialized (
-    select event.dedupe_key
+    select event.dedupe_key, event.stream_name
     from sync_events event
     where event.observed_at < now() - make_interval(days => greatest(coalesce(p_event_retention_days, 30), 1))
       and event.status not in ('pending', 'processing')
@@ -221,6 +227,7 @@ begin
         select 1
         from sync_event_tombstones tombstone
         where tombstone.dedupe_key = event.dedupe_key
+          and tombstone.stream_name = event.stream_name
       )
       and (
         event.stream_name <> 'wireless.audit'
@@ -229,6 +236,7 @@ begin
           select 1
           from sync_event_payload_archives archive
           where archive.dedupe_key = event.dedupe_key
+            and archive.stream_name = event.stream_name
         )
       )
     order by event.observed_at asc, event.dedupe_key asc
@@ -238,6 +246,7 @@ begin
     delete from sync_events event
     using candidates
     where event.dedupe_key = candidates.dedupe_key
+      and event.stream_name = candidates.stream_name
     returning 1
   )
   select count(*) into v_deleted from deleted;

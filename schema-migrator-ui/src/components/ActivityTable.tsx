@@ -1,58 +1,87 @@
 import { Link } from "react-router-dom";
+import { useMemo } from "react";
 import { DataTable, type DataTableColumn } from "./ui/DataTable";
-import type { AuditEvent } from "../types";
+import type { AuditEvent, Patch, Run, Target } from "../types";
+import { formatActivityAction, formatActivityActor, formatActivityEntity } from "../utils/activityPresentation";
 
 interface ActivityTableProps {
   events: AuditEvent[];
   empty?: string | undefined;
+  compact?: boolean;
+  patches?: Patch[];
+  referenceEvents?: AuditEvent[];
+  runs?: Run[];
+  targets?: Target[];
 }
 
-const columns: DataTableColumn<AuditEvent>[] = [
-  {
-    id: "at",
-    header: "At",
-    sortValue: (event) => event.at,
-    cell: (event) => <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
-  },
-  {
-    id: "actor",
-    header: "Actor",
-    sortValue: (event) => event.actor,
-    cell: (event) => event.actor
-  },
-  {
-    id: "role",
-    header: "Role",
-    sortValue: (event) => event.role ?? "",
-    cell: (event) => event.role ?? "-"
-  },
-  {
-    id: "action",
-    header: "Action",
-    sortValue: (event) => event.action,
-    cell: (event) => <code>{event.action}</code>
-  },
-  {
-    id: "entity",
-    header: "Entity",
-    sortValue: (event) => `${event.entity_type}:${event.entity_id}`,
-    cell: (event) => <EntityLink event={event} />
-  }
-];
+export const ActivityTable = ({
+  compact = false,
+  events,
+  empty = "No activity found.",
+  patches = [],
+  referenceEvents = events,
+  runs = [],
+  targets = []
+}: ActivityTableProps) => {
+  const columns = useMemo<DataTableColumn<AuditEvent>[]>(
+    () => [
+      {
+        id: "at",
+        header: "At",
+        sortValue: (event) => event.at,
+        cell: (event) => <time dateTime={event.at}>{new Date(event.at).toLocaleString()}</time>
+      },
+      {
+        id: "actor",
+        header: "Actor",
+        sortValue: (event) => formatActivityActor(event),
+        cell: (event) => {
+          const label = formatActivityActor(event);
+          return <span title={label === event.actor ? undefined : event.actor}>{label}</span>;
+        }
+      },
+      {
+        id: "role",
+        header: "Role",
+        sortValue: (event) => event.role ?? "",
+        cell: (event) => event.role ?? "-"
+      },
+      {
+        id: "action",
+        header: "Action",
+        sortValue: (event) => formatActivityAction(event.action),
+        cell: (event) => <span title={event.action}>{formatActivityAction(event.action)}</span>
+      },
+      {
+        id: "entity",
+        header: "Entity",
+        sortValue: (event) => formatActivityEntity(event, { auditEvents: referenceEvents, patches, runs, targets }),
+        cell: (event) => (
+          <EntityLink
+            event={event}
+            label={formatActivityEntity(event, { auditEvents: referenceEvents, patches, runs, targets })}
+          />
+        )
+      }
+    ],
+    [patches, referenceEvents, runs, targets]
+  );
 
-export const ActivityTable = ({ events, empty = "No activity found." }: ActivityTableProps) => (
-  <DataTable caption="Activity" columns={columns} rows={events} rowKey={(event) => event.id} empty={empty} />
-);
+  return (
+    <div className={compact ? "activity-table activity-table--compact" : "activity-table"}>
+      <DataTable caption="Activity" columns={columns} rows={events} rowKey={(event) => event.id} empty={empty} />
+    </div>
+  );
+};
 
-const EntityLink = ({ event }: { event: AuditEvent }) => {
+const EntityLink = ({ event, label }: { event: AuditEvent; label: string }) => {
   const to = entityUrl(event);
-  const label = `${event.entity_type}:${event.entity_id}`;
   return to ? (
-    <Link to={to}>
-      <code>{label}</code>
+    <Link to={to} title={event.entity_id}>
+      {label}
     </Link>
   ) : (
-    <code>{label}</code>
+    <span title={event.entity_id}>{label}</span>
   );
 };
 

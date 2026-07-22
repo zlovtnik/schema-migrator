@@ -130,7 +130,7 @@ class JwtMiddlewareSuite extends FunSuite:
     val routes = JwtMiddleware(config, Some(verifier))(HttpRoutes.of[IO] { case request @ GET -> Root / "role" =>
       AuthContext.requireRole(request, UserRole.Viewer)(claims => Ok(s"${claims.subject}:${claims.role}"))
     }).orNotFound
-    val token = keycloakToken(config, fixture, subject = "keycloak-user", resourceRoles = List(UserRole.Admin))
+    val token = keycloakToken(fixture, subject = "keycloak-user", resourceRoles = List(UserRole.Admin))
 
     val response = routes
       .run(
@@ -150,9 +150,9 @@ class JwtMiddlewareSuite extends FunSuite:
     val verifier = keycloakVerifier(config, fixture)
     val routes =
       JwtMiddleware(config, Some(verifier))(HttpRoutes.of[IO] { case GET -> Root / "protected" => Ok("ok") }).orNotFound
-    val badIssuer = keycloakToken(config, fixture, issuer = "https://keycloak.example.com/realms/other")
-    val expired = keycloakToken(config, fixture, expiresAt = Instant.now.minusSeconds(60))
-    val badSignature = keycloakToken(config, wrongKey.copy(kid = fixture.kid))
+    val badIssuer = keycloakToken(fixture, issuer = "https://keycloak.example.com/realms/other")
+    val expired = keycloakToken(fixture, expiresAt = Instant.now.minusSeconds(60))
+    val badSignature = keycloakToken(wrongKey.copy(kid = fixture.kid))
 
     List(badIssuer, expired, badSignature).foreach { token =>
       val response = routes
@@ -170,8 +170,8 @@ class JwtMiddlewareSuite extends FunSuite:
     val config = keycloakConfig().copy(keycloakAudience = None, keycloakClientId = Some("bedrock-ui"))
     val verifier = keycloakVerifier(config, fixture)
 
-    val accepted = verifier(keycloakToken(config, fixture)).unsafeRunSync()
-    val broadRealmToken = keycloakToken(config, fixture, tokenAudience = "account", authorizedParty = "account")
+    val accepted = verifier(keycloakToken(fixture)).unsafeRunSync()
+    val broadRealmToken = keycloakToken(fixture, tokenAudience = "account", authorizedParty = "account")
     val rejected = verifier(broadRealmToken).unsafeRunSync()
 
     assert(accepted.isRight)
@@ -208,9 +208,9 @@ class JwtMiddlewareSuite extends FunSuite:
       )
       .unsafeRunSync()
 
-    val accepted = verifier.verify(keycloakToken(config, fixture)).unsafeRunSync()
+    val accepted = verifier.verify(keycloakToken(fixture)).unsafeRunSync()
     val beforeUnknownKid = fetches.get.unsafeRunSync()
-    val acceptedAfterRefresh = verifier.verify(keycloakToken(config, unknownKey)).unsafeRunSync()
+    val acceptedAfterRefresh = verifier.verify(keycloakToken(unknownKey)).unsafeRunSync()
     val afterUnknownKid = fetches.get.unsafeRunSync()
 
     assert(accepted.isRight)
@@ -248,7 +248,7 @@ class JwtMiddlewareSuite extends FunSuite:
       )
       .unsafeRunSync()
 
-    val accepted = verifier.verify(keycloakToken(config, fixture)).unsafeRunSync()
+    val accepted = verifier.verify(keycloakToken(fixture)).unsafeRunSync()
     val fetchCount = fetches.get.unsafeRunSync()
 
     assert(accepted.isRight)
@@ -310,7 +310,6 @@ class JwtMiddlewareSuite extends FunSuite:
       .unsafeRunSync()
 
   private def keycloakToken(
-    config: ServerConfig,
     fixture: RsaFixture,
     subject: String = "keycloak-user",
     issuer: String = "https://keycloak.example.com/realms/bedrock",

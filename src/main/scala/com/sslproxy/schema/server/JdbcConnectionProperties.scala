@@ -27,21 +27,25 @@ private[server] object JdbcConnectionProperties:
     user: Option[String] = None
   ): Properties =
     val properties = Properties()
-    user.foreach(properties.setProperty("user", _))
-    password.foreach(properties.setProperty("password", _))
+    user.foreach(value => setProperty(properties, "user", value))
+    password.foreach(value => setProperty(properties, "password", value))
 
     val trimmed = jdbcUrl.trim
     val seconds = math.max(1L, timeout.toSeconds).toString
     val millis = math.max(1L, timeout.toMillis).toString
 
     if trimmed.startsWith("jdbc:postgresql:") then
-      properties.setProperty("connectTimeout", seconds)
-      properties.setProperty("loginTimeout", seconds)
-      properties.setProperty("socketTimeout", seconds)
+      setProperty(properties, "connectTimeout", seconds)
+      setProperty(properties, "loginTimeout", seconds)
+      setProperty(properties, "socketTimeout", seconds)
     else if trimmed.startsWith("jdbc:oracle:thin:") then
-      properties.setProperty("oracle.net.CONNECT_TIMEOUT", millis)
-      properties.setProperty("oracle.net.OUTBOUND_CONNECT_TIMEOUT", millis)
-      properties.setProperty("oracle.net.READ_TIMEOUT", millis)
-      properties.setProperty("oracle.jdbc.ReadTimeout", millis)
+      setProperty(properties, "oracle.net.CONNECT_TIMEOUT", millis)
+      setProperty(properties, "oracle.net.OUTBOUND_CONNECT_TIMEOUT", millis)
+      setProperty(properties, "oracle.net.READ_TIMEOUT", millis)
+      setProperty(properties, "oracle.jdbc.ReadTimeout", millis)
 
     properties
+
+  private def setProperty(properties: Properties, key: String, value: String): Unit =
+    properties.setProperty(key, value)
+    ()

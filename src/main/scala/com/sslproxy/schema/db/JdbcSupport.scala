@@ -7,7 +7,7 @@ import org.typelevel.log4cats.slf4j.Slf4jFactory
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
-import java.sql.{Connection, DriverManager, PreparedStatement, ResultSet, SQLException, Statement}
+import java.sql.{Connection, DriverManager, PreparedStatement, ResultSet, SQLException}
 import java.util.Properties
 import scala.concurrent.duration.FiniteDuration
 
@@ -47,7 +47,9 @@ object JdbcSupport:
 
   def executeStatement(connection: Connection, sql: String): Unit =
     val statement = connection.createStatement()
-    try statement.execute(sql)
+    try
+      statement.execute(sql)
+      ()
     finally statement.close()
 
   def executePrepared(connection: Connection, sql: String)(bind: PreparedStatement => Unit): Int =

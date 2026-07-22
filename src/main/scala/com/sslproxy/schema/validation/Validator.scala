@@ -1,12 +1,11 @@
 package com.sslproxy.schema.validation
 
-import cats.effect.Sync
-import cats.syntax.all.*
+import cats.effect.IO
 import com.sslproxy.schema.config.DbKind
 import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.parser.{BalanceChecker, HeaderParser}
 
-final class Validator[F[_]: Sync](dbKind: DbKind):
+final class Validator(dbKind: DbKind):
   private val tableColumnWarningLimit = 15
   private val identifierPattern = """"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*"""
   private val qualifiedIdentifierPattern = s"(?:$identifierPattern)(?:\\s*\\.\\s*(?:$identifierPattern))?"
@@ -24,18 +23,19 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
   private val createOrReplaceRoutine =
     raw"(?is)\bcreate\s+or\s+replace\s+(?:(?:non)?editionable\s+)?(function|procedure)\b".r
   private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+(?:(?:non)?editionable\s+)?procedure\b".r
+  private val idempotentRoutineRetirement =
+    raw"(?is)(?:\s*drop\s+(?:function|procedure)\s+if\s+exists\s+[^;]+;\s*)+".r
 
-  def validate(files: List[SqlFile]): F[ValidationReport] =
-    Sync[F].blocking {
+  def validate(files: List[SqlFile]): IO[ValidationReport] =
+    IO.blocking {
       val fileReport = files.foldLeft(ValidationReport()) { (report, file) =>
         validateOne(report, file)
       }
-      val graphErrors = DependencyValidator.validate(files)
       val rollbackErrors = RollbackValidator.validate(files)
       val duplicateDefinitionErrors =
         if dbKind == DbKind.Postgres then postgresDuplicateDefinitionErrors(files)
         else Nil
-      fileReport.copy(errors = fileReport.errors ++ graphErrors ++ rollbackErrors ++ duplicateDefinitionErrors)
+      fileReport.copy(errors = fileReport.errors ++ rollbackErrors ++ duplicateDefinitionErrors)
     }
 
   private def validateOne(report: ValidationReport, file: SqlFile): ValidationReport =
@@ -66,6 +66,7 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
     dbKind match
       case DbKind.Postgres => postgresHeuristics(report, file, sql)
       case DbKind.Oracle => oracleHeuristics(report, file, sql)
+      case DbKind.TiDB => postgresHeuristics(report, file, sql)
 
   private def postgresHeuristics(report: ValidationReport, file: SqlFile, sql: String): ValidationReport =
     val lower = sql.toLowerCase
@@ -83,7 +84,7 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
             )
           case _ => withTableWarning
         sameFileDuplicateAddColumnErrors(file, sql).foldLeft(withColumnWarning)(_.addError(_))
-      case "functions" if !hasCreateOrReplaceRoutine(sql) =>
+      case "functions" if !hasCreateOrReplaceRoutine(sql) && !hasOnlyIdempotentRoutineDrops(sql) =>
         report.addWarning(
           s"$path: expected 'CREATE OR REPLACE FUNCTION' or 'CREATE OR REPLACE PROCEDURE' for idempotency"
         )
@@ -246,6 +247,9 @@ final class Validator[F[_]: Sync](dbKind: DbKind):
 
   private def hasCreateOrReplaceProcedure(sql: String): Boolean =
     createOrReplaceProcedure.findFirstIn(sql).nonEmpty
+
+  private def hasOnlyIdempotentRoutineDrops(sql: String): Boolean =
+    idempotentRoutineRetirement.matches(stripLeadingHeaderComments(sql))
 
   private def matchingCloseParen(sql: String, open: Int): Option[Int] =
     var index = open

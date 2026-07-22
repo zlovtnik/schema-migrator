@@ -214,7 +214,7 @@ object SnapshotRoutes:
                 Json.obj("patch_id" -> Json.fromString(patch.id), "source_snapshot_id" -> Json.fromString(snapshot.id))
               )
             ) *>
-            runExecutor.run(target, run, patch).start.void *>
+            runExecutor.submit(target, run, patch) *>
             RouteJson.created(run.asJson)
     yield response
 
@@ -314,11 +314,11 @@ object SnapshotRoutes:
 
   private def orderedCurrentPaths(files: List[StoredSqlFile], dbKind: DbKind): List[String] =
     val sqlFiles = files.map(storedToSqlFile)
-    DiscoveryService[IO]().discoverFromFiles(sqlFiles, dbKind).files.map(_.relativePath)
+    DiscoveryService().discoverFromFiles(sqlFiles, dbKind).files.map(_.relativePath)
 
   private def orderedSnapshotPaths(files: List[SnapshotFile], dbKind: DbKind): List[String] =
     val sqlFiles = files.flatMap(snapshotToSqlFile)
-    DiscoveryService[IO]().discoverFromFiles(sqlFiles, dbKind).files.map(_.relativePath)
+    DiscoveryService().discoverFromFiles(sqlFiles, dbKind).files.map(_.relativePath)
 
   private def orderedSubset(paths: Set[String], ordered: List[String]): List[String] =
     val orderedMatches = ordered.filter(paths.contains)

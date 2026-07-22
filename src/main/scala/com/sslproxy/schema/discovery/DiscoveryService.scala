@@ -1,19 +1,18 @@
 package com.sslproxy.schema.discovery
 
-import cats.effect.Sync
-import cats.syntax.all.*
+import cats.effect.IO
 import com.sslproxy.schema.config.DbKind
 
 import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
 
-final class DiscoveryService[F[_]: Sync]:
+final class DiscoveryService:
   /** Discover SQL files from the filesystem. */
-  def discover(sqlDir: Path, dbKind: DbKind, customer: Option[String] = None): F[DiscoveryResult] =
-    Sync[F].blocking(discoverUnsafe(sqlDir, dbKind, customer))
+  def discover(sqlDir: Path, dbKind: DbKind, customer: Option[String] = None): IO[DiscoveryResult] =
+    IO.blocking(discoverUnsafe(sqlDir, dbKind, customer))
 
   /** Discover SQL files from a pre-loaded list of SqlFile objects
-    * (e.g. from MongoDB store). The caller is responsible for
+    * (for example, from the TiDB control-state store). The caller is responsible for
     * obtaining the list from the store.
     */
   def discoverFromFiles(files: List[SqlFile], dbKind: DbKind): DiscoveryResult =
@@ -44,6 +43,10 @@ final class DiscoveryService[F[_]: Sync]:
       case DbKind.Oracle =>
         val baseline = filesByFolder.getOrElse("baseline", Nil).sortBy(_.name)
         val discovered = baseline ::: ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil).sortBy(_.name))
+        DiscoveryResult(discovered, extraFolderWarnings)
+
+      case DbKind.TiDB =>
+        val discovered = ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil).sortBy(_.name))
         DiscoveryResult(discovered, extraFolderWarnings)
 
   private def discoverUnsafe(sqlDir: Path, dbKind: DbKind, customer: Option[String]): DiscoveryResult =
@@ -77,24 +80,29 @@ final class DiscoveryService[F[_]: Sync]:
     val manifests = manifestResults.flatMap(_._1)
     val manifestWarnings = manifestResults.flatMap(_._2)
     val manifestFiles = manifests.flatMap { case (layer, manifest) =>
-      filesFromManifest(requestedRoot, layer, manifest, dbKind)
+      filesFromManifest(requestedRoot, layer, manifest, dbKind, manifest.applyOrder)
+    }
+    val retiredManifestFiles = manifests.flatMap { case (layer, manifest) =>
+      filesFromManifest(requestedRoot, layer, manifest, dbKind, manifest.retired)
     }
     val files = manifestFiles.collect { case Right(file) => file }
-    val fileWarnings = manifestFiles.collect { case Left(warning) => warning }
+    val retiredFiles = retiredManifestFiles.collect { case Right(file) => file }
+    val fileWarnings = (manifestFiles ++ retiredManifestFiles).collect { case Left(warning) => warning }
     val unlistedWarnings = manifests.flatMap { case (_, manifest) =>
-      unlistedSqlWarnings(requestedRoot, manifest, files)
+      unlistedSqlWarnings(requestedRoot, manifest, files ++ retiredFiles)
     }
 
-    DiscoveryResult(files, manifestWarnings ++ fileWarnings ++ unlistedWarnings)
+    DiscoveryResult(files, manifestWarnings ++ fileWarnings ++ unlistedWarnings, retiredFiles)
 
   private def filesFromManifest(
     requestedRoot: Path,
     layer: String,
     manifest: ApplyOrderManifest,
-    dbKind: DbKind
+    dbKind: DbKind,
+    entries: List[String]
   ): List[Either[String, SqlFile]] =
     val manifestDir = manifest.path.getParent
-    manifest.applyOrder.map { entry =>
+    entries.map { entry =>
       val relative = Path.of(entry)
       if relative.isAbsolute then Left(s"${manifest.path}: absolute apply_order entry '$entry' is not allowed")
       else
@@ -178,6 +186,10 @@ final class DiscoveryService[F[_]: Sync]:
       case DbKind.Oracle =>
         val baseline = collectOracleBaseline(sqlDir)
         val files = baseline ::: ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil))
+        DiscoveryResult(files, allWarnings)
+
+      case DbKind.TiDB =>
+        val files = ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil))
         DiscoveryResult(files, allWarnings)
 
   private def collectFolder(sqlDir: Path, folder: String): (List[SqlFile], List[String]) =

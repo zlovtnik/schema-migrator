@@ -43,7 +43,7 @@ ${sql.trim}
       updated_at timestamp with time zone default systimestamp not null,
       constraint schema_objects_pk primary key (id),
       constraint schema_objects_unique unique (kind, object_name),
-      constraint schema_objects_status_chk check (apply_status in ('pending', 'applied', 'failed', 'skipped'))
+      constraint schema_objects_status_chk check (apply_status in ('pending', 'applied', 'failed', 'skipped', 'retired'))
     )
     """
 
@@ -92,18 +92,27 @@ ${sql.trim}
     alter table schema_control.schema_objects add (rollback_file varchar2(512))
     """
 
+  val dropSchemaObjectsStatusConstraint: String =
+    "alter table schema_control.schema_objects drop constraint schema_objects_status_chk"
+
+  val addSchemaObjectsStatusConstraint: String =
+    """
+    alter table schema_control.schema_objects add constraint schema_objects_status_chk
+      check (apply_status in ('pending', 'applied', 'failed', 'skipped', 'retired'))
+    """
+
   val viewSchemaReady: String =
     """
     create or replace view schema_control.schema_ready as
     select
       systimestamp as measured_at,
-      count(*) as total_count,
+      sum(case when apply_status <> 'retired' then 1 else 0 end) as total_count,
       sum(case when apply_status = 'pending' then 1 else 0 end) as pending_count,
       sum(case when apply_status = 'failed' then 1 else 0 end) as failed_count,
       sum(case when apply_status in ('applied', 'skipped') then 1 else 0 end) as applied_count,
       case
-        when count(*) > 0
-         and sum(case when apply_status not in ('applied', 'skipped') then 1 else 0 end) = 0
+        when sum(case when apply_status <> 'retired' then 1 else 0 end) > 0
+         and sum(case when apply_status not in ('applied', 'skipped', 'retired') then 1 else 0 end) = 0
          and sum(case when apply_status = 'failed' then 1 else 0 end) = 0
         then '1' else '0'
       end as ready,
@@ -118,6 +127,8 @@ ${sql.trim}
     List(
       ignoreOracleErrorBlock(955, tableSchemaObjects),
       ignoreOracleErrorBlock(1430, addRollbackFileColumn),
+      ignoreOracleErrorBlock(2443, dropSchemaObjectsStatusConstraint),
+      addSchemaObjectsStatusConstraint,
       ignoreOracleErrorBlock(955, tableApplyLog),
       ignoreOracleErrorBlock(955, tableMigrationLocks),
       ignoreOracleErrorsBlock(List(955, 2260), addMigrationLocksPrimaryKey),
@@ -160,6 +171,16 @@ ${sql.trim}
     select content_sha256, apply_status
       from schema_control.schema_objects
      where kind = ? and object_name = ?
+    """
+
+  val retireSql: String =
+    """
+    update schema_control.schema_objects
+       set apply_status = 'retired',
+           last_error = null,
+           updated_at = systimestamp
+     where source_file = ?
+       and apply_status <> 'retired'
     """
 
   val applyLogSql: String =

@@ -190,29 +190,26 @@ If no command is given, `apply` is used as the default.
 | `VITE_KEYCLOAK_REALM` | Keycloak realm name baked into the Vite UI build. |
 | `VITE_KEYCLOAK_CLIENT_ID` | Keycloak public client ID baked into the Vite UI build. |
 | `VITE_KEYCLOAK_REDIRECT_URI` | Optional browser redirect URI. Defaults to the current origin plus `/callback` when omitted. |
-| `VITE_KEYCLOAK_DIRECT_ACCESS_GRANTS` | Set to `true` only when the Keycloak client allows username/password direct access grants. Defaults to `false`. |
+| `KEYCLOAK_PUBLIC_URL` | Browser-facing base URL for the externally managed identity provider used by the instance renderer. |
 | `BEDROCK_ENCRYPT_KEY` | Base64 AES-256-GCM key used to encrypt persisted target passwords and API responses. |
-| `BEDROCK_MONGO_URI` | MongoDB URI used by the HTTP API to persist targets, uploaded SQL files, patches, runs, validations, snapshots, audit events, and the active Keycloak configuration snapshot. |
-| `BEDROCK_MONGO_DATABASE` | MongoDB database for persisted HTTP API state. |
-| `BEDROCK_MONGO_TARGETS_COLLECTION` | MongoDB collection for persisted target records. |
-| `BEDROCK_SQL_FILES_COLLECTION` | MongoDB collection for uploaded repository SQL files. Defaults to `sql_files`. |
-| `BEDROCK_PATCHES_COLLECTION` | MongoDB collection for uploaded migration patches. Defaults to `patches`. |
-| `BEDROCK_RUNS_COLLECTION` | MongoDB collection for migration run history and active-run guards. Defaults to `runs`. |
-| `BEDROCK_VALIDATIONS_COLLECTION` | MongoDB collection for validation results. Defaults to `validations`. |
-| `BEDROCK_SNAPSHOTS_COLLECTION` | MongoDB collection for SQL manifest snapshots. Defaults to `snapshots`. |
-| `BEDROCK_AUDIT_COLLECTION` | MongoDB collection for audit events. Defaults to `audit_events`. |
-| `BEDROCK_KEYCLOAK_CONFIG_COLLECTION` | MongoDB collection for the non-secret Keycloak configuration snapshot written by the backend at startup. Defaults to `keycloak_config`. |
+| `BEDROCK_STATE_DB_URL` | JDBC MySQL URL for external TiDB v8.5+, selecting `schema_migrator` and setting `sslMode=VERIFY_IDENTITY`. R2DBC and PostgreSQL URLs are rejected. |
+| `BEDROCK_STATE_DB_USER` | Dedicated non-root TiDB state-store role. |
+| `BEDROCK_STATE_DB_PASSWORD` | Password for the dedicated TiDB state-store role. |
+| `BEDROCK_STATE_DB_POOL_SIZE` | Maximum TiDB state-store connection pool size. Defaults to `10`. |
+| `BEDROCK_STATE_DB_TRUSTSTORE_FILE` | Compose host path to the PKCS12 truststore containing the TiDB server CA. |
+| `BEDROCK_STATE_DB_TRUSTSTORE_PASSWORD` | Password for the TiDB PKCS12 truststore. |
 | `DOCKER_SOCKET` | Docker socket bind source for the Traefik Docker provider in `docker-compose.yml`. Defaults to `/var/run/docker.sock`; Docker Desktop users may need `${HOME}/.docker/run/docker.sock`. |
 | `DOCKER_API_VERSION` | Optional Docker API version used by Traefik's Docker client. Defaults to `1.40` for compatibility with newer Docker engines. |
 
 Oracle schema catalog and drift endpoints currently return `supported = false`; Oracle targets are limited to connection-level checks and JDBC migration execution until Oracle catalog introspection is added.
 
-Postgres drift checks persist the latest object-level result per customer overlay in
-`schema_control.object_customization_registry`. The Docker Compose and Kubernetes
-deployments keep Keycloak's realm/user database on a dedicated persistent volume.
-Keycloak does not support MongoDB as its user database; MongoDB stores the
-schema-migrator API state plus the backend's active Keycloak configuration
-snapshot. To install or query the report view:
+Postgres drift checks remain available solely for external PostgreSQL migration targets.
+Schema Migrator API state and its active external-Keycloak configuration snapshot live in
+the canonical external TiDB `schema_migrator` database. Runtime startup verifies the
+provisioning migration ledger and checksum but never executes state-schema DDL. Docker
+Compose and Kubernetes do not deploy PostgreSQL, MongoDB, TiDB, or Keycloak.
+
+To install or query the external PostgreSQL target report view:
 
 ```bash
 psql "$DATABASE_URL" -f sql/registry/drift_report.sql
@@ -266,9 +263,13 @@ apply_order:
   - 00_extensions/001_extensions.sql
   - 01_schemas/001_coordinator.sql
   - 03_tables/001_sync_cursors.sql
+retired:
+  - 05_functions/001_replaced_helper.sql
 ```
 
 Discovery uses manifests when present. If `--sql-dir ./sql` is used, the selected engine root is resolved automatically. Customer overlays are included only when `--customer <name>` is provided, in this order: `core/manifest.yaml`, `contracts/manifest.yaml`, then `customers/<name>/manifest.yaml`.
+
+`apply_order` is the active schema definition. Keep replaced files in `retired` so the runner records their registry entries as retired without executing their obsolete SQL. An entry cannot appear in both lists, and every SQL file in a manifest layer must be listed in one of them.
 
 Aggregate baselines are generated artifacts. Run `generate-baseline` to write `_generated_baseline.sql`; do not edit that file by hand.
 
@@ -331,5 +332,4 @@ sbt test
 sbt assembly
 ```
 
-The project targets Scala 3.3.6 and uses Cats Effect 3.6.3, Doobie 1.0.0-RC10, and Decline 2.5.0.
-With Schema Migrator, streamline your migration processes and ensure a robust and efficient SQL environment.
+The project targets Java 21 and Scala 3.3.8, with Cats Effect 3.7.0, Doobie 1.0.0-RC10, and Decline 2.5.0.

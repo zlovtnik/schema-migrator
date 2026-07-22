@@ -78,231 +78,6 @@ const driftTypeSchema = z.enum(driftTypeOptions);
 const snapshotDiffTypeSchema = z.enum(snapshotDiffTypeOptions);
 const nullableOptionalStringSchema = z.string().nullish();
 
-export interface Target {
-  id: string;
-  label: string;
-  app_name: string;
-  env: Env;
-  jdbc_url: string;
-  created_at: Rfc3339Timestamp;
-  repo_url: string;
-  repo_branch: string;
-  repo_sql_path: string;
-  last_synced_commit?: string | null;
-  last_synced_at?: Rfc3339Timestamp | null;
-}
-
-export interface ScriptError {
-  db_code: string;
-  message: string;
-  hint?: string;
-  context?: string;
-  line?: number;
-}
-
-export interface Script {
-  id: string;
-  patch_id: string;
-  order: number;
-  filename: string;
-  checksum: string;
-  status: ScriptStatus;
-  error?: ScriptError;
-  duration_ms?: number;
-}
-
-export interface Patch {
-  id: string;
-  target_id: string;
-  version: string;
-  label: string;
-  scripts: Script[];
-  status: PatchStatus;
-  applied_at?: Rfc3339Timestamp;
-  source_snapshot_id?: string | null;
-}
-
-export interface Run {
-  id: string;
-  target_id: string;
-  patch_id: string;
-  status: RunStatus;
-  scripts: ScriptRun[];
-  started_at: Rfc3339Timestamp;
-  ended_at?: Rfc3339Timestamp;
-  triggered_by: string;
-}
-
-export interface ScriptRun {
-  script_id: string;
-  filename: string;
-  order: number;
-  status: ScriptStatus;
-  error?: ScriptError;
-  duration_ms?: number;
-}
-
-export interface ValidationResult {
-  run_id: string;
-  target_id: string;
-  checked_at: Rfc3339Timestamp;
-  invalid: InvalidObject[];
-  status: ValidationStatus;
-}
-
-export interface SqlFilesValidationResult {
-  target_id: string;
-  db_kind: DbKind;
-  checked_at: Rfc3339Timestamp;
-  file_count: number;
-  invalid: InvalidObject[];
-  status: ValidationStatus;
-}
-
-export interface InvalidObject {
-  object_type: ObjectType;
-  schema: string;
-  name: string;
-  error: string;
-  severity: Severity;
-}
-
-export interface SchemaCatalogObject {
-  schema: string;
-  name: string;
-  object_type: ObjectType;
-  status: SchemaObjectStatus;
-  source_file?: string | null;
-  checksum?: string | null;
-  apply_status?: string | null;
-  actual_ddl?: string | null;
-  expected_ddl?: string | null;
-  last_checked: Rfc3339Timestamp;
-}
-
-export interface SchemaCatalogResponse {
-  target_id: string;
-  db_kind: DbKind;
-  supported: boolean;
-  checked_at: Rfc3339Timestamp;
-  objects: SchemaCatalogObject[];
-  warnings: string[];
-}
-
-export interface SchemaObjectListItem {
-  folder: string;
-  path: string;
-  object_type: ObjectType;
-  status: SchemaObjectStatus;
-  source_file: string;
-}
-
-export interface SchemaObjectListResponse {
-  target_id: string;
-  db_kind: DbKind;
-  supported: boolean;
-  checked_at: Rfc3339Timestamp;
-  objects: SchemaObjectListItem[];
-  warnings: string[];
-}
-
-export interface DriftItem {
-  schema: string;
-  name: string;
-  object_type: ObjectType;
-  drift_type: DriftType;
-  expected: string;
-  actual: string;
-  source_file?: string | null;
-  checksum?: string | null;
-  apply_status?: string | null;
-  detected_at: Rfc3339Timestamp;
-}
-
-export interface SchemaControlSummary {
-  total_count: number;
-  applied_count: number;
-  skipped_count: number;
-  pending_count: number;
-  failed_count: number;
-  ready: boolean;
-  failed_objects: string[];
-  last_applied_at?: Rfc3339Timestamp | null;
-  last_updated_at?: Rfc3339Timestamp | null;
-}
-
-export interface SchemaControlObject {
-  kind: string;
-  object_name: string;
-  source_file: string;
-  apply_status: string;
-  checksum: string;
-  applied_at?: Rfc3339Timestamp | null;
-  updated_at?: Rfc3339Timestamp | null;
-}
-
-export interface DriftResponse {
-  target_id: string;
-  db_kind: DbKind;
-  supported: boolean;
-  checked_at: Rfc3339Timestamp;
-  control_summary?: SchemaControlSummary | null;
-  control_objects: SchemaControlObject[];
-  items: DriftItem[];
-  warnings: string[];
-}
-
-export interface SnapshotFile {
-  path: string;
-  folder?: string;
-  filename?: string;
-  sha256: string;
-  size_bytes?: number;
-  uploaded_at?: Rfc3339Timestamp;
-}
-
-export interface Snapshot {
-  id: string;
-  target_id: string;
-  label: string;
-  created_at: Rfc3339Timestamp;
-  created_by: string;
-  file_count: number;
-  files?: SnapshotFile[];
-}
-
-export interface SnapshotDiffItem {
-  path: string;
-  diff_type: SnapshotDiffType;
-  before_sha256?: string | null;
-  after_sha256?: string | null;
-}
-
-export interface SnapshotDiff {
-  snapshot_id: string;
-  other_snapshot_id: string;
-  generated_at?: Rfc3339Timestamp | null;
-  items: SnapshotDiffItem[];
-}
-
-export interface AuditEvent {
-  id: string;
-  actor: string;
-  role?: string | null;
-  action: string;
-  entity_type: string;
-  entity_id: string;
-  at: Rfc3339Timestamp;
-  target_id?: string | null;
-  metadata?: Record<string, unknown> | null;
-}
-
-export interface ConnectionTestResult {
-  ok: boolean;
-  latency_ms?: number;
-  error?: string;
-}
-
 export interface RunStreamState {
   scriptEvents: Map<string, ScriptRun>;
   logLines: string[];
@@ -323,6 +98,7 @@ export const targetSchema = z.object({
   app_name: z.string(),
   env: envSchema,
   jdbc_url: z.string(),
+  db_kind: dbKindSchema.optional(),
   created_at: rfc3339TimestampSchema,
   repo_url: z.string(),
   repo_branch: z.string().default("main"),
@@ -539,6 +315,30 @@ export const auditEventSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).nullish()
 });
 
+export type Target = z.infer<typeof targetSchema>;
+export type ScriptError = z.infer<typeof scriptErrorSchema>;
+export type Script = z.infer<typeof scriptSchema>;
+export type Patch = z.infer<typeof patchSchema>;
+export type ScriptRun = z.infer<typeof scriptRunSchema>;
+export type Run = z.infer<typeof runSchema>;
+export type InvalidObject = z.infer<typeof invalidObjectSchema>;
+export type ValidationResult = z.infer<typeof validationResultSchema>;
+export type SqlFilesValidationResult = z.infer<typeof sqlFilesValidationResultSchema>;
+export type SchemaCatalogObject = z.infer<typeof schemaCatalogObjectSchema>;
+export type SchemaCatalogResponse = z.infer<typeof schemaCatalogResponseSchema>;
+export type SchemaObjectListItem = z.infer<typeof schemaObjectListItemSchema>;
+export type SchemaObjectListResponse = z.infer<typeof schemaObjectListResponseSchema>;
+export type DriftItem = z.infer<typeof driftItemSchema>;
+export type SchemaControlSummary = z.infer<typeof schemaControlSummarySchema>;
+export type SchemaControlObject = z.infer<typeof schemaControlObjectSchema>;
+export type DriftResponse = z.infer<typeof driftResponseSchema>;
+export type SnapshotFile = z.infer<typeof snapshotFileSchema>;
+export type Snapshot = z.infer<typeof snapshotSchema>;
+export type SnapshotDiffItem = z.infer<typeof snapshotDiffItemSchema>;
+export type SnapshotDiff = z.infer<typeof snapshotDiffSchema>;
+export type AuditEvent = z.infer<typeof auditEventSchema>;
+export type ConnectionTestResult = z.infer<typeof connectionTestResultSchema>;
+
 export const parseTarget = (value: unknown): Target => targetSchema.parse(value) as Target;
 export const parseTargetList = (value: unknown): Target[] => {
   const parsed = z.union([z.array(targetSchema), z.object({ targets: z.array(targetSchema) })]).parse(value);
@@ -571,7 +371,6 @@ export const parseSnapshotList = (value: unknown): Snapshot[] => {
   return (Array.isArray(parsed) ? parsed : parsed.snapshots) as Snapshot[];
 };
 export const parseSnapshotDiff = (value: unknown): SnapshotDiff => snapshotDiffSchema.parse(value) as SnapshotDiff;
-export const parseAuditEvent = (value: unknown): AuditEvent => auditEventSchema.parse(value) as AuditEvent;
 export const parseAuditEventList = (value: unknown): AuditEvent[] => {
   const parsed = z.union([z.array(auditEventSchema), z.object({ events: z.array(auditEventSchema) })]).parse(value);
   return (Array.isArray(parsed) ? parsed : parsed.events) as AuditEvent[];
@@ -656,11 +455,6 @@ export interface DriftRunPayload {
 export interface CreatePatchFromSqlFilesPayload {
   target_id: string;
   source_files: string[];
-}
-
-export interface UploadPatchPayload {
-  target_id: string;
-  files: File[];
 }
 
 export interface ValidateSqlFilesPayload {

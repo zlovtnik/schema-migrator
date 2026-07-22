@@ -1,6 +1,5 @@
 package com.sslproxy.schema.discovery
 
-import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.sslproxy.schema.config.DbKind
 import munit.FunSuite
@@ -15,7 +14,7 @@ class DiscoveryServiceSuite extends FunSuite:
       Files.writeString(tables.resolve("002_b.sql"), "select 1;")
       Files.writeString(tables.resolve("001_a.sql"), "select 1;")
 
-      val discovered = DiscoveryService[IO]().discover(dir, DbKind.Postgres).unsafeRunSync()
+      val discovered = DiscoveryService().discover(dir, DbKind.Postgres).unsafeRunSync()
       val tableNames = discovered.files.filter(_.folder == "tables").map(_.name)
 
       assertEquals(tableNames, List("001_a.sql", "002_b.sql"))
@@ -30,7 +29,7 @@ class DiscoveryServiceSuite extends FunSuite:
       Files.writeString(cron.resolve("001_schedule.sql"), "select 1;")
       Files.writeString(materializedViews.resolve("001_view.sql"), "select 1;")
 
-      val discovered = DiscoveryService[IO]().discover(dir, DbKind.Postgres).unsafeRunSync()
+      val discovered = DiscoveryService().discover(dir, DbKind.Postgres).unsafeRunSync()
       assertEquals(
         normalizePaths(discovered.files.map(_.relativePath)),
         List(
@@ -80,7 +79,7 @@ class DiscoveryServiceSuite extends FunSuite:
           |""".stripMargin
       )
 
-      val discovered = DiscoveryService[IO]().discover(root, DbKind.Postgres, Some("acme")).unsafeRunSync()
+      val discovered = DiscoveryService().discover(root, DbKind.Postgres, Some("acme")).unsafeRunSync()
 
       assertEquals(
         normalizePaths(discovered.files.map(_.relativePath)),
@@ -130,9 +129,45 @@ class DiscoveryServiceSuite extends FunSuite:
           |""".stripMargin
       )
 
-      val discovered = DiscoveryService[IO]().discover(engineRoot, DbKind.Postgres).unsafeRunSync()
+      val discovered = DiscoveryService().discover(engineRoot, DbKind.Postgres).unsafeRunSync()
 
       assertEquals(normalizePaths(discovered.files.map(_.relativePath)), List("core/03_tables/001_core.sql"))
+      assertEquals(discovered.warnings, Nil)
+    }
+  }
+
+  test("manifest retirement keeps old files out of the active apply order") {
+    withTempDir { dir =>
+      val root = dir.resolve("sql")
+      val core = root.resolve("postgres").resolve("core")
+      val contracts = root.resolve("postgres").resolve("contracts")
+      Files.createDirectories(core.resolve("05_functions"))
+      Files.createDirectories(contracts)
+      Files.writeString(core.resolve("05_functions").resolve("001_current.sql"), sql("current", "functions"))
+      Files.writeString(core.resolve("05_functions").resolve("002_old.sql"), sql("old", "functions"))
+      Files.writeString(
+        core.resolve("manifest.yaml"),
+        """engine: postgres
+          |layer: core
+          |apply_order:
+          |  - 05_functions/001_current.sql
+          |retired:
+          |  - 05_functions/002_old.sql
+          |""".stripMargin
+      )
+      Files.writeString(
+        contracts.resolve("manifest.yaml"),
+        """engine: postgres
+          |layer: contracts
+          |apply_order: []
+          |retired: []
+          |""".stripMargin
+      )
+
+      val discovered = DiscoveryService().discover(root, DbKind.Postgres).unsafeRunSync()
+
+      assertEquals(discovered.files.map(_.name), List("001_current.sql"))
+      assertEquals(discovered.retiredFiles.map(_.name), List("002_old.sql"))
       assertEquals(discovered.warnings, Nil)
     }
   }
@@ -149,7 +184,7 @@ class DiscoveryServiceSuite extends FunSuite:
       SqlFile("sql", Path.of("sql/000_baseline.sql"), "000_baseline.sql", "sql/000_baseline.sql")
     )
 
-    val discovered = DiscoveryService[IO]().discoverFromFiles(files, DbKind.Postgres)
+    val discovered = DiscoveryService().discoverFromFiles(files, DbKind.Postgres)
 
     assertEquals(discovered.files.map(_.folder), List("tables"))
     assertEquals(discovered.files.map(_.relativePath), List("tables/001_table.sql"))
@@ -172,7 +207,7 @@ class DiscoveryServiceSuite extends FunSuite:
       )
     )
 
-    val discovered = DiscoveryService[IO]().discoverFromFiles(files, DbKind.Postgres)
+    val discovered = DiscoveryService().discoverFromFiles(files, DbKind.Postgres)
 
     assertEquals(discovered.files.map(_.folder), List("tables"))
     assertEquals(discovered.files.map(_.relativePath), List("postgres/core/03_tables/001_table.sql"))
@@ -201,7 +236,7 @@ class DiscoveryServiceSuite extends FunSuite:
       )
     )
 
-    val discovered = DiscoveryService[IO]().discoverFromFiles(files, DbKind.Postgres)
+    val discovered = DiscoveryService().discoverFromFiles(files, DbKind.Postgres)
 
     assertEquals(discovered.files.map(_.relativePath), List("postgres/core/03_tables/001_table.sql"))
     assertEquals(discovered.warnings, Nil)
@@ -218,7 +253,7 @@ class DiscoveryServiceSuite extends FunSuite:
       Files.writeString(dir.resolve("teardown").resolve("oracle_nuclear_drop.sql"), "select 1;")
       Files.writeString(dir.resolve("scratch").resolve("001_unknown.sql"), "select 1;")
 
-      val discovered = DiscoveryService[IO]().discover(dir, DbKind.Postgres).unsafeRunSync()
+      val discovered = DiscoveryService().discover(dir, DbKind.Postgres).unsafeRunSync()
 
       assertEquals(discovered.files.map(_.relativePath), List("tables/001_table.sql"))
       assert(!discovered.warnings.exists(_.contains("registry")))
@@ -236,7 +271,7 @@ class DiscoveryServiceSuite extends FunSuite:
       Files.writeString(dir.resolve("seed_data").resolve("001_seed.sql"), "select 1;")
       Files.writeString(dir.resolve("scheduler").resolve("001_job.sql"), "select 1;")
 
-      val discovered = DiscoveryService[IO]().discover(dir, DbKind.Oracle).unsafeRunSync()
+      val discovered = DiscoveryService().discover(dir, DbKind.Oracle).unsafeRunSync()
 
       assertEquals(
         normalizePaths(discovered.files.map(_.relativePath)),

@@ -1,17 +1,17 @@
 package com.sslproxy.schema.engine
 
-import cats.effect.Sync
+import cats.effect.IO
 import cats.syntax.all.*
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.parser.{Canonicalizer, HeaderParser}
 
-final class ManifestBuilder[F[_]: Sync](dialect: SqlDialect):
+final class ManifestBuilder(dialect: SqlDialect):
   private val createOrReplaceProcedure = raw"(?is)\bcreate\s+or\s+replace\s+(?:(?:non)?editionable\s+)?procedure\b".r
 
-  def build(files: List[SqlFile]): F[List[SchemaObject]] =
-    files.traverse(file => Sync[F].blocking(fromFile(file)))
+  def build(files: List[SqlFile]): IO[List[SchemaObject]] =
+    files.traverse(file => IO.blocking(fromFile(file)))
 
   private def fromFile(file: SqlFile): SchemaObject =
     val rawSql = file.readString

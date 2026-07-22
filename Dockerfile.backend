@@ -1,5 +1,5 @@
 # --- build stage ---
-FROM azul/zulu-openjdk:26 AS builder
+FROM azul/zulu-openjdk:21 AS builder
 
 ARG SBT_VERSION=1.11.6
 
@@ -29,7 +29,7 @@ COPY --chown=schema:schema AGENTS.md README.md ./
 RUN sbt -Dsbt.supershell=false assembly
 
 # --- runtime stage ---
-FROM azul/zulu-openjdk:26-jre
+FROM azul/zulu-openjdk:21-jre
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl \

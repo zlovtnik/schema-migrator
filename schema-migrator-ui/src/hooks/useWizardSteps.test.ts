@@ -18,4 +18,16 @@ describe("useWizardSteps", () => {
     act(() => result.current.reset());
     expect(result.current.isFirst).toBe(true);
   });
+
+  it("reclamps the current index when steps shrink", () => {
+    const { result, rerender } = renderHook(({ steps }: { steps: readonly string[] }) => useWizardSteps(steps), {
+      initialProps: { steps: ["one", "two", "three"] }
+    });
+
+    act(() => result.current.goTo(2));
+    rerender({ steps: ["one", "two"] });
+
+    expect(result.current.currentIndex).toBe(1);
+    expect(result.current.currentStep).toBe("two");
+  });
 });

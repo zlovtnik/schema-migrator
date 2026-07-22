@@ -16,6 +16,7 @@ import java.sql.{Connection, ResultSet, SQLException, Types}
 
 trait SchemaControlStore[F[_]]:
   def prepare(objects: List[SchemaObject]): F[List[PreparedObject]]
+  def retire(objects: List[SchemaObject]): F[Unit]
   def fetchStatus: F[List[ObjectStatus]]
   def fetchReady: F[SchemaReadyStatus]
   def fetchRollbackTarget(objectName: String): F[RollbackTarget]
@@ -67,6 +68,9 @@ final class PostgresSchemaControlStore extends SchemaControlStore[ConnectionIO]:
 
   override def prepare(objects: List[SchemaObject]): ConnectionIO[List[PreparedObject]] =
     objects.traverse(prepareOne)
+
+  override def retire(objects: List[SchemaObject]): ConnectionIO[Unit] =
+    objects.traverse_(objectDef => Update[String](PostgresStatements.retireSql).run(objectDef.sourceFile).void)
 
   private def prepareOne(objectDef: SchemaObject): ConnectionIO[PreparedObject] =
     val operation =
@@ -289,6 +293,13 @@ final class OracleSchemaControlStore(connection: Connection) extends SchemaContr
 
   override def prepare(objects: List[SchemaObject]): IO[List[PreparedObject]] =
     objects.traverse(prepareOne)
+
+  override def retire(objects: List[SchemaObject]): IO[Unit] =
+    IO.blocking {
+      objects.foreach { objectDef =>
+        executePrepared(connection, OracleStatements.retireSql)(_.setString(1, objectDef.sourceFile))
+      }
+    }
 
   private def prepareOne(objectDef: SchemaObject): IO[PreparedObject] =
     IO.blocking {
