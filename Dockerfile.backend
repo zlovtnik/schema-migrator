@@ -38,7 +38,7 @@ RUN apt-get update \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=builder /app/target/scala-3*/schema-migrator.jar app.jar
+COPY --from=builder /app/target/out/jvm/scala-*/schema-migrator/schema-migrator.jar app.jar
 
 EXPOSE 8080
 USER schema
