@@ -179,7 +179,9 @@ object PostgresProvider:
     val trimmed = raw.trim
     if trimmed.startsWith("jdbc:postgresql://") then parsePostgresJdbcUrl(trimmed)
     else if trimmed.startsWith("postgres://") || trimmed.startsWith("postgresql://") then parsePostgresUri(trimmed)
-    else Left("Postgres URL must start with postgres://, postgresql://, or jdbc:postgresql://")
+    else if trimmed.startsWith("jdbc:mysql://") then parseMySqlJdbcUrl(trimmed)
+    else if trimmed.startsWith("mysql://") then parseMySqlUri(trimmed)
+    else Left("URL must start with postgres://, postgresql://, jdbc:postgresql://, jdbc:mysql://, or mysql://")
 
   private def parsePostgresJdbcUrl(raw: String): Either[String, JdbcConnectionConfig] =
     if !raw.contains("@") then postgresJdbcHost(raw).as(JdbcConnectionConfig("org.postgresql.Driver", raw))
@@ -206,6 +208,33 @@ object PostgresProvider:
         val user = parts.headOption.filter(_.nonEmpty).map(decode)
         val pass = parts.drop(1).headOption.filter(_.nonEmpty).map(decode)
         Right(JdbcConnectionConfig("org.postgresql.Driver", url, user, pass))
+    }
+
+  private def parseMySqlJdbcUrl(raw: String): Either[String, JdbcConnectionConfig] =
+    if !raw.contains("@") then mySqlJdbcHost(raw).as(JdbcConnectionConfig("com.mysql.cj.jdbc.Driver", raw))
+    else parseMySqlUri(raw.stripPrefix("jdbc:"))
+
+  private def mySqlJdbcHost(raw: String): Either[String, String] =
+    Either
+      .catchNonFatal(URI(raw.stripPrefix("jdbc:")))
+      .leftMap(error => s"invalid MySQL/TiDB URL: ${error.getMessage}")
+      .flatMap { uri =>
+        Option(uri.getHost).filter(_.nonEmpty).toRight("invalid MySQL/TiDB URL: host is required")
+      }
+
+  private def parseMySqlUri(raw: String): Either[String, JdbcConnectionConfig] =
+    Either.catchNonFatal(URI(raw)).leftMap(error => s"invalid MySQL/TiDB URL: ${error.getMessage}").flatMap { uri =>
+      if uri.getHost == null then Left("invalid MySQL/TiDB URL: host is required")
+      else
+        val path = Option(uri.getRawPath).filter(_.nonEmpty).getOrElse("/")
+        val port = if uri.getPort >= 0 then s":${uri.getPort}" else ""
+        val query = Option(uri.getRawQuery).filter(_.nonEmpty).map(q => s"?$q").getOrElse("")
+        val url = s"jdbc:mysql://${uri.getHost}$port$path$query"
+        val userInfo = Option(uri.getRawUserInfo).getOrElse("")
+        val parts = userInfo.split(":", 2)
+        val user = parts.headOption.filter(_.nonEmpty).map(decode)
+        val pass = parts.drop(1).headOption.filter(_.nonEmpty).map(decode)
+        Right(JdbcConnectionConfig("com.mysql.cj.jdbc.Driver", url, user, pass))
     }
 
   private def decode(value: String): String =

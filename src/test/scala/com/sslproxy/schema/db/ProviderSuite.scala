@@ -43,6 +43,35 @@ class ProviderSuite extends FunSuite:
     assertEquals(config.password, None)
   }
 
+  test("normalizes mysql:// URI into JDBC config with credentials") {
+    val config = PostgresProvider.normalize("mysql://admin:s3cret@tidb.example:4000/mydb?sslMode=VERIFY_IDENTITY").toOption.get
+    assertEquals(config.url, "jdbc:mysql://tidb.example:4000/mydb?sslMode=VERIFY_IDENTITY")
+    assertEquals(config.user, Some("admin"))
+    assertEquals(config.password, Some("s3cret"))
+    assertEquals(config.driver, "com.mysql.cj.jdbc.Driver")
+  }
+
+  test("accepts existing JDBC mysql URL without credentials") {
+    val config = PostgresProvider.normalize("jdbc:mysql://tidb.example:4000/mydb").toOption.get
+    assertEquals(config.url, "jdbc:mysql://tidb.example:4000/mydb")
+    assertEquals(config.user, None)
+    assertEquals(config.driver, "com.mysql.cj.jdbc.Driver")
+  }
+
+  test("normalizes JDBC mysql URL with username authority") {
+    val config = PostgresProvider.normalize("jdbc:mysql://admin@tidb.example:4000/mydb").toOption.get
+    assertEquals(config.url, "jdbc:mysql://tidb.example:4000/mydb")
+    assertEquals(config.user, Some("admin"))
+    assertEquals(config.password, None)
+  }
+
+  test("rejects mysql URLs without a host") {
+    assertEquals(
+      PostgresProvider.normalize("jdbc:mysql:///mydb").left.toOption,
+      Some("invalid MySQL/TiDB URL: host is required")
+    )
+  }
+
   test("postgres Doobie wiring keeps non-transactional strategy on same transactor kernel") {
     val config = JdbcConnectionConfig("org.h2.Driver", h2Url())
     val tx = DoobieSupport.postgresDriverManagerTransactor(config)
