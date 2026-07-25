@@ -1,5 +1,5 @@
 # --- build frontend ---
-FROM oven/bun:1.3.11 AS ui-builder
+FROM oven/bun:1.3.14 AS ui-builder
 
 WORKDIR /ui
 RUN chown bun:bun /ui
