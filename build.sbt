@@ -77,7 +77,7 @@ lazy val root = (project in file("."))
       "org.apache.commons" % "commons-compress" % "1.27.1",
       "org.typelevel" %% "log4cats-slf4j" % "2.8.0",
       "org.slf4j" % "slf4j-simple" % "2.0.18",
-      "org.postgresql" % "postgresql" % "42.7.7",
+      "org.postgresql" % "postgresql" % "42.7.13",
       "com.mysql" % "mysql-connector-j" % mysqlConnectorVersion,
       "com.oracle.database.jdbc" % "ojdbc11" % oracleJdbcVersion,
       "com.oracle.database.security" % "oraclepki" % oracleJdbcVersion,
