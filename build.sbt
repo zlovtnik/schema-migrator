@@ -51,7 +51,7 @@ val jgitVersion = "7.7.0.202606012155-r"
 val oracleJdbcVersion = "23.6.0.24.10"
 val oracleOsdtVersion = "21.18.0.0"
 val r2dbcMysqlVersion = "1.3.0"
-val mysqlConnectorVersion = "9.2.0"
+val mysqlConnectorVersion = "9.7.0"
 
 lazy val root = (project in file("."))
   .settings(
