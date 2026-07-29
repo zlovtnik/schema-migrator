@@ -1,14 +1,28 @@
-# Schema Migrator Kubernetes Stack
+# Schema Migrator standalone Kubernetes stack
 
-This standalone stack deploys only the schema-migrator backend, UI, and edge router. It does not deploy PostgreSQL, MongoDB, TiDB, or Keycloak.
+These manifests deploy the Schema Migrator backend, UI and edge router. They
+do not deploy TiDB, PostgreSQL, MongoDB or Keycloak.
 
-Before applying it:
+The backend's sole internal state store is an externally provisioned TiDB 8.5+
+`schema_migrator` database. PostgreSQL may be configured later as an external
+migration target; it is not mounted as application state. Oracle compatibility
+is deprecated.
 
-1. Provision an external TiDB v8.5+ `schema_migrator` database and dedicated non-root application user.
-2. Apply the canonical `sql/tidb/schema_migrator` migrations with the repository provisioning schema job and its separate DDL credential. The application never creates or migrates its own tables.
-3. Create a PKCS12 truststore containing the TiDB server CA. Put its base64 value and password in `secret.template.yaml`.
-4. Set a JDBC URL ending in `/schema_migrator` with `sslMode=VERIFY_IDENTITY`, plus the external OIDC issuer/JWKS values.
-5. Replace the pinned image and public-origin placeholders in `stack.yaml`.
+## Prerequisites
+
+1. Provision the `schema_migrator` TiDB database and a dedicated non-root
+   application account.
+2. Apply the parent repository's canonical `sql/tidb/schema_migrator` manifest
+   with the provisioning schema executor and its separate DDL credential.
+3. Create a PKCS12 truststore containing the TiDB server CA.
+4. Populate `secret.template.yaml` with the truststore and required
+   `BEDROCK_STATE_DB_*`, auth and encryption values.
+5. Set a JDBC URL ending in `/schema_migrator` with
+   `sslMode=VERIFY_IDENTITY`.
+6. Configure the external OIDC issuer/JWKS and replace the pinned image and
+   public-origin placeholders in `stack.yaml`.
+
+## Apply
 
 ```bash
 kubectl apply -f namespace.yaml
@@ -17,4 +31,11 @@ kubectl apply -f stack.yaml
 kubectl -n schema-migrator get svc schema-migrator-edge -w
 ```
 
-Backend startup fails closed when TiDB is older than v8.5, the session is not UTC, or the canonical migration ledger/readiness checksum is missing or mismatched. External migration target credentials are entered per target and encrypted in TiDB; no global PostgreSQL target credential is mounted.
+Startup fails closed for TiDB older than 8.5, a non-UTC session, a wrong
+database, invalid TLS identity, or missing/mismatched canonical migration
+readiness. External target credentials are entered per target and encrypted in
+TiDB; no global PostgreSQL target credential is mounted.
+
+The parent Helm chart has a different topology and deploys Keycloak with its
+own separate database. See the parent
+[`docs/architecture.md`](../../../../docs/architecture.md).
