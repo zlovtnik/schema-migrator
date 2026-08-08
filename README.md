@@ -107,15 +107,23 @@ Server configuration uses the `BEDROCK_*` family:
 The server fails closed when required auth, encryption or state-store
 configuration is missing.
 
-## Deployment
+## Kubernetes runtime
 
-- Parent umbrella Helm: `helm/ssl-proxy/charts/schema-migrator`
-- Standalone Kubernetes manifests: [`deploy/k8s/README.md`](deploy/k8s/README.md)
-- Local service/UI Compose: `docker-compose.yml`, with externally provisioned
-  TiDB and identity endpoints
+The parent repository owns the Schema Migrator Kubernetes resources in its
+Kustomize app-stack base and environment slices. Argo CD reconciles those
+resources from the parent repository's `main` branch.
 
 The in-cluster Keycloak uses its own deployment-created `keycloak` database.
 It is separate from the four canonical application manifests.
+
+## Local development
+
+Docker Compose may be used only as a local service/UI test harness, with TiDB
+and identity endpoints provisioned outside the harness:
+
+```bash
+docker-compose up --build
+```
 
 ## Build and test
 

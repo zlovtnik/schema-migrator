@@ -12,10 +12,7 @@ This file governs this `schema-migrator` repository checkout.
   credentials.
 - PostgreSQL remains supported only as an explicitly configured external
   schema-migration target using the split `sql/postgres` tree.
-- A small bundled web UI lives in `schema-migrator-ui/` (Vite + React). CI and
-  local development may use the provided `docker-compose.yml`, which builds
-  the `backend`, `frontend`, and `traefik` services against externally
-  provisioned TiDB state and identity-provider endpoints.
+- A small bundled web UI lives in `schema-migrator-ui/` (Vite + React).
 
 ## Guardrails
 - Preserve deterministic ordering. Postgres order is extensions, schemas,
@@ -35,6 +32,11 @@ This file governs this `schema-migrator` repository checkout.
 - Build every new dialog on `components/ui/Modal.tsx`; do not add another portal or focus trap.
 - Leave `ConnectionForm.tsx` and `TargetFormPage.tsx` as single-step forms until a second real wizard flow justifies extracting them.
 
+## Local Development
+- Docker Compose may be used only as a local UI/API test harness against
+  externally provisioned TiDB state and identity-provider endpoints:
+  `docker-compose up --build`
+
 ## Commands
 - Run tests: `sbt test`
 - List SQL files in apply order: `sbt "run --sql-dir ./sql list"`
@@ -42,5 +44,3 @@ This file governs this `schema-migrator` repository checkout.
 - Dry-run apply (print SQL that would be executed): `sbt "run --sql-dir ./sql --dry-run apply"`
 - Check DB connectivity: `sbt "run --sql-dir ./sql check-connection"`
 - Apply migrations: `sbt "run --sql-dir ./sql apply"`
-- Docker compose (local UI/API against external TiDB state):
-  `docker-compose up --build`
