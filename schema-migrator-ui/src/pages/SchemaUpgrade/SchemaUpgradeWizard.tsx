@@ -218,7 +218,7 @@ export const SchemaUpgradeWizard = () => {
           <ObjectTree
             groups={groups}
             selectedFiles={selectedFiles}
-            invalid={precheck?.invalid.map((item) => item.name) ?? []}
+            invalid={blockingInvalidNames(precheck)}
             onToggle={(path) => updateSelectedFiles(toggleSelection(selectedFiles, path))}
           />
           <div className="upgrade-actions">
@@ -256,7 +256,31 @@ export const SchemaUpgradeWizard = () => {
             {validation.isPending ? "Validating" : precheck ? "Validate again" : "Run pre-check"}
           </button>
           {precheck ? (
-            <ValidationTable result={precheck} />
+            <>
+              <ValidationTable result={precheck} />
+              {precheck.warnings.length > 0 ? (
+                <section className="section-block" aria-label="Non-blocking discovery warnings">
+                  <div className="section-block__header">
+                    <div>
+                      <h3>
+                        {precheck.warnings.length} non-blocking discovery warning
+                        {precheck.warnings.length === 1 ? "" : "s"}
+                      </h3>
+                      <p>
+                        These files are ignored by the executor until they are ordered and manifested; they do not block
+                        this run.
+                      </p>
+                    </div>
+                    <StatusBadge status="warning" />
+                  </div>
+                  <ValidationTable
+                    result={{ target_id: precheck.target_id, invalid: precheck.warnings }}
+                    caption="Non-blocking discovery warnings"
+                    empty="No discovery warnings."
+                  />
+                </section>
+              ) : null}
+            </>
           ) : (
             <div className="empty-state">Run the pre-check to continue.</div>
           )}
@@ -460,6 +484,9 @@ export const groupFiles = (objects: SchemaObjectListItem[]) => {
     a.folder.localeCompare(b.folder)
   );
 };
+
+export const blockingInvalidNames = (result: Pick<SqlFilesValidationResult, "invalid"> | undefined): string[] =>
+  result?.invalid.map((item) => item.name) ?? [];
 const toggleSelection = (selection: Set<string>, path: string) => {
   const next = new Set(selection);
   if (next.has(path)) next.delete(path);

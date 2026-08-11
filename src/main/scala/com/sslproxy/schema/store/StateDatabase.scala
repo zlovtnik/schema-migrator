@@ -50,61 +50,47 @@ object StateDatabase:
     private def verifyRuntime(contract: StateSchemaContract): IO[Unit] =
       database
         .transact(runtimeVerification(contract))
-        .adaptError { case error =>
-          IllegalStateException(
-            "TiDB state schema verification failed; apply sql/tidb/schema_migrator with the provisioning schema job before starting the runtime",
-            error
-          )
-        }
+        .handleErrorWith(error => StateSchemaVerificationFailure.topLevel(error).raiseError[IO, Unit])
 
   private def runtimeVerification(contract: StateSchemaContract): ConnectionIO[Unit] =
     for
-      version <- sql"select version()".query[String].unique
+      version <- checked(StateSchemaVerificationFailure.Database)(sql"select version()".query[String].unique)
       _ <- Either
-        .cond(isSupportedTiDB(version), (), s"BEDROCK_STATE_DB must be TiDB v8.5 or newer; server reported '$version'")
-        .leftMap(IllegalStateException(_))
+        .cond(isSupportedTiDB(version), (), "server must be TiDB v8.5 or newer")
+        .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.Database, detail))
         .liftTo[ConnectionIO]
-      database <- sql"select database()".query[Option[String]].unique
+      database <- checked(StateSchemaVerificationFailure.Database)(sql"select database()".query[Option[String]].unique)
       _ <- Either
-        .cond(database.contains("schema_migrator"), (), "BEDROCK_STATE_DB must select the schema_migrator database")
-        .leftMap(IllegalStateException(_))
+        .cond(database.contains("schema_migrator"), (), "selected database must be schema_migrator")
+        .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.Database, detail))
         .liftTo[ConnectionIO]
-      timeZone <- sql"select @@session.time_zone".query[String].unique
+      timeZone <- checked(StateSchemaVerificationFailure.SessionTimeZone)(sql"select @@session.time_zone".query[String].unique)
       _ <- Either
-        .cond(Set("+00:00", "UTC").contains(timeZone), (), s"TiDB state session must use UTC, found '$timeZone'")
-        .leftMap(IllegalStateException(_))
+        .cond(Set("+00:00", "UTC").contains(timeZone), (), "session time zone must be UTC")
+        .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.SessionTimeZone, detail))
         .liftTo[ConnectionIO]
-      ledger <- sql"select checksum from state_schema_migrations where version = ${contract.version}"
-        .query[String]
-        .option
-      _ <- ledger match
-        case Some(checksum) if checksum.equalsIgnoreCase(contract.checksum) => ().pure[ConnectionIO]
-        case Some(checksum) =>
-          IllegalStateException(
-            s"state schema ledger checksum mismatch for ${contract.version}: database=$checksum runtime=${contract.checksum}"
-          ).raiseError[ConnectionIO, Unit]
-        case None =>
-          IllegalStateException(s"state schema ledger is missing required version ${contract.version}")
-            .raiseError[ConnectionIO, Unit]
-      readiness <- sql"""
+      ledger <- checked(StateSchemaVerificationFailure.LedgerVersionChecksum)(
+        sql"select checksum from state_schema_migrations where version = ${contract.version}".query[String].option
+      )
+      _ <- StateSchemaVerificationFailure
+        .ledgerFailure(contract, ledger)
+        .fold(().pure[ConnectionIO])(_.raiseError[ConnectionIO, Unit])
+      readiness <- checked(StateSchemaVerificationFailure.Readiness)(sql"""
         select required_version, applied_version, required_checksum, applied_checksum, ready
         from schema_readiness
         where domain = 'schema_migrator'
-      """.query[(String, String, String, String, Boolean)].option
-      _ <- readiness match
-        case Some((requiredVersion, appliedVersion, requiredChecksum, appliedChecksum, true))
-            if requiredVersion == contract.version &&
-              appliedVersion == contract.version &&
-              requiredChecksum.equalsIgnoreCase(contract.checksum) &&
-              appliedChecksum.equalsIgnoreCase(contract.checksum) =>
-          ().pure[ConnectionIO]
-        case Some(_) =>
-          IllegalStateException("schema_migrator readiness row does not match the bundled canonical manifest")
-            .raiseError[ConnectionIO, Unit]
-        case None =>
-          IllegalStateException("schema_migrator readiness row is missing")
-            .raiseError[ConnectionIO, Unit]
+      """.query[(String, String, String, String, Boolean)].option)
+      _ <- StateSchemaVerificationFailure
+        .readinessFailure(contract, readiness)
+        .fold(().pure[ConnectionIO])(_.raiseError[ConnectionIO, Unit])
     yield ()
+
+  private def checked[A](category: String)(action: ConnectionIO[A]): ConnectionIO[A] =
+    action.handleErrorWith {
+      case failure: StateSchemaVerificationFailure => failure.raiseError[ConnectionIO, A]
+      case error =>
+        StateSchemaVerificationFailure(category, "verification query failed", error).raiseError[ConnectionIO, A]
+    }
 
   private[store] def isSupportedTiDB(value: String): Boolean =
     val Version = raw"(?i).*TiDB-v(\d+)\.(\d+)(?:\.\d+)?.*".r
@@ -115,6 +101,71 @@ object StateDatabase:
       case _ => false
 
 private[store] final case class StateSchemaContract(version: String, checksum: String)
+
+private[store] final class StateSchemaVerificationFailure(
+  val category: String,
+  val detail: String,
+  cause: Throwable = null
+) extends IllegalStateException(s"$category: $detail", cause)
+
+private[store] object StateSchemaVerificationFailure:
+  val Database = "database"
+  val SessionTimeZone = "session-timezone"
+  val LedgerVersionChecksum = "ledger-version-checksum"
+  val Readiness = "readiness"
+
+  def apply(category: String, detail: String, cause: Throwable = null): StateSchemaVerificationFailure =
+    new StateSchemaVerificationFailure(category, detail, cause)
+
+  def ledgerFailure(
+    contract: StateSchemaContract,
+    ledger: Option[String]
+  ): Option[StateSchemaVerificationFailure] =
+    ledger match
+      case Some(checksum) if checksum.equalsIgnoreCase(contract.checksum) => None
+      case Some(checksum) =>
+        Some(
+          StateSchemaVerificationFailure(
+            LedgerVersionChecksum,
+            s"checksum mismatch for version ${contract.version} (expected=${contract.checksum}, found=$checksum)"
+          )
+        )
+      case None => Some(StateSchemaVerificationFailure(LedgerVersionChecksum, s"missing version ${contract.version}"))
+
+  def readinessFailure(
+    contract: StateSchemaContract,
+    readiness: Option[(String, String, String, String, Boolean)]
+  ): Option[StateSchemaVerificationFailure] =
+    readiness match
+      case Some((requiredVersion, appliedVersion, requiredChecksum, appliedChecksum, true))
+          if requiredVersion == contract.version &&
+            appliedVersion == contract.version &&
+            requiredChecksum.equalsIgnoreCase(contract.checksum) &&
+            appliedChecksum.equalsIgnoreCase(contract.checksum) => None
+      case Some((requiredVersion, appliedVersion, requiredChecksum, appliedChecksum, ready)) =>
+        Some(
+          StateSchemaVerificationFailure(
+            Readiness,
+            s"mismatch (required_version=$requiredVersion, applied_version=$appliedVersion, " +
+              s"required_checksum=$requiredChecksum, applied_checksum=$appliedChecksum, ready=$ready)"
+          )
+        )
+      case None => Some(StateSchemaVerificationFailure(Readiness, "row is missing"))
+
+  def topLevel(error: Throwable): IllegalStateException =
+    error match
+      case failure: StateSchemaVerificationFailure =>
+        IllegalStateException(
+          s"TiDB state schema verification failed [${failure.category}]: ${failure.detail}; " +
+            "apply sql/tidb/schema_migrator with the provisioning schema job before starting the runtime",
+          failure
+        )
+      case other =>
+        IllegalStateException(
+          "TiDB state schema verification failed [database]: verification query failed; " +
+            "apply sql/tidb/schema_migrator with the provisioning schema job before starting the runtime",
+          other
+        )
 
 private[store] object StateSchemaContract:
   private val ResourceName = "state-migrations/manifest.properties"

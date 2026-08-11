@@ -51,6 +51,12 @@ class ProviderSuite extends FunSuite:
     assertEquals(config.driver, "com.mysql.cj.jdbc.Driver")
   }
 
+  test("preserves literal plus characters in mysql URI credentials") {
+    val config = PostgresProvider.normalize("mysql://admin+ops:p%40ss+word@tidb.example:4000/mydb").toOption.get
+    assertEquals(config.user, Some("admin+ops"))
+    assertEquals(config.password, Some("p@ss+word"))
+  }
+
   test("accepts existing JDBC mysql URL without credentials") {
     val config = PostgresProvider.normalize("jdbc:mysql://tidb.example:4000/mydb").toOption.get
     assertEquals(config.url, "jdbc:mysql://tidb.example:4000/mydb")

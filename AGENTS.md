@@ -39,8 +39,8 @@ This file governs this `schema-migrator` repository checkout.
 
 ## Commands
 - Run tests: `sbt test`
-- List SQL files in apply order: `sbt "run --sql-dir ./sql list"`
-- Validate SQL from this directory (no DB required): `sbt "run --sql-dir ./sql validate"`
-- Dry-run apply (print SQL that would be executed): `sbt "run --sql-dir ./sql --dry-run apply"`
-- Check DB connectivity: `sbt "run --sql-dir ./sql check-connection"`
-- Apply migrations: `sbt "run --sql-dir ./sql apply"`
+- List PostgreSQL SQL files in apply order: `sbt "run --db-kind postgres --sql-dir ./sql/postgres list"`
+- Validate PostgreSQL SQL (no DB required): `sbt "run --db-kind postgres --sql-dir ./sql/postgres validate"`
+- Dry-run PostgreSQL apply (print SQL that would be executed): `sbt "run --db-kind postgres --sql-dir ./sql/postgres --dry-run apply"`
+- Check PostgreSQL DB connectivity: `sbt "run --db-kind postgres --sql-dir ./sql/postgres check-connection"`
+- Apply PostgreSQL migrations: `sbt "run --db-kind postgres --sql-dir ./sql/postgres apply"`

@@ -5,6 +5,7 @@ import com.sslproxy.schema.config.DbKind
 import com.sslproxy.schema.db.syntax.SqlDialect
 import com.sslproxy.schema.discovery.{DiscoveryResult, DiscoveryService, SqlFile}
 import com.sslproxy.schema.error.MigratorError
+import com.sslproxy.schema.store.ValidationStore
 import munit.FunSuite
 
 import java.nio.file.Path
@@ -122,6 +123,63 @@ class MigrationPlanSuite extends FunSuite:
 
     assert(plan.validation.errors.exists(_.contains("missing required header comments")))
     assertEquals(plan.objects, Nil)
+  }
+
+  test("blocks only malformed ordered SQL while reporting ignored table and view files as warnings") {
+    val orderedView = SqlFile(
+      folder = "views",
+      path = Path.of("views/001_ready_view.sql"),
+      name = "001_ready_view.sql",
+      relativePath = "views/001_ready_view.sql",
+      content = Some(
+        """-- object: ready_view
+          |-- folder: views
+          |-- depends_on: -
+          |CREATE OR REPLACE VIEW ready_view AS SELECT 1 AS id;
+          |""".stripMargin
+      )
+    )
+    val ignoredView = SqlFile(
+      folder = "scratch",
+      path = Path.of("scratch/002_ignored_view.sql"),
+      name = "002_ignored_view.sql",
+      relativePath = "scratch/002_ignored_view.sql",
+      content = Some(
+        """-- object: ignored_view
+          |-- folder: scratch
+          |-- depends_on: -
+          |CREATE VIEW ignored_view AS SELECT 1 AS id;
+          |""".stripMargin
+      )
+    )
+    val malformedTable = SqlFile(
+      folder = "tables",
+      path = Path.of("tables/003_malformed.sql"),
+      name = "003_malformed.sql",
+      relativePath = "tables/003_malformed.sql",
+      content = Some(
+        """-- object: malformed_table
+          |-- folder: tables
+          |-- depends_on: -
+          |CREATE TABLE IF NOT EXISTS malformed_table (id TEXT DEFAULT 'unterminated);
+          |""".stripMargin
+      )
+    )
+
+    val warningOnly = MigrationPlan
+      .inspectFiles(DbKind.Postgres, List(orderedView, ignoredView), SqlDialect.Postgres)
+      .unsafeRunSync()
+    val (_, warningFindings, warningStatus) = ValidationStore.findingsAndStatus(warningOnly.validation)
+    assertEquals(warningStatus, "warnings")
+    assertEquals(warningOnly.validation.errors, Nil)
+    assert(warningFindings.exists(_.name == "scratch/002_ignored_view.sql"))
+
+    val malformed = MigrationPlan
+      .inspectFiles(DbKind.Postgres, List(orderedView, ignoredView, malformedTable), SqlDialect.Postgres)
+      .unsafeRunSync()
+    val (blockingFindings, _, malformedStatus) = ValidationStore.findingsAndStatus(malformed.validation)
+    assertEquals(malformedStatus, "errors")
+    assert(blockingFindings.exists(_.name == "tables/003_malformed.sql"))
   }
 
   test("builds retired objects outside the active graph") {

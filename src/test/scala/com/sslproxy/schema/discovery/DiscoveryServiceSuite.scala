@@ -258,8 +258,23 @@ class DiscoveryServiceSuite extends FunSuite:
       assertEquals(discovered.files.map(_.relativePath), List("tables/001_table.sql"))
       assert(!discovered.warnings.exists(_.contains("registry")))
       assert(!discovered.warnings.exists(_.contains("teardown")))
-      assert(discovered.warnings.exists(_.contains("scratch")))
+      assert(discovered.warnings.exists(_.contains("scratch/001_unknown.sql")))
+      assert(discovered.warnings.exists(_.contains("remediation: move it into an ordered directory and manifest")))
     }
+  }
+
+  test("returns ignored table and view files as non-runnable warnings with paths") {
+    val files = List(
+      SqlFile("views", Path.of("views/001_ready_view.sql"), "001_ready_view.sql", "views/001_ready_view.sql"),
+      SqlFile("scratch", Path.of("scratch/002_ignored_view.sql"), "002_ignored_view.sql", "scratch/002_ignored_view.sql")
+    )
+
+    val discovered = DiscoveryService().discoverFromFiles(files, DbKind.Postgres)
+
+    assertEquals(discovered.files.map(_.relativePath), List("views/001_ready_view.sql"))
+    assertEquals(discovered.warnings.length, 1)
+    assert(discovered.warnings.head.contains("scratch/002_ignored_view.sql"))
+    assert(discovered.warnings.head.contains("remediation:"))
   }
 
   test("discovers split Oracle baseline folders in deterministic order") {

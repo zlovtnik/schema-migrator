@@ -31,23 +31,28 @@ object ValidationStore:
     checkedAt: String,
     report: ValidationReport
   ): ValidationResult =
-    val (invalid, status) = invalidObjectsAndStatus(report)
+    val (invalid, warnings, status) = findingsAndStatus(report)
     ValidationResult(
       run_id = runId,
       target_id = targetId,
       checked_at = checkedAt,
       invalid = invalid,
-      status = status
+      status = status,
+      warnings = warnings
     )
 
   def invalidObjectsAndStatus(report: ValidationReport): (List[InvalidObject], String) =
+    val (invalid, _, status) = findingsAndStatus(report)
+    invalid -> status
+
+  def findingsAndStatus(report: ValidationReport): (List[InvalidObject], List[InvalidObject], String) =
     val errors = report.errors.map(message => invalidObject(message, "error"))
     val warnings = report.warnings.map(message => invalidObject(message, "warning"))
     val status =
       if errors.nonEmpty then "errors"
       else if warnings.nonEmpty then "warnings"
       else "clean"
-    (errors ++ warnings, status)
+    (errors, warnings, status)
 
   private def invalidObject(message: String, severity: String): InvalidObject =
     val name =
@@ -82,5 +87,4 @@ private final class InMemoryValidationStore(ref: Ref[IO, Map[String, ValidationR
 
   private def nowString: IO[String] =
     Clock[IO].realTimeInstant.map(_.toString)
-
 

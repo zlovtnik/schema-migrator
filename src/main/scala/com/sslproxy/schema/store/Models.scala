@@ -223,7 +223,8 @@ final case class ValidationResult(
   target_id: String,
   checked_at: String,
   invalid: List[InvalidObject],
-  status: String
+  status: String,
+  warnings: List[InvalidObject] = Nil
 )
 
 final case class SqlFilesValidationResult(
@@ -232,7 +233,8 @@ final case class SqlFilesValidationResult(
   checked_at: String,
   file_count: Int,
   invalid: List[InvalidObject],
-  status: String
+  status: String,
+  warnings: List[InvalidObject] = Nil
 )
 
 final case class SchemaCatalogObject(

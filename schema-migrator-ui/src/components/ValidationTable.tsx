@@ -6,6 +6,8 @@ import { DataTable, type DataTableColumn } from "./ui/DataTable";
 import { Icon } from "./ui/Icon";
 
 interface ValidationTableProps {
+  caption?: string;
+  empty?: string;
   result: {
     run_id?: string;
     target_id: string;
@@ -18,7 +20,11 @@ type ValidationRow = InvalidObject & { key: string };
 const csvNeutralize = (value: string) => (/^[=+\-@]/.test(value) ? `'${value}` : value);
 const csvEscape = (value: string) => `"${csvNeutralize(value).replace(/"/g, '""')}"`;
 
-export const ValidationTable = ({ result }: ValidationTableProps) => {
+export const ValidationTable = ({
+  result,
+  caption = "Blocking validation errors",
+  empty = "No blocking validation errors match this filter."
+}: ValidationTableProps) => {
   const [filter, setFilter] = useState<ObjectType | "all">("all");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
@@ -82,11 +88,11 @@ export const ValidationTable = ({ result }: ValidationTableProps) => {
 
   return (
     <DataTable
-      caption="Invalid schema objects"
+      caption={caption}
       columns={columns}
       rows={rows}
       rowKey={(row) => row.key}
-      empty="No invalid objects match this filter."
+      empty={empty}
       toolbar={
         <>
           <label>

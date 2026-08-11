@@ -238,7 +238,7 @@ object PostgresProvider:
     }
 
   private def decode(value: String): String =
-    URLDecoder.decode(value, StandardCharsets.UTF_8)
+    URLDecoder.decode(value.replace("+", "%2B"), StandardCharsets.UTF_8)
 
 object PostgresSession:
   val applyLockNamespace = "ssl-proxy:schema-migrator:schema-apply"

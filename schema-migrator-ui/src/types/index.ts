@@ -168,7 +168,8 @@ export const validationResultSchema = z.object({
   target_id: z.string().min(1),
   checked_at: rfc3339TimestampSchema,
   invalid: z.array(invalidObjectSchema),
-  status: validationStatusSchema
+  status: validationStatusSchema,
+  warnings: z.array(invalidObjectSchema)
 });
 
 export const sqlFilesValidationResultSchema = z.object({
@@ -177,7 +178,8 @@ export const sqlFilesValidationResultSchema = z.object({
   checked_at: rfc3339TimestampSchema,
   file_count: z.number().int().nonnegative(),
   invalid: z.array(invalidObjectSchema),
-  status: validationStatusSchema
+  status: validationStatusSchema,
+  warnings: z.array(invalidObjectSchema)
 });
 
 export const schemaCatalogObjectSchema = z.object({
