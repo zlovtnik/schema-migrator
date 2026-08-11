@@ -1,335 +1,140 @@
 # Schema Migrator
 
-**Introducing the Unified Schema Migrator for Postgres and Oracle**
+Schema Migrator is a Scala 3/Cats Effect service and CLI for discovering,
+validating, planning and applying ordered SQL to external target databases. Its
+HTTP API, target CRUD, encrypted credentials, runs, snapshots, patches and
+audit state live only in the dedicated TiDB `schema_migrator` database.
 
-Experience a powerful, deterministic, retry-safe schema migration engine built with **Scala 3**, **Cats Effect**, and **Doobie**. This tool efficiently discovers ordered SQL files, validates dependencies, locks migrations, tracks application logs, supports rollbacks, and emits machine-readable JSON, all without the need for a live database for validation.
+PostgreSQL is supported as an external migration target. It is not the
+service's internal state store. Oracle provider and SQL code remains for
+deprecated compatibility and historical validation; do not use it as current
+deployment guidance or add new Oracle material.
 
----
+The parent platform architecture is documented in
+[`docs/architecture.md`](../../docs/architecture.md).
 
-## Table of Contents
+## Responsibilities
 
-1. [What It Solves](#what-it-solves)
-2. [Who Should Use It](#who-should-use-it)
-3. [Key Capabilities](#key-capabilities)
-4. [Benefits](#benefits)
-5. [Quick Start](#quick-start)
-6. [Cats Effect Boundaries](#cats-effect-boundaries)
-7. [Commands](#commands)
-8. [Configuration](#configuration)
-9. [SQL Layout and Manifests](#sql-layout-and-manifests)
-10. [Deterministic Ordering](#deterministic-ordering)
-11. [Validation Without a Database](#validation-without-a-database)
-12. [Oracle Setup](#oracle-setup)
-13. [Building and Testing](#building-and-testing)
+- deterministic SQL discovery and manifest ordering
+- offline validation and dry-run planning
+- database connection checks and guarded apply/rollback flows
+- PostgreSQL catalog drift analysis for external targets
+- HTTP target, run, snapshot, patch, validation and audit APIs
+- encrypted target credentials and TiDB-backed control state
+- Keycloak or configured bearer-token authorization
+- a Vite/React operator UI in `schema-migrator-ui/`
 
----
+The service does not provision its own internal schema. The parent
+repository's schema executor applies the checksummed
+`sql/tidb/schema_migrator` manifest before this service starts.
 
-## What It Solves
+## Internal state
 
-Managing database schemas across diverse environments (Postgres and Oracle) with complex SQL trees is no small feat. Schema Migrator directly addresses five critical issues:
-
-1. **Unified Interface** — Utilize a single CLI for both Postgres and Oracle, eliminating the hassle of juggling two different tools.
-2. **Deterministic Ordering** — Migrations execute in a guaranteed sequence, putting an end to unpredictable failures related to file order.
-3. **Idempotent, Retry-Safe Execution** — Built-in locking mechanisms, application logs, and schema-control hashing ensure that re-runs and restarts are entirely safe.
-4. **Early Failure Detection** — Validate SQL parsing, dependency balance, and rollback completeness locally, prior to impacting production environments.
-5. **Operational Visibility** — Enjoy seamless integration for status reporting, readiness checks, and JSON output into your CI/CD pipelines and runbooks.
-
----
-
-## Who Should Use It
-
-- **Backend and Data Platform Engineers** deploying services with Postgres and/or Oracle.
-- **DevOps and Platform Teams** constructing a cohesive migration infrastructure that spans multiple databases.
-- **Teams Transitioning from Oracle to Postgres (or vice versa)** needing a consistent workflow throughout migration.
-- **Organizations with Stringent Governance Requirements** demanding auditable application logs, locks, and schema-control hashes.
-
----
-
-## Key Capabilities
-
-| Capability                  | Details                                                                 |
-|-----------------------------|-------------------------------------------------------------------------|
-| **Multi-Engine**            | Effortlessly supports Postgres and Oracle via Doobie JDBC; validates without a live database. |
-| **Deterministic File Ordering** | Ensure a clear organization of migrations covering extensions, schemas, types, tables, indexes, functions, views, cron pre-apply hooks, materialized views, and cron jobs. |
-| **Idempotent Applies**      | Leverage schema-controlled object hashing, application logs, and pessimistic locking for error-free migrations. |
-| **Rollback Support**        | Execute tracked rollback SQL for any applied object with confidence.    |
-| **Dependency Validation**    | Automatically detect cross-object dependencies before execution to prevent failures. |
-| **Rollback Completeness**    | Guarantee that every tracked object has a corresponding rollback, maintaining consistency. |
-| **Local Validation**        | Assertively parse and verify SQL trees without relying on a database connection. |
-| **Readiness Checks**       | Validate schema readiness, with the flexibility to fail the build if not ready. |
-| **Connection Validation**   | Quickly test JDBC/TNS connectivity and fail fast upon errors.            |
-| **Retry and Backoff**      | Configurable retries with backoff cater for transient connection failures. |
-| **JSON Reporting**          | Provide machine-readable outputs for CI, dashboards, and automation integration. |
-| **Oracle Wallet/JDBC**     | Efficiently utilize native Oracle wallet support through TNS admin directories and password files. |
-
----
-
-## Benefits
-
-- **Safety** — Built-in locks, application logs, and schema-control hashing thwart double applications, lost migrations, and schema drift.
-- **Speed** — Instantly identify syntax errors, missing rollbacks, and dependency cycles locally within seconds.
-- **Consistency** — Ensure that the same ordered migration plan is executed seamlessly across development, staging, and production environments.
-- **Observability** — Obtain real-time visibility into schema state through status updates, readiness checks, and JSON reports.
-- **Portability** — Use a single tool and approach that allow for effortless switching between databases without changing your migration workflow.
-- **Functional Runtime** — The use of Cats Effect guarantees referential transparency, structured concurrency, and reliable resource cleanup.
-
----
-
-## Quick Start
-
-```bash
-# List Postgres SQL files in manifest apply order (no database required)
-sbt "run --db-kind postgres --sql-dir ./sql/postgres list"
-
-# Validate without connecting to a database
-sbt "run --db-kind postgres --sql-dir ./sql/postgres validate"
-
-# Dry-run: output SQL that would be executed
-sbt "run --db-kind postgres --sql-dir ./sql/postgres --dry-run apply"
-
-# Generate the aggregate baseline artifact from split files
-sbt "run --db-kind postgres --sql-dir ./sql/postgres generate-baseline"
-
-# Check database connection
-sbt "run --db-kind postgres --sql-dir ./sql/postgres check-connection"
-
-# Apply migrations
-sbt "run --db-kind postgres --sql-dir ./sql/postgres apply"
-
-# Fail when the live Postgres catalog drifts from the manifest and refresh the registry
-sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture drift-check"
-```
-
-For Oracle, set the database type and provide the necessary credentials or environment variables:
-
-```bash
-SCHEMA_MIGRATOR_DB_KIND=oracle \
-ORACLE_JDBC_URL=... \
-ORACLE_USER=sys \
-ORACLE_PASS_FILE=/run/secrets/oracle_password \
-  sbt "run --sql-dir ./sql/oracle apply"
-```
-
-Customer overlays are opt-in:
-
-```bash
-sbt "run --db-kind postgres --sql-dir ./sql/postgres --customer fixture list"
-```
-
----
-
-## Cats Effect Boundaries
-
-The migrator uses `cats.effect.IO` as its production runtime. Custom effects in this codebase are domain algebras and wrappers around existing side-effecting APIs, not a new monad.
-
-- `com.sslproxy.schema.effect.Jdbc[F]` is the blocking JDBC boundary.
-- `EffectPrimitives` documents the three supported lift points: fast synchronous effects, blocking effects, and callback-style async effects.
-- `MigrationContext[F]` exposes migration metadata as a domain effect and can be backed by `cats-mtl` `Ask[F, MigrationRunContext]` for context-aware programs.
-- `MigrationEngine[F]`, `DbProvider[F]`, `DbSession[F]`, and `ApplyCallbacks[F]` are tagless-final boundaries; CLI and server code instantiate them with `IO`.
-
----
-
-## Commands
-
-| Command   | Description                                                               |
-|-----------|---------------------------------------------------------------------------|
-| `apply`   | Discover, validate, lock, and apply pending SQL objects in a guaranteed order. |
-| `validate`| Parse SQL files and validate dependencies and rollback completeness without executing them. |
-| `list`    | Print discovered SQL files and objects in the precise order they will be applied. |
-| `generate-baseline` | Write `_generated_baseline.sql` from manifest order; the file is generated and ignored. |
-| `status`  | Display the current schema configuration status.                           |
-| `drift-check` | Compare the live Postgres catalog with the manifest, refresh `schema_control.object_customization_registry`, and exit non-zero when drift is detected. |
-
-If no command is given, `apply` is used as the default.
-
----
-
-## Configuration
-
-### CLI flags
-
-| Flag | Default | Description |
-|---|---|---|
-| `--db-kind` | `postgres` | `postgres` or `oracle`. |
-| `--sql-dir` | `./sql` (or an engine root such as `./sql/postgres`) | Root directory containing SQL files. |
-| `--customer` | — | Optional customer overlay under `customers/<name>`. |
-| `--database-url` | — | JDBC URL (Oracle) or `postgres://` URL (Postgres). |
-| `--dry-run` | `false` | Print SQL without executing. |
-| `--verbose` | `false` | Echo each statement before running. |
-| `--continue-on-error` | `false` | Continue processing after SQL errors. |
-| `--connect-retries` | `0` | Number of connection retry attempts. |
-| `--connect-retry-backoff` | `2` | Base retry backoff in seconds. |
-| `--oracle-wallet` | — | Oracle wallet or TNS admin directory. |
-| `--oracle-tns-alias` | — | Oracle TNS alias. |
-| `--oracle-user` | — | Oracle username. |
-| `--oracle-pass-file` | — | File containing Oracle password. |
-| `--db-test-allowed-hosts` | — | Comma-separated database hosts allowed for HTTP target connection tests and catalog reads. |
-| `--json` | `false` | Print machine-readable JSON output. |
-
-### Environment variables
+The server requires:
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | Postgres database URL. |
-| `ORACLE_JDBC_URL` | Oracle JDBC URL. |
-| `SCHEMA_MIGRATOR_DB_KIND` | `postgres` or `oracle`. |
-| `ORACLE_USER` | Oracle username. |
-| `ORACLE_CONN` | Oracle TNS alias / connection name. |
-| `ORACLE_PASS_FILE` | File path for Oracle password. |
-| `TNS_ADMIN` | Oracle wallet / TNS admin directory. |
-| `BEDROCK_DB_TEST_ALLOWED_HOSTS` | Comma-separated database hosts allowed for HTTP target connection tests and catalog reads. |
-| `BEDROCK_API_BEARER_TOKEN` | Static bearer token accepted by the HTTP API for service access. Browser auth uses Keycloak tokens when Keycloak is enabled. |
-| `BEDROCK_DEV_AUTH_ENABLED` | Set to `true` to enable the development-only `/api/auth/token` endpoint. Defaults to `false`. |
-| `BEDROCK_DEV_AUTH_SECRET` | Development secret accepted by `/api/auth/token` when dev auth is enabled. |
-| `BEDROCK_KEYCLOAK_ENABLED` | Set to `true` to accept Keycloak RS256 bearer tokens in addition to static and internal HMAC tokens. Defaults to `false`. |
-| `BEDROCK_KEYCLOAK_ISSUER` | Keycloak realm issuer URL, for example `https://keycloak.example.com/realms/bedrock`. Required when Keycloak auth is enabled. |
-| `BEDROCK_KEYCLOAK_JWKS_URI` | Optional JWKS URL. Defaults to `${BEDROCK_KEYCLOAK_ISSUER}/protocol/openid-connect/certs`. |
-| `BEDROCK_KEYCLOAK_CLIENT_ID` | Keycloak client ID used for `resource_access[client].roles` lookup. |
-| `BEDROCK_KEYCLOAK_AUDIENCE` | Optional accepted `aud` or `azp` value for Keycloak access tokens. |
-| `VITE_KEYCLOAK_URL` | Browser-facing Keycloak base URL baked into the Vite UI build. |
-| `VITE_KEYCLOAK_REALM` | Keycloak realm name baked into the Vite UI build. |
-| `VITE_KEYCLOAK_CLIENT_ID` | Keycloak public client ID baked into the Vite UI build. |
-| `VITE_KEYCLOAK_REDIRECT_URI` | Optional browser redirect URI. Defaults to the current origin plus `/callback` when omitted. |
-| `KEYCLOAK_PUBLIC_URL` | Browser-facing base URL for the externally managed identity provider used by the instance renderer. |
-| `BEDROCK_ENCRYPT_KEY` | Base64 AES-256-GCM key used to encrypt persisted target passwords and API responses. |
-| `BEDROCK_STATE_DB_URL` | JDBC MySQL URL for external TiDB v8.5+, selecting `schema_migrator` and setting `sslMode=VERIFY_IDENTITY`. R2DBC and PostgreSQL URLs are rejected. |
-| `BEDROCK_STATE_DB_USER` | Dedicated non-root TiDB state-store role. |
-| `BEDROCK_STATE_DB_PASSWORD` | Password for the dedicated TiDB state-store role. |
-| `BEDROCK_STATE_DB_POOL_SIZE` | Maximum TiDB state-store connection pool size. Defaults to `10`. |
-| `BEDROCK_STATE_DB_TRUSTSTORE_FILE` | Compose host path to the PKCS12 truststore containing the TiDB server CA. |
-| `BEDROCK_STATE_DB_TRUSTSTORE_PASSWORD` | Password for the TiDB PKCS12 truststore. |
-| `DOCKER_SOCKET` | Docker socket bind source for the Traefik Docker provider in `docker-compose.yml`. Defaults to `/var/run/docker.sock`; Docker Desktop users may need `${HOME}/.docker/run/docker.sock`. |
-| `DOCKER_API_VERSION` | Optional Docker API version used by Traefik's Docker client. Defaults to `1.40` for compatibility with newer Docker engines. |
+| `BEDROCK_STATE_DB_URL` | `jdbc:mysql://` TiDB URL selecting exactly `schema_migrator`, without inline credentials and with `sslMode=VERIFY_IDENTITY` |
+| `BEDROCK_STATE_DB_USER` | Dedicated non-root TiDB account |
+| `BEDROCK_STATE_DB_PASSWORD` | TiDB account password |
+| `BEDROCK_STATE_DB_POOL_SIZE` | Pool size, default `10` |
 
-Oracle schema catalog and drift endpoints currently return `supported = false`; Oracle targets are limited to connection-level checks and JDBC migration execution until Oracle catalog introspection is added.
+Startup rejects loopback state-store hosts, TiDB older than 8.5, a non-UTC
+session, a wrong database and missing/mismatched manifest readiness. Provide
+the TiDB CA through the JVM truststore used by the deployment.
 
-Postgres drift checks remain available solely for external PostgreSQL migration targets.
-Schema Migrator API state and its active external-Keycloak configuration snapshot live in
-the canonical external TiDB `schema_migrator` database. Runtime startup verifies the
-provisioning migration ledger and checksum but never executes state-schema DDL. Docker
-Compose and Kubernetes do not deploy PostgreSQL, MongoDB, TiDB, or Keycloak.
+## External targets
 
-To install or query the external PostgreSQL target report view:
+The normal external target is PostgreSQL:
 
 ```bash
-psql "$DATABASE_URL" -f sql/registry/drift_report.sql
+sbt "run --db-kind postgres \
+  --database-url jdbc:postgresql://db.example:5432/application \
+  --sql-dir ./sql/postgres check-connection"
 ```
 
----
+Target credentials entered through the API are encrypted before storage in
+TiDB. Connection-test hosts are restricted by
+`BEDROCK_DB_TEST_ALLOWED_HOSTS`. Do not embed usernames/passwords in JDBC URLs
+when a separate credential field exists.
 
-## SQL layout and manifests
+TiDB/MySQL target support also exists for explicit migration operations.
+Oracle flags and providers are deprecated compatibility surfaces, not a
+recommended target workflow.
 
-The checked-in SQL source of truth is split by engine, layer, and object type:
+## CLI
 
-```text
-sql/
-  postgres/
-    core/
-      00_extensions/
-      01_schemas/
-      02_types/
-      03_tables/
-      04_indexes/
-      05_functions/
-      06_views/
-      07_materialized_views/
-      08_triggers/
-      09_cron/
-      10_seed_data/
-      manifest.yaml
-    contracts/
-      functions/
-      views/
-      CONTRACT.md
-      manifest.yaml
-    customers/<name>/
-      extensions/
-      overrides/
-      manifest.yaml
-  oracle/
-    core/
-    contracts/
-    customers/<name>/
-  teardown/
-  registry/
-```
-
-Each layer has an engine-agnostic `manifest.yaml`:
-
-```yaml
-engine: postgres
-layer: core
-apply_order:
-  - 00_extensions/001_extensions.sql
-  - 01_schemas/001_coordinator.sql
-  - 03_tables/001_sync_cursors.sql
-retired:
-  - 05_functions/001_replaced_helper.sql
-```
-
-Discovery uses manifests when present. If `--sql-dir ./sql` is used, the selected engine root is resolved automatically. Customer overlays are included only when `--customer <name>` is provided, in this order: `core/manifest.yaml`, `contracts/manifest.yaml`, then `customers/<name>/manifest.yaml`.
-
-`apply_order` is the active schema definition. Keep replaced files in `retired` so the runner records their registry entries as retired without executing their obsolete SQL. An entry cannot appear in both lists, and every SQL file in a manifest layer must be listed in one of them.
-
-Aggregate baselines are generated artifacts. Run `generate-baseline` to write `_generated_baseline.sql`; do not edit that file by hand.
-
----
-
-## Deterministic ordering
-
-Schema Migrator discovers SQL files from the repository tree and applies manifest entries in their declared order, with dependency topological sorting used to keep declared object dependencies valid. This eliminates non-determinism caused by filesystem traversal, developer machine differences, or OS-dependent path sorting.
-
-For Postgres core manifests, preserve this phase order:
-
-1. Extensions
-2. Schemas
-3. Types
-4. Tables
-5. Indexes
-6. Functions
-7. Views
-8. Cron pre-apply hooks
-9. Materialized views
-10. Cron jobs
-
----
-
-## Validation without a database
-
-`validate` runs the full parser, canonicalizer, and dependency graph builder locally:
-
-- **Syntax & parsing** — detects malformed SQL and unsupported constructs.
-- **Dependency validation** — ensures references between objects are resolvable and ordered.
-- **Rollback completeness** — verifies every tracked object has a corresponding rollback path.
-
-This means teams can gate merges on validation alone, long before a shared database is available.
-
----
-
-## Oracle setup
-
-Oracle connections are JDBC-based and support wallet/TNS configurations:
-
-- `.wallet` or TNS admin directories via `--oracle-wallet` or `TNS_ADMIN`.
-- TNS alias via `--oracle-tns-alias` or `ORACLE_CONN`.
-- Username via `--oracle-user` or `ORACLE_USER`.
-- Password files via `--oracle-pass-file` or `ORACLE_PASS_FILE`.
-
-Required runtime JARs are included in the build (ojdbc11, oraclepki, osdt_core, osdt_cert).
-
----
-
-## Building and testing
+Commands are available through sbt during development:
 
 ```bash
-# Build
+sbt "run --db-kind postgres --sql-dir ./sql/postgres list"
+sbt "run --db-kind postgres --sql-dir ./sql/postgres validate"
+sbt "run --db-kind postgres --sql-dir ./sql/postgres --dry-run apply"
+sbt "run --db-kind postgres \
+  --database-url jdbc:postgresql://db.example:5432/application \
+  --sql-dir ./sql/postgres check-connection"
+```
+
+Important options:
+
+| Option | Purpose |
+|---|---|
+| `--db-kind` | `postgres`, `tidb`/`mysql`, or deprecated `oracle` |
+| `--sql-dir` | SQL root for discovery |
+| `--customer` | Optional single-directory customer overlay |
+| `--database-url` | Explicit external target URL |
+| `--dry-run` | Print/plan without applying |
+| `--connect-retries` | Bounded connection retries |
+| `--json` | Machine-readable output |
+
+The PostgreSQL apply order is extensions, schemas, types, tables, indexes,
+functions, views, cron pre-apply hooks, materialized views, then cron jobs.
+Preserve deterministic ordering, checksums, locks and apply logs.
+
+## HTTP server
+
+Server configuration uses the `BEDROCK_*` family:
+
+- `BEDROCK_HTTP_HOST`, `BEDROCK_HTTP_PORT`, `BEDROCK_CORS_ORIGINS`
+- `BEDROCK_ENCRYPT_KEY` for AES-256-GCM target credential encryption
+- `BEDROCK_JWT_SECRET` and `BEDROCK_API_BEARER_TOKEN`
+- `BEDROCK_DEV_AUTH_ENABLED`/`BEDROCK_DEV_AUTH_SECRET` for explicit development
+  auth only
+- `BEDROCK_KEYCLOAK_*` for production RS256 verification
+- `BEDROCK_PATCH_STAGE_DIR` and `BEDROCK_REPO_CACHE_DIR`
+- `BEDROCK_DB_TEST_ALLOWED_HOSTS`
+
+The server fails closed when required auth, encryption or state-store
+configuration is missing.
+
+## Kubernetes runtime
+
+The parent repository owns the Schema Migrator Kubernetes resources in its
+Kustomize app-stack base and environment slices. Argo CD reconciles those
+resources from the parent repository's `main` branch.
+
+The in-cluster Keycloak uses its own deployment-created `keycloak` database.
+It is separate from the four canonical application manifests.
+
+## Local development
+
+Docker Compose may be used only as a local service/UI test harness, with TiDB
+and identity endpoints provisioned outside the harness:
+
+```bash
+docker-compose up --build
+```
+
+## Build and test
+
+```bash
 sbt compile
-
-# Run tests
 sbt test
-
-# Package
 sbt assembly
+cd schema-migrator-ui
+bun run test
+bun run build
 ```
 
-The project targets Java 21 and Scala 3.3.8, with Cats Effect 3.7.0, Doobie 1.0.0-RC10, and Decline 2.5.0.
+Keep database validation useful without a live target where possible. Do not
+commit `.bsp`, `.metals`, build output, UI dependencies or credentials.

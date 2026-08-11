@@ -31,7 +31,9 @@ export const UpgradeSummary = ({ objects, selectedFiles, precheck, run, postchec
         <div className="summary-card">
           <span className="field-label">Pre-check</span>
           <StatusBadge status={precheck.status} />
-          <span>{precheck.invalid.length} findings</span>
+          <span>
+            {precheck.invalid.length} blocking errors, {precheck.warnings.length} warnings
+          </span>
         </div>
         <div className="summary-card">
           <span className="field-label">Execution</span>
@@ -41,7 +43,11 @@ export const UpgradeSummary = ({ objects, selectedFiles, precheck, run, postchec
         <div className="summary-card">
           <span className="field-label">Post-check</span>
           {postcheck ? <StatusBadge status={postcheck.status} /> : <strong>Pending</strong>}
-          <span>{postcheck ? `${postcheck.invalid.length} findings` : "Awaiting validation"}</span>
+          <span>
+            {postcheck
+              ? `${postcheck.invalid.length} blocking errors, ${postcheck.warnings.length} warnings`
+              : "Awaiting validation"}
+          </span>
         </div>
       </div>
 
@@ -60,6 +66,13 @@ export const UpgradeSummary = ({ objects, selectedFiles, precheck, run, postchec
             <StatusBadge status={postcheck.status} />
           </div>
           <ValidationTable result={postcheck} />
+          {postcheck.warnings.length > 0 ? (
+            <ValidationTable
+              result={{ target_id: postcheck.target_id, invalid: postcheck.warnings }}
+              caption="Non-blocking discovery warnings"
+              empty="No discovery warnings."
+            />
+          ) : null}
         </section>
       ) : null}
     </div>

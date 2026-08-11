@@ -208,14 +208,15 @@ object ValidationRoutes:
     fileCount: Int,
     report: ValidationReport
   ): SqlFilesValidationResult =
-    val (invalid, status) = ValidationStore.invalidObjectsAndStatus(report)
+    val (invalid, warnings, status) = ValidationStore.findingsAndStatus(report)
     SqlFilesValidationResult(
       target_id = targetId,
       db_kind = dbKind,
       checked_at = checkedAt,
       file_count = fileCount,
       invalid = invalid,
-      status = status
+      status = status,
+      warnings = warnings
     )
 
   private def validateSqlDirWithinConfiguredRoot(value: String, configuredRoot: Path): Either[String, Unit] =

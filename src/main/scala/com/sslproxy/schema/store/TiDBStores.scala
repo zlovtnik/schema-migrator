@@ -817,7 +817,7 @@ private[store] final class TiDBValidationStore(database: StateDatabase) extends 
 
   private def persist(result: ValidationResult): ConnectionIO[Unit] =
     val runId = id(result.run_id)
-    val rows = result.invalid.zipWithIndex.map { case (issue, index) =>
+    val rows = (result.invalid ++ result.warnings).zipWithIndex.map { case (issue, index) =>
       (runId, index, issue.object_type, issue.schema, issue.name, issue.error, issue.severity)
     }
     val insertIssues = Update[(String, Int, String, String, String, String, String)](
@@ -831,9 +831,10 @@ private[store] final class TiDBValidationStore(database: StateDatabase) extends 
 
   private def toResult(row: ValidationRow): ConnectionIO[ValidationResult] =
     sql"select run_id, issue_order, object_type, schema_name, object_name, error, severity from validation_issues where run_id = ${row.runId} order by issue_order"
-      .query[ValidationIssueRow].to[List].map(issues =>
-        ValidationResult(row.runId, row.targetId, apiTime(row.checkedAt), issues.map(_.issue), row.status)
-      )
+      .query[ValidationIssueRow].to[List].map { issues =>
+        val (warnings, invalid) = issues.map(_.issue).partition(_.severity == "warning")
+        ValidationResult(row.runId, row.targetId, apiTime(row.checkedAt), invalid, row.status, warnings)
+      }
 
 private[store] final class TiDBSnapshotStore(database: StateDatabase) extends SnapshotStore:
   import TiDBStoreSupport.*

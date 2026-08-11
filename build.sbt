@@ -88,7 +88,6 @@ lazy val root = (project in file("."))
       "org.scalameta" %% "munit" % "1.3.4" % Test
     ),
     scalacOptions ++= Seq(
-      "-Yfuture-lazy-vals",
       "-java-output-version:21",
       "-deprecation",
       "-Wvalue-discard",

@@ -20,12 +20,13 @@ final class DiscoveryService:
     val normalized = files.map(file => SqlPathNormalizer.normalizeForDb(file, dbKind))
     val filesByFolder = normalized.collect { case Right(Some(file)) => file }.groupBy(_.folder)
 
-    val extraFolderWarnings = normalized
-      .collect { case Left(folder) => folder }
+    val extraFolderWarnings = normalized.zip(files)
+      .collect { case (Left(folder), file) if folder != "uncategorized" => folder -> file.relativePath }
       .distinct
-      .sorted
-      .filterNot(folder => folder == "uncategorized")
-      .map(folder => s"unrecognized sql folder '$folder' contains .sql files but is not part of $dbKind folder order")
+      .sortBy((folder, path) => (folder, path))
+      .map { case (folder, path) =>
+        s"$path: ignored SQL file is in unrecognized folder '$folder'; remediation: move it into an ordered directory and manifest, or classify it as non-runnable"
+      }
 
     dbKind match
       case DbKind.Postgres =>
@@ -132,7 +133,7 @@ final class DiscoveryService:
         .filter(path => Files.isRegularFile(path) && path.getFileName.toString.endsWith(".sql"))
         .filterNot(path => listed.contains(path.normalize()))
         .map(path =>
-          s"${requestedRoot.normalize().relativize(path).toString}: SQL file is not listed in ${manifest.path}"
+          s"${requestedRoot.normalize().relativize(path).toString}: ignored SQL file is not listed in ${manifest.path}; remediation: add it to the ordered manifest or classify it as non-runnable"
         )
         .toList
         .sorted
@@ -156,12 +157,7 @@ final class DiscoveryService:
               val name = dir.getFileName.toString
               val folder = SqlLayout.canonicalFolder(name)
               val known = allowed.contains(folder) || SqlLayout.AuxiliaryFolders.contains(folder)
-              if !known && !hasSqlFiles(dir)
-              then Nil
-              else if !known then
-                List(
-                  s"unrecognized sql subdirectory '$name' contains .sql files but is not part of $dbKind folder order"
-                )
+              if !known then ignoredSqlWarnings(sqlDir, dir, name, dbKind)
               else Nil
             }
             .toList
@@ -215,7 +211,15 @@ final class DiscoveryService:
       List(SqlFile("baseline", baseline, "000_baseline.sql", sqlDir.relativize(baseline).toString))
     else Nil
 
-  private def hasSqlFiles(dir: Path): Boolean =
+  private def ignoredSqlWarnings(sqlDir: Path, dir: Path, folder: String, dbKind: DbKind): List[String] =
     scala.util.Using.resource(Files.list(dir)) { stream =>
-      stream.iterator().asScala.exists(path => Files.isRegularFile(path) && path.getFileName.toString.endsWith(".sql"))
+      stream
+        .iterator()
+        .asScala
+        .filter(path => Files.isRegularFile(path) && path.getFileName.toString.endsWith(".sql"))
+        .map(path =>
+          s"${sqlDir.relativize(path).toString}: ignored SQL file is in unrecognized directory '$folder' and is not part of $dbKind folder order; remediation: move it into an ordered directory and manifest, or classify it as non-runnable"
+        )
+        .toList
+        .sorted
     }

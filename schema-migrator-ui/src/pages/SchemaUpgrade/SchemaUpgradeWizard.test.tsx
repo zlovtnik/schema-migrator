@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SchemaObjectListItem } from "../../types";
-import { groupFiles } from "./SchemaUpgradeWizard";
+import { blockingInvalidNames, groupFiles } from "./SchemaUpgradeWizard";
 
 const objects: SchemaObjectListItem[] = [
   {
@@ -37,5 +37,17 @@ describe("groupFiles", () => {
       "tables/002_devices.sql"
     ]);
     expect(groups[0]?.files[0]?.objectTypes).toEqual(["table", "index"]);
+  });
+});
+
+describe("blockingInvalidNames", () => {
+  it("keeps warning findings out of the blocking object set", () => {
+    expect(
+      blockingInvalidNames({
+        invalid: [
+          { object_type: "view", schema: "public", name: "malformed_view.sql", severity: "error", error: "syntax" }
+        ]
+      })
+    ).toEqual(["malformed_view.sql"]);
   });
 });
