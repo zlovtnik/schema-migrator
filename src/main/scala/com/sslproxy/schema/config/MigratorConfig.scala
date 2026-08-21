@@ -119,8 +119,10 @@ final case class StateStoreConfig(
           Left("BEDROCK_STATE_DB_URL must not contain inline credentials")
         else if database != "schema_migrator" then
           Left("BEDROCK_STATE_DB_URL must select the schema_migrator database")
-        else if !params.get("sslmode").exists(_.equalsIgnoreCase("VERIFY_IDENTITY")) then
-          Left("BEDROCK_STATE_DB_URL must set sslMode=VERIFY_IDENTITY")
+        else if !params.get("sslmode").exists(mode =>
+          Set("DISABLED", "VERIFY_IDENTITY").contains(mode.toUpperCase(Locale.ROOT))
+        ) then
+          Left("BEDROCK_STATE_DB_URL must set sslMode=DISABLED or VERIFY_IDENTITY")
         else Right(())
       }
 

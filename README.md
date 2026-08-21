@@ -34,14 +34,15 @@ The server requires:
 
 | Variable | Purpose |
 |---|---|
-| `BEDROCK_STATE_DB_URL` | `jdbc:mysql://` TiDB URL selecting exactly `schema_migrator`, without inline credentials and with `sslMode=VERIFY_IDENTITY` |
+| `BEDROCK_STATE_DB_URL` | `jdbc:mysql://` TiDB URL selecting exactly `schema_migrator`, without inline credentials and with explicit `sslMode=DISABLED` or `VERIFY_IDENTITY` |
 | `BEDROCK_STATE_DB_USER` | Dedicated non-root TiDB account |
 | `BEDROCK_STATE_DB_PASSWORD` | TiDB account password |
 | `BEDROCK_STATE_DB_POOL_SIZE` | Pool size, default `10` |
 
 Startup rejects loopback state-store hosts, TiDB older than 8.5, a non-UTC
-session, a wrong database and missing/mismatched manifest readiness. Provide
-the TiDB CA through the JVM truststore used by the deployment.
+session, a wrong database and missing/mismatched manifest readiness. Canonical
+Kustomize deploys with `sslMode=DISABLED`; verified TLS remains available when
+an operator supplies the matching trust configuration.
 
 ## External targets
 

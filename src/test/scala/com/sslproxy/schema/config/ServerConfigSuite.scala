@@ -112,8 +112,20 @@ class ServerConfigSuite extends FunSuite:
         r2dbc.validate,
         Left("BEDROCK_STATE_DB_URL must be a JDBC MySQL/TiDB URL starting with jdbc:mysql://")
       )
-      assertEquals(unverified.validate, Left("BEDROCK_STATE_DB_URL must set sslMode=VERIFY_IDENTITY"))
+      assertEquals(
+        unverified.validate,
+        Left("BEDROCK_STATE_DB_URL must set sslMode=DISABLED or VERIFY_IDENTITY")
+      )
     finally deleteIfExists(stageDir)
+  }
+
+  test("state database validation accepts an explicit disabled TLS mode") {
+    assertEquals(
+      validStateStore.copy(
+        url = "jdbc:mysql://tidb.example:4000/schema_migrator?sslMode=DISABLED"
+      ).validate,
+      Right(())
+    )
   }
 
   test("state database validation requires the canonical database and a non-root account") {

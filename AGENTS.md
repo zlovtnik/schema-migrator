@@ -20,7 +20,7 @@ This file governs this `schema-migrator` repository checkout.
   materialized_views, then cron jobs.
 - Never add a PostgreSQL or MongoDB internal-state fallback. `BEDROCK_STATE_DB_*`
   must continue to select the dedicated TiDB `schema_migrator` database with
-  verified TLS and a non-root account.
+  an explicit transport mode and a non-root account.
 - Keep SQL application idempotent and retry-safe. Do not weaken schema-control
   hashing, locking, apply-log, rollback, or readiness behavior.
 - Oracle support under `sql/oracle/` and the provider packages is deprecated
