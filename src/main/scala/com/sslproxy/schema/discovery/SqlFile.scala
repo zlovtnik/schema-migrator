@@ -35,8 +35,6 @@ object SqlPathNormalizer:
       case DbKind.Oracle =>
         normalizeForEngine(file, normalized, DbKind.Oracle)
 
-      case DbKind.TiDB =>
-        normalizeForEngine(file, normalized, DbKind.TiDB)
 
   private def normalizeForEngine(
     file: SqlFile,
@@ -44,14 +42,13 @@ object SqlPathNormalizer:
     dbKind: DbKind
   ): Either[String, Option[SqlFile]] =
     val engine = SqlLayout.engineName(dbKind)
-    val otherEngines = List("postgres", "oracle", "tidb").filterNot(_ == engine)
+    val otherEngines = List("postgres", "oracle").filterNot(_ == engine)
     if otherEngines.exists(other => normalized.folder == other || normalized.folder.startsWith(s"$other/")) then
       Right(None)
     else if normalized.folder == "baseline" then
       dbKind match
         case DbKind.Oracle => Right(Some(withNormalizedPath(file, "baseline", normalized)))
         case DbKind.Postgres => Right(None)
-        case DbKind.TiDB => Right(None)
     else if SqlLayout.isAuxiliaryPath(normalized.path) then Right(None)
     else
       val category = SqlLayout.folderFromPath(normalized.path, dbKind)

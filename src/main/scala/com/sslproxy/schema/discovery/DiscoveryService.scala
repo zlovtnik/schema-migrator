@@ -12,7 +12,7 @@ final class DiscoveryService:
     IO.blocking(discoverUnsafe(sqlDir, dbKind, customer))
 
   /** Discover SQL files from a pre-loaded list of SqlFile objects
-    * (for example, from the TiDB control-state store). The caller is responsible for
+    * (for example, from the PostgreSQL control-state store). The caller is responsible for
     * obtaining the list from the store.
     */
   def discoverFromFiles(files: List[SqlFile], dbKind: DbKind): DiscoveryResult =
@@ -46,9 +46,6 @@ final class DiscoveryService:
         val discovered = baseline ::: ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil).sortBy(_.name))
         DiscoveryResult(discovered, extraFolderWarnings)
 
-      case DbKind.TiDB =>
-        val discovered = ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil).sortBy(_.name))
-        DiscoveryResult(discovered, extraFolderWarnings)
 
   private def discoverUnsafe(sqlDir: Path, dbKind: DbKind, customer: Option[String]): DiscoveryResult =
     val engineRoot = SqlLayout.resolveEngineRoot(sqlDir, dbKind)
@@ -184,9 +181,6 @@ final class DiscoveryService:
         val files = baseline ::: ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil))
         DiscoveryResult(files, allWarnings)
 
-      case DbKind.TiDB =>
-        val files = ordered.flatMap(folder => filesByFolder.getOrElse(folder, Nil))
-        DiscoveryResult(files, allWarnings)
 
   private def collectFolder(sqlDir: Path, folder: String): (List[SqlFile], List[String]) =
     val folderPath = sqlDir.resolve(folder)

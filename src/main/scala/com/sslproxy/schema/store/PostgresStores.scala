@@ -6,7 +6,7 @@ import com.sslproxy.schema.config.{DbKind, ServerConfig}
 import com.sslproxy.schema.server.crypto.AesGcm
 import doobie.*
 import doobie.implicits.*
-import doobie.implicits.javatimedrivernative.*
+import doobie.postgres.implicits.*
 import fs2.concurrent.Topic
 import io.circe.Json
 import io.circe.parser.decode
@@ -14,11 +14,11 @@ import io.circe.syntax.*
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
-import java.time.{Instant, LocalDateTime, ZoneOffset}
+import java.time.Instant
 import java.util.{Base64, UUID}
 import javax.crypto.spec.SecretKeySpec
 
-private[store] object TiDBStoreSupport:
+private[store] object PostgresStoreSupport:
   import Models.given
 
   final case class TargetRow(
@@ -28,12 +28,12 @@ private[store] object TiDBStoreSupport:
     environment: String,
     jdbcUrl: String,
     dbKind: String,
-    createdAt: LocalDateTime,
+    createdAt: Instant,
     repoUrl: String,
     repoBranch: String,
     repoSqlPath: String,
     lastSyncedCommit: Option[String],
-    lastSyncedAt: Option[LocalDateTime],
+    lastSyncedAt: Option[Instant],
     passwordCiphertext: Option[Array[Byte]],
     passwordIv: Option[Array[Byte]]
   ):
@@ -59,7 +59,7 @@ private[store] object TiDBStoreSupport:
     version: String,
     label: String,
     status: String,
-    appliedAt: Option[LocalDateTime],
+    appliedAt: Option[Instant],
     sourceSnapshotId: Option[String]
   )
 
@@ -91,16 +91,16 @@ private[store] object TiDBStoreSupport:
     targetId: String,
     patchId: String,
     status: String,
-    startedAt: LocalDateTime,
-    endedAt: Option[LocalDateTime],
+    startedAt: Instant,
+    endedAt: Option[Instant],
     triggeredBy: String,
     ownerId: Option[String],
     leaseToken: Option[String],
     leaseFence: Long,
-    leaseExpiresAt: Option[LocalDateTime],
+    leaseExpiresAt: Option[Instant],
     attemptCount: Int,
     maxAttempts: Int,
-    nextAttemptAt: LocalDateTime,
+    nextAttemptAt: Instant,
     leaseValid: Boolean
   )
 
@@ -123,7 +123,7 @@ private[store] object TiDBStoreSupport:
         durationMs
       )
 
-  final case class ValidationRow(runId: String, targetId: String, checkedAt: LocalDateTime, status: String)
+  final case class ValidationRow(runId: String, targetId: String, checkedAt: Instant, status: String)
   final case class ValidationIssueRow(
     runId: String,
     issueOrder: Int,
@@ -139,7 +139,7 @@ private[store] object TiDBStoreSupport:
     id: String,
     targetId: String,
     label: String,
-    createdAt: LocalDateTime,
+    createdAt: Instant,
     createdBy: String,
     fileCount: Int
   )
@@ -150,7 +150,7 @@ private[store] object TiDBStoreSupport:
     filename: String,
     sha256: String,
     content: Array[Byte],
-    uploadedAt: LocalDateTime,
+    uploadedAt: Instant,
     sizeBytes: Long
   ):
     def file: SnapshotFile =
@@ -172,7 +172,7 @@ private[store] object TiDBStoreSupport:
     entityType: String,
     entityId: String,
     targetId: Option[String],
-    at: LocalDateTime,
+    at: Instant,
     metadataJson: Option[String]
   ):
     def event: AuditEvent =
@@ -194,14 +194,14 @@ private[store] object TiDBStoreSupport:
   val patchScriptColumns =
     fr"id, patch_id, script_order, filename, checksum, status, error, duration_ms, content"
   val runColumns =
-    fr"id, target_id, patch_id, status, started_at, ended_at, triggered_by, owner_id, lease_token, lease_fence, lease_expires_at, attempt_count, max_attempts, next_attempt_at, (lease_expires_at > utc_timestamp(6))"
+    fr"id, target_id, patch_id, status, started_at, ended_at, triggered_by, owner_id, lease_token, lease_fence, lease_expires_at, attempt_count, max_attempts, next_attempt_at, (lease_expires_at > current_timestamp)"
   val runScriptColumns = fr"run_id, script_id, filename, script_order, status, error, duration_ms"
 
   def id(value: String): String = UUID.fromString(value).toString
   def idOption(value: String): Option[String] = Either.catchNonFatal(id(value)).toOption
-  def dbTime(value: String): LocalDateTime = Instant.parse(value).atOffset(ZoneOffset.UTC).toLocalDateTime
-  def dbTime(value: Instant): LocalDateTime = value.atOffset(ZoneOffset.UTC).toLocalDateTime
-  def apiTime(value: LocalDateTime): String = value.toInstant(ZoneOffset.UTC).toString
+  def dbTime(value: String): Instant = Instant.parse(value)
+  def dbTime(value: Instant): Instant = value
+  def apiTime(value: Instant): String = value.toString
   def errorJson(value: Option[ScriptError]): Option[String] = value.map(_.asJson.noSpaces)
 
 private final case class EncryptedPassword(ciphertext: Array[Byte], iv: Array[Byte])
@@ -219,8 +219,8 @@ private final class PasswordCrypto(key: SecretKeySpec):
       case (None, None) => IO.pure(None)
       case _ => IO.raiseError(IllegalStateException("target row has incomplete encrypted password fields"))
 
-private[store] final class TiDBTargetStore(database: StateDatabase, passwordKey: SecretKeySpec) extends TargetStore:
-  import TiDBStoreSupport.*
+private[store] final class PostgresTargetStore(database: StateDatabase, passwordKey: SecretKeySpec) extends TargetStore:
+  import PostgresStoreSupport.*
 
   private val crypto = PasswordCrypto(passwordKey)
 
@@ -277,7 +277,7 @@ private[store] final class TiDBTargetStore(database: StateDatabase, passwordKey:
             sql"""
               update targets set
                 label = ${next.label}, app_name = ${next.app_name}, environment = ${next.env},
-                jdbc_url = ${next.jdbc_url}, db_kind = ${next.db_kind}, updated_at = utc_timestamp(6),
+                jdbc_url = ${next.jdbc_url}, db_kind = ${next.db_kind}, updated_at = current_timestamp,
                 repo_url = ${next.repo_url}, repo_branch = ${next.repo_branch}, repo_sql_path = ${next.repo_sql_path},
                 last_synced_commit = ${next.last_synced_commit},
                 last_synced_at = ${next.last_synced_at.map(dbTime)},
@@ -292,7 +292,7 @@ private[store] final class TiDBTargetStore(database: StateDatabase, passwordKey:
   override def recordRepoSync(id: String, commitSha: String, syncedAt: String): IO[Boolean] =
     idOption(id).fold(IO.pure(false)) { targetId =>
       database.transact(
-        sql"update targets set last_synced_commit = $commitSha, last_synced_at = ${dbTime(syncedAt)}, updated_at = utc_timestamp(6) where id = $targetId"
+        sql"update targets set last_synced_commit = $commitSha, last_synced_at = ${dbTime(syncedAt)}, updated_at = current_timestamp where id = $targetId"
           .update.run.map(_ > 0)
       )
     }
@@ -300,7 +300,7 @@ private[store] final class TiDBTargetStore(database: StateDatabase, passwordKey:
   override def clearRepoSync(id: String): IO[Boolean] =
     idOption(id).fold(IO.pure(false)) { targetId =>
       database.transact(
-        sql"update targets set last_synced_commit = null, last_synced_at = null, updated_at = utc_timestamp(6) where id = $targetId"
+        sql"update targets set last_synced_commit = null, last_synced_at = null, updated_at = current_timestamp where id = $targetId"
           .update.run.map(_ > 0)
       )
     }
@@ -315,10 +315,10 @@ private[store] final class TiDBTargetStore(database: StateDatabase, passwordKey:
       database.transact((fr"select" ++ targetColumns ++ fr"from targets where id = $targetId").query[TargetRow].option)
     }
 
-private[store] final class TiDBSqlFileStore(database: StateDatabase) extends SqlFileStore:
-  import TiDBStoreSupport.*
+private[store] final class PostgresSqlFileStore(database: StateDatabase) extends SqlFileStore:
+  import PostgresStoreSupport.*
 
-  private type Row = (String, String, String, Array[Byte], String, LocalDateTime)
+  private type Row = (String, String, String, Array[Byte], String, Instant)
 
   override def list(targetId: String): IO[List[StoredSqlFile]] =
     database.transact(
@@ -333,7 +333,7 @@ private[store] final class TiDBSqlFileStore(database: StateDatabase) extends Sql
     val rows = files.map(file =>
       (targetUuid, file.path, file.folder, file.filename, Base64.getDecoder.decode(file.contentBase64), file.sha256, dbTime(file.uploadedAt))
     )
-    val insert = Update[(String, String, String, String, Array[Byte], String, LocalDateTime)](
+    val insert = Update[(String, String, String, String, Array[Byte], String, Instant)](
       "insert into sql_files (target_id, path, folder, filename, content, sha256, uploaded_at) values (?, ?, ?, ?, ?, ?, ?)"
     )
     database.transact((sql"delete from sql_files where target_id = $targetUuid".update.run *> insert.updateMany(rows)).void)
@@ -347,8 +347,8 @@ private[store] final class TiDBSqlFileStore(database: StateDatabase) extends Sql
   private def fromRow(row: Row): StoredSqlFile =
     StoredSqlFile(row._1, row._2, row._3, Base64.getEncoder.encodeToString(row._4), row._5, apiTime(row._6))
 
-private[store] final class TiDBPatchStore(database: StateDatabase) extends PatchStore:
-  import TiDBStoreSupport.*
+private[store] final class PostgresPatchStore(database: StateDatabase) extends PatchStore:
+  import PostgresStoreSupport.*
 
   override def list(targetId: Option[String]): IO[List[Patch]] =
     val filter = targetId.fold(Fragment.empty)(value => fr"where target_id = ${id(value)}")
@@ -367,22 +367,22 @@ private[store] final class TiDBPatchStore(database: StateDatabase) extends Patch
     yield patch
 
   override def get(id: String): IO[Option[Patch]] =
-    database.transact(load(TiDBStoreSupport.id(id)))
+    database.transact(load(PostgresStoreSupport.id(id)))
 
   override def delete(id: String): IO[Boolean] =
-    database.transact(sql"delete from patches where id = ${TiDBStoreSupport.id(id)}".update.run.map(_ > 0))
+    database.transact(sql"delete from patches where id = ${PostgresStoreSupport.id(id)}".update.run.map(_ > 0))
 
   override def markApplied(id: String, appliedAt: String): IO[Unit] =
-    val patchId = TiDBStoreSupport.id(id)
+    val patchId = PostgresStoreSupport.id(id)
     database.transact((sql"update patches set status = 'applied', applied_at = ${dbTime(appliedAt)} where id = $patchId".update.run *>
       sql"update patch_scripts set status = 'completed', duration_ms = coalesce(duration_ms, 0) where patch_id = $patchId".update.run).void
     )
 
   override def markFailed(id: String): IO[Unit] =
-    database.transact(sql"update patches set status = 'failed' where id = ${TiDBStoreSupport.id(id)}".update.run.void)
+    database.transact(sql"update patches set status = 'failed' where id = ${PostgresStoreSupport.id(id)}".update.run.void)
 
   override def sqlFiles(patch: Patch, dbKind: DbKind): IO[List[PatchSqlFile]] =
-    database.transact(sql"select id, patch_id, script_order, filename, checksum, status, error, duration_ms, content from patch_scripts where patch_id = ${TiDBStoreSupport.id(patch.id)} order by script_order"
+    database.transact(sql"select id, patch_id, script_order, filename, checksum, status, error, duration_ms, content from patch_scripts where patch_id = ${PostgresStoreSupport.id(patch.id)} order by script_order"
       .query[PatchScriptRow].to[List].flatMap { rows =>
         rows.traverse { row =>
           val script = row.script
@@ -392,7 +392,7 @@ private[store] final class TiDBPatchStore(database: StateDatabase) extends Patch
       })
 
   private def insertPatch(patch: Patch, uploads: List[PatchUpload]): ConnectionIO[Unit] =
-    val patchId = TiDBStoreSupport.id(patch.id)
+    val patchId = PostgresStoreSupport.id(patch.id)
     val rows = patch.scripts.zip(uploads.sortBy(_.order)).map { case (script, upload) =>
       (script.id, patchId, script.order, script.filename, script.checksum, script.status, errorJson(script.error), script.duration_ms, upload.bytes)
     }
@@ -414,9 +414,9 @@ private[store] final class TiDBPatchStore(database: StateDatabase) extends Patch
         Patch(row.id, row.targetId, row.version, row.label, scripts.map(_.script), row.status, row.appliedAt.map(apiTime), row.sourceSnapshotId)
       )
 
-private[store] final class TiDBRunStore(database: StateDatabase, protected val topic: Topic[IO, RunEvent])
+private[store] final class PostgresRunStore(database: StateDatabase, protected val topic: Topic[IO, RunEvent])
     extends RunStore with RunStoreEvents:
-  import TiDBStoreSupport.*
+  import PostgresStoreSupport.*
 
   override def list(targetId: Option[String]): IO[List[Run]] =
     val filter = targetId.fold(Fragment.empty)(value => fr"where target_id = ${id(value)}")
@@ -501,8 +501,8 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
             select id from runs
             where status in ('pending', 'running')
               and attempt_count < max_attempts
-              and next_attempt_at <= utc_timestamp(6)
-              and (lease_token is null or lease_expires_at <= utc_timestamp(6))
+              and next_attempt_at <= current_timestamp
+              and (lease_token is null or lease_expires_at <= current_timestamp)
             order by case when status = 'running' then 0 else 1 end, started_at
             limit 16
           """.query[String].to[List]
@@ -530,10 +530,10 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
   override def startRun(lease: RunLease): IO[Boolean] =
     database.transact {
       sql"""
-        update runs set status = 'running', updated_at = utc_timestamp(6)
+        update runs set status = 'running', updated_at = current_timestamp
         where id = ${lease.runId} and status = 'pending'
           and owner_id = ${lease.ownerId} and lease_token = ${lease.token} and lease_fence = ${lease.fence}
-          and lease_expires_at > utc_timestamp(6)
+          and lease_expires_at > current_timestamp
       """.update.run.flatMap {
         case 1 => true.pure[ConnectionIO]
         case _ =>
@@ -627,13 +627,13 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
         lease_fence, attempt_count, max_attempts, next_attempt_at, updated_at
       ) values (
         $runId, ${id(run.target_id)}, ${id(run.patch_id)}, ${run.status}, ${dbTime(run.started_at)},
-        ${run.ended_at.map(dbTime)}, ${run.triggered_by}, 0, 0, 3, utc_timestamp(6), utc_timestamp(6)
+        ${run.ended_at.map(dbTime)}, ${run.triggered_by}, 0, 0, 3, current_timestamp, current_timestamp
       )
     """.update.run *> insertScripts(run).void
 
   private def persistRun(run: Run): ConnectionIO[Unit] =
     val runId = id(run.id)
-    (sql"update runs set status = ${run.status}, ended_at = ${run.ended_at.map(dbTime)}, updated_at = utc_timestamp(6) where id = $runId".update.run *>
+    (sql"update runs set status = ${run.status}, ended_at = ${run.ended_at.map(dbTime)}, updated_at = current_timestamp where id = $runId".update.run *>
       sql"delete from run_scripts where run_id = $runId".update.run *> insertScripts(run)).void
 
   private def insertScripts(run: Run): ConnectionIO[Int] =
@@ -661,20 +661,20 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
         owner_id = $ownerId,
         lease_token = $token,
         lease_fence = lease_fence + 1,
-        lease_expires_at = timestampadd(microsecond, $leaseMicros, utc_timestamp(6)),
+        lease_expires_at = current_timestamp + ($leaseMicros * interval '1 microsecond'),
         attempt_count = attempt_count + 1,
         last_error = null,
-        updated_at = utc_timestamp(6)
+        updated_at = current_timestamp
       where id = $runId
         and status in ('pending', 'running')
         and attempt_count < max_attempts
-        and next_attempt_at <= utc_timestamp(6)
-        and (lease_token is null or lease_expires_at <= utc_timestamp(6))
+        and next_attempt_at <= current_timestamp
+        and (lease_token is null or lease_expires_at <= current_timestamp)
     """.update.run.flatMap {
       case 0 => none[RunLease].pure[ConnectionIO]
       case 1 =>
         sql"select owner_id, lease_token, lease_fence, attempt_count, lease_expires_at from runs where id = $runId"
-          .query[(String, String, Long, Int, LocalDateTime)]
+          .query[(String, String, Long, Int, Instant)]
           .unique
           .flatMap { case (owner, currentToken, fence, attempts, expiresAt) =>
             val lease = RunLease(runId, owner, currentToken, fence, attempts, apiTime(expiresAt))
@@ -688,16 +688,16 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
       select id from runs
       where status in ('pending', 'running')
         and attempt_count >= max_attempts
-        and (lease_token is null or lease_expires_at <= utc_timestamp(6))
+        and (lease_token is null or lease_expires_at <= current_timestamp)
       limit 64
     """.query[String].to[List].flatMap(_.traverse_ { runId =>
       sql"""
         update runs set
-          status = 'failed', ended_at = utc_timestamp(6), last_error = 'run lease attempts exhausted',
-          owner_id = null, lease_token = null, lease_expires_at = null, updated_at = utc_timestamp(6)
+          status = 'failed', ended_at = current_timestamp, last_error = 'run lease attempts exhausted',
+          owner_id = null, lease_token = null, lease_expires_at = null, updated_at = current_timestamp
         where id = $runId and status in ('pending', 'running')
           and attempt_count >= max_attempts
-          and (lease_token is null or lease_expires_at <= utc_timestamp(6))
+          and (lease_token is null or lease_expires_at <= current_timestamp)
       """.update.run.flatMap {
         case 0 => ().pure[ConnectionIO]
         case 1 =>
@@ -710,21 +710,21 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
   private def renewAction(lease: RunLease, leaseMicros: Long): ConnectionIO[Boolean] =
     sql"""
       update runs set
-        lease_expires_at = timestampadd(microsecond, $leaseMicros, utc_timestamp(6)),
-        updated_at = utc_timestamp(6)
+        lease_expires_at = current_timestamp + ($leaseMicros * interval '1 microsecond'),
+        updated_at = current_timestamp
       where id = ${lease.runId}
         and owner_id = ${lease.ownerId}
         and lease_token = ${lease.token}
         and lease_fence = ${lease.fence}
         and status in ('pending', 'running')
-        and lease_expires_at > utc_timestamp(6)
+        and lease_expires_at > current_timestamp
     """.update.run.flatMap {
       case 0 => false.pure[ConnectionIO]
       case 1 =>
         sql"""
           update control_leases set
-            lease_expires_at = timestampadd(microsecond, $leaseMicros, utc_timestamp(6)),
-            updated_at = utc_timestamp(6)
+            lease_expires_at = current_timestamp + ($leaseMicros * interval '1 microsecond'),
+            updated_at = current_timestamp
           where resource_type = 'run' and resource_id = ${lease.runId}
             and owner_id = ${lease.ownerId} and lease_token = ${lease.token} and fence = ${lease.fence}
         """.update.run.flatMap {
@@ -743,13 +743,13 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
           and lease_token = ${lease.token}
           and lease_fence = ${lease.fence}
           and status in ('pending', 'running')
-          and lease_expires_at > utc_timestamp(6)
+          and lease_expires_at > current_timestamp
       )
     """.query[Boolean].unique
 
   private def releaseLease(lease: RunLease): ConnectionIO[Boolean] =
     sql"""
-      update runs set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = utc_timestamp(6)
+      update runs set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = current_timestamp
       where id = ${lease.runId} and owner_id = ${lease.ownerId}
         and lease_token = ${lease.token} and lease_fence = ${lease.fence}
     """.update.run.flatMap {
@@ -759,14 +759,14 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
     }
 
   private def clearLease(runId: String): ConnectionIO[Unit] =
-    sql"update runs set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = utc_timestamp(6) where id = $runId"
+    sql"update runs set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = current_timestamp where id = $runId"
       .update.run *> clearControlLease(runId, None)
 
   private def clearControlLease(runId: String, lease: Option[RunLease]): ConnectionIO[Unit] =
     val predicate = lease.fold(Fragment.empty)(value =>
       fr"and owner_id = ${value.ownerId} and lease_token = ${value.token} and fence = ${value.fence}"
     )
-    (fr"update control_leases set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = utc_timestamp(6) where resource_type = 'run' and resource_id = $runId" ++ predicate)
+    (fr"update control_leases set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = current_timestamp where resource_type = 'run' and resource_id = $runId" ++ predicate)
       .update.run.void
 
   private def upsertControlLease(lease: RunLease): ConnectionIO[Unit] =
@@ -776,11 +776,11 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
         lease_expires_at, next_attempt_at, last_error, updated_at
       ) values (
         'run', ${lease.runId}, ${lease.ownerId}, ${lease.token}, ${lease.fence}, ${lease.attemptCount},
-        ${dbTime(lease.expiresAt)}, utc_timestamp(6), null, utc_timestamp(6)
-      ) on duplicate key update
-        owner_id = values(owner_id), lease_token = values(lease_token), fence = values(fence),
-        attempt_count = values(attempt_count), lease_expires_at = values(lease_expires_at),
-        next_attempt_at = values(next_attempt_at), last_error = values(last_error), updated_at = values(updated_at)
+        ${dbTime(lease.expiresAt)}, current_timestamp, null, current_timestamp
+      ) on conflict (resource_type, resource_id) do update set
+        owner_id = excluded.owner_id, lease_token = excluded.lease_token, fence = excluded.fence,
+        attempt_count = excluded.attempt_count, lease_expires_at = excluded.lease_expires_at,
+        next_attempt_at = excluded.next_attempt_at, last_error = excluded.last_error, updated_at = excluded.updated_at
     """.update.run.void
 
   private def matchesLease(row: RunRow, lease: RunLease): Boolean =
@@ -792,8 +792,8 @@ private[store] final class TiDBRunStore(database: StateDatabase, protected val t
       case sql: java.sql.SQLException => sql.getErrorCode == 1062 || Option(sql.getSQLState).exists(_.startsWith("23"))
       case other => Option(other.getCause).exists(isDuplicate)
 
-private[store] final class TiDBValidationStore(database: StateDatabase) extends ValidationStore:
-  import TiDBStoreSupport.*
+private[store] final class PostgresValidationStore(database: StateDatabase) extends ValidationStore:
+  import PostgresStoreSupport.*
 
   override def list(targetId: Option[String]): IO[List[ValidationResult]] =
     val filter = targetId.fold(Fragment.empty)(value => fr"where target_id = ${id(value)}")
@@ -826,7 +826,8 @@ private[store] final class TiDBValidationStore(database: StateDatabase) extends 
     (sql"""
       insert into validations (run_id, target_id, checked_at, status)
       values ($runId, ${id(result.target_id)}, ${dbTime(result.checked_at)}, ${result.status})
-      on duplicate key update target_id = values(target_id), checked_at = values(checked_at), status = values(status)
+      on conflict (run_id) do update set
+        target_id = excluded.target_id, checked_at = excluded.checked_at, status = excluded.status
     """.update.run *> sql"delete from validation_issues where run_id = $runId".update.run *> insertIssues.updateMany(rows)).void
 
   private def toResult(row: ValidationRow): ConnectionIO[ValidationResult] =
@@ -836,8 +837,8 @@ private[store] final class TiDBValidationStore(database: StateDatabase) extends 
         ValidationResult(row.runId, row.targetId, apiTime(row.checkedAt), invalid, row.status, warnings)
       }
 
-private[store] final class TiDBSnapshotStore(database: StateDatabase) extends SnapshotStore:
-  import TiDBStoreSupport.*
+private[store] final class PostgresSnapshotStore(database: StateDatabase) extends SnapshotStore:
+  import PostgresStoreSupport.*
 
   override def list(targetId: Option[String]): IO[List[Snapshot]] =
     val filter = targetId.fold(Fragment.empty)(value => fr"where target_id = ${id(value)}")
@@ -856,7 +857,7 @@ private[store] final class TiDBSnapshotStore(database: StateDatabase) extends Sn
 
   override def get(id: String): IO[Option[Snapshot]] =
     database.transact(
-      sql"select id, target_id, label, created_at, created_by, file_count from snapshots where id = ${TiDBStoreSupport.id(id)}"
+      sql"select id, target_id, label, created_at, created_by, file_count from snapshots where id = ${PostgresStoreSupport.id(id)}"
         .query[SnapshotRow].option.flatMap(_.traverse(toSnapshot))
     )
 
@@ -865,7 +866,7 @@ private[store] final class TiDBSnapshotStore(database: StateDatabase) extends Sn
     val rows = snapshot.files.map(file =>
       (snapshotId, file.path, file.folder, file.filename, file.sha256, Base64.getDecoder.decode(file.content_base64.getOrElse("")), dbTime(file.uploaded_at), file.size_bytes)
     )
-    val insertFiles = Update[(String, String, String, String, String, Array[Byte], LocalDateTime, Long)](
+    val insertFiles = Update[(String, String, String, String, String, Array[Byte], Instant, Long)](
       "insert into snapshot_files (snapshot_id, path, folder, filename, sha256, content, uploaded_at, size_bytes) values (?, ?, ?, ?, ?, ?, ?, ?)"
     )
     sql"insert into snapshots (id, target_id, label, created_at, created_by, file_count) values ($snapshotId, ${id(snapshot.target_id)}, ${snapshot.label}, ${dbTime(snapshot.created_at)}, ${snapshot.created_by}, ${snapshot.file_count})"
@@ -877,8 +878,8 @@ private[store] final class TiDBSnapshotStore(database: StateDatabase) extends Sn
         Snapshot(row.id, row.targetId, row.label, apiTime(row.createdAt), row.createdBy, row.fileCount, files.map(_.file))
       )
 
-private[store] final class TiDBAuditStore(database: StateDatabase) extends AuditStore:
-  import TiDBStoreSupport.*
+private[store] final class PostgresAuditStore(database: StateDatabase) extends AuditStore:
+  import PostgresStoreSupport.*
 
   override def list(filters: AuditFilters): IO[List[AuditEvent]] =
     val clauses = List(
@@ -900,12 +901,12 @@ private[store] final class TiDBAuditStore(database: StateDatabase) extends Audit
       event = AuditEvent(id.toString, actor, role, action, entityType, entityId, targetId, now.toString, metadata)
       _ <- database.transact(sql"""
         insert into audit_events (id, actor, role, action, entity_type, entity_id, target_id, at, metadata)
-        values (${id.toString}, $actor, $role, $action, $entityType, $entityId, ${targetId.map(TiDBStoreSupport.id)}, ${dbTime(now)}, ${metadata.map(_.noSpaces)})
+        values (${id.toString}, $actor, $role, $action, $entityType, $entityId, ${targetId.map(PostgresStoreSupport.id)}, ${dbTime(now)}, ${metadata.map(_.noSpaces)})
       """.update.run)
     yield event
 
-private[store] object TiDBKeycloakConfigStore:
-  import TiDBStoreSupport.*
+private[store] object PostgresKeycloakConfigStore:
+  import PostgresStoreSupport.*
 
   private val ConfigId = "00000000-0000-0000-0000-000000000001"
 
@@ -915,13 +916,13 @@ private[store] object TiDBKeycloakConfigStore:
         insert into keycloak_config (id, enabled, issuer, jwks_uri, client_id, audience, updated_at)
         values ($ConfigId, ${config.keycloakEnabled}, ${config.keycloakIssuer}, ${config.keycloakJwksUri},
           ${config.keycloakClientId}, ${config.keycloakAudience}, ${dbTime(now)})
-        on duplicate key update
-          enabled = values(enabled), issuer = values(issuer), jwks_uri = values(jwks_uri),
-          client_id = values(client_id), audience = values(audience), updated_at = values(updated_at)
+        on conflict (id) do update set
+          enabled = excluded.enabled, issuer = excluded.issuer, jwks_uri = excluded.jwks_uri,
+          client_id = excluded.client_id, audience = excluded.audience, updated_at = excluded.updated_at
       """.update.run.void)
     }
 
-object TiDBStores:
+object PostgresStores:
   final case class Bundle(
     targetStore: TargetStore,
     sqlFileStore: SqlFileStore,
@@ -935,15 +936,15 @@ object TiDBStores:
   def resource(database: StateDatabase, passwordKey: SecretKeySpec): Resource[IO, Bundle] =
     run(database).map { runStore =>
       Bundle(
-        TiDBTargetStore(database, passwordKey),
-        TiDBSqlFileStore(database),
-        TiDBPatchStore(database),
+        PostgresTargetStore(database, passwordKey),
+        PostgresSqlFileStore(database),
+        PostgresPatchStore(database),
         runStore,
-        TiDBValidationStore(database),
-        TiDBSnapshotStore(database),
-        TiDBAuditStore(database)
+        PostgresValidationStore(database),
+        PostgresSnapshotStore(database),
+        PostgresAuditStore(database)
       )
     }
 
   def run(database: StateDatabase): Resource[IO, RunStore] =
-    Resource.eval(Topic[IO, RunEvent].map(topic => TiDBRunStore(database, topic): RunStore))
+    Resource.eval(Topic[IO, RunEvent].map(topic => PostgresRunStore(database, topic): RunStore))

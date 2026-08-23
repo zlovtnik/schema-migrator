@@ -43,7 +43,7 @@ object RunExecutor:
   private val LeaseRenewInterval = 10.seconds
 
   final case class LeaseLost(runId: String)
-      extends RuntimeException(s"run '$runId' lost its TiDB control lease")
+      extends RuntimeException(s"run '$runId' lost its PostgreSQL control lease")
 
   def supervised(delegate: RunExecutor, supervisor: Supervisor[IO], runStore: RunStore): RunExecutor =
     val ownerId = s"schema-migrator-${UUID.randomUUID()}"

@@ -18,7 +18,6 @@ object TargetDescriptor:
           "postgresql://"
         )
       then Right(DbKind.Postgres)
-      else if jdbcUrl.startsWith("jdbc:mysql://") || jdbcUrl.startsWith("mysql://") then Right(DbKind.TiDB)
       else Left(unsupported)
     kind.map(dbKind => TargetDescriptor(dbKind, jdbcUrl, hostFor(dbKind, jdbcUrl)))
 
@@ -33,11 +32,6 @@ object TargetDescriptor:
         if jdbcUrl.startsWith("jdbc:oracle:thin:@//") then
           uriHost("oracle:" + jdbcUrl.stripPrefix("jdbc:oracle:thin:@"))
         else descriptorHost(jdbcUrl)
-      case DbKind.TiDB =>
-        val uri =
-          if jdbcUrl.startsWith("jdbc:mysql://") then jdbcUrl.stripPrefix("jdbc:")
-          else jdbcUrl
-        uriHost(uri)
 
   private def uriHost(value: String): Option[String] =
     Try(URI.create(value).getHost).toOption.flatMap(Option(_)).filter(_.nonEmpty)

@@ -5,4 +5,4 @@ import com.sslproxy.schema.config.ServerConfig
 
 object KeycloakConfigStore:
   def persist(config: ServerConfig, database: StateDatabase): IO[Unit] =
-    TiDBKeycloakConfigStore.persist(config, database)
+    PostgresKeycloakConfigStore.persist(config, database)

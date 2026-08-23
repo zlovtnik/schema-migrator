@@ -25,7 +25,6 @@ object Canonicalizer:
         sql.linesIterator
           .filterNot(line => line.trim == "/")
           .mkString("\n")
-      case SqlDialect.TiDB => sql
 
   private def canonicalizeInner(sql: String, dialect: SqlDialect): String =
     val output = new StringBuilder(sql.length)

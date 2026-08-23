@@ -8,14 +8,13 @@ import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 
 enum DbKind:
-  case Postgres, Oracle, TiDB
+  case Postgres, Oracle
 
 object DbKind:
   def parse(value: String): Either[String, DbKind] =
     value.trim.toLowerCase match
       case "postgres" | "postgresql" => Right(Postgres)
       case "oracle" => Right(Oracle)
-      case "tidb" | "mysql" => Right(TiDB)
       case other => Left(s"unsupported db kind '$other'")
 
 final case class MigratorConfig(
@@ -31,8 +30,6 @@ final case class MigratorConfig(
   oracleTnsAlias: Option[String],
   oracleUser: Option[String],
   oraclePasswordFile: Option[Path],
-  tidbUser: Option[String] = None,
-  tidbPassword: Option[String] = None,
   json: Boolean,
   server: ServerConfig,
   customer: Option[String] = None
@@ -64,8 +61,6 @@ final case class MigratorConfig(
         Left("Oracle requires --oracle-pass-file (or ORACLE_PASS_FILE)")
       case DbKind.Postgres if databaseUrl.isEmpty =>
         Left("Postgres requires --database-url (or DATABASE_URL)")
-      case DbKind.TiDB if databaseUrl.isEmpty =>
-        Left("TiDB requires --database-url (or DATABASE_URL)")
       case _ => Right(())
 
   private def validateSqlDir(): Either[String, Unit] =
@@ -89,10 +84,11 @@ final case class StateStoreConfig(
 ):
   def validate: Either[String, Unit] =
     if url.trim.isEmpty then Left("BEDROCK_STATE_DB_URL must not be empty")
-    else if !url.trim.startsWith("jdbc:mysql://") then
-      Left("BEDROCK_STATE_DB_URL must be a JDBC MySQL/TiDB URL starting with jdbc:mysql://")
+    else if !url.trim.startsWith("jdbc:postgresql://") then
+      Left("BEDROCK_STATE_DB_URL must be a PostgreSQL JDBC URL starting with jdbc:postgresql://")
     else if user.trim.isEmpty then Left("BEDROCK_STATE_DB_USER must not be empty")
-    else if user.trim.equalsIgnoreCase("root") then Left("BEDROCK_STATE_DB_USER must be a dedicated non-root TiDB user")
+    else if Set("root", "postgres").contains(user.trim.toLowerCase(Locale.ROOT)) then
+      Left("BEDROCK_STATE_DB_USER must be a dedicated non-superuser PostgreSQL role")
     else if password.trim.isEmpty then Left("BEDROCK_STATE_DB_PASSWORD must not be empty")
     else if poolSize < 1 then Left("BEDROCK_STATE_DB_POOL_SIZE must be at least 1")
     else validateJdbcUrl
@@ -100,7 +96,7 @@ final case class StateStoreConfig(
   private def validateJdbcUrl: Either[String, Unit] =
     Try(URI.create(url.trim.stripPrefix("jdbc:"))).toEither
       .left
-      .map(_ => "BEDROCK_STATE_DB_URL must be a valid JDBC MySQL/TiDB URL")
+      .map(_ => "BEDROCK_STATE_DB_URL must be a valid PostgreSQL JDBC URL")
       .flatMap { uri =>
         val database = Option(uri.getPath).getOrElse("").stripPrefix("/")
         val params = Option(uri.getRawQuery)
@@ -112,17 +108,19 @@ final case class StateStoreConfig(
               case _ => None
           }
           .toMap
-        if Option(uri.getHost).forall(_.trim.isEmpty) then Left("BEDROCK_STATE_DB_URL must include a TiDB host")
+        if Option(uri.getHost).forall(_.trim.isEmpty) then Left("BEDROCK_STATE_DB_URL must include a PostgreSQL host")
         else if Set("localhost", "127.0.0.1", "::1").contains(uri.getHost.toLowerCase(Locale.ROOT)) then
-          Left("BEDROCK_STATE_DB_URL must use an external non-loopback TiDB host")
+          Left("BEDROCK_STATE_DB_URL must use an external non-loopback PostgreSQL host")
         else if Option(uri.getUserInfo).nonEmpty then
           Left("BEDROCK_STATE_DB_URL must not contain inline credentials")
-        else if database != "schema_migrator" then
-          Left("BEDROCK_STATE_DB_URL must select the schema_migrator database")
+        else if database != "sync" then
+          Left("BEDROCK_STATE_DB_URL must select the sync database")
+        else if !params.get("currentschema").contains("schema_migrator") then
+          Left("BEDROCK_STATE_DB_URL must set currentSchema=schema_migrator")
         else if !params.get("sslmode").exists(mode =>
-          Set("DISABLED", "VERIFY_IDENTITY").contains(mode.toUpperCase(Locale.ROOT))
+          Set("DISABLE", "REQUIRE", "VERIFY-CA", "VERIFY-FULL").contains(mode.toUpperCase(Locale.ROOT))
         ) then
-          Left("BEDROCK_STATE_DB_URL must set sslMode=DISABLED or VERIFY_IDENTITY")
+          Left("BEDROCK_STATE_DB_URL must set sslmode=disable, require, verify-ca, or verify-full")
         else Right(())
       }
 

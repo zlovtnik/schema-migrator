@@ -15,10 +15,10 @@ import scala.concurrent.duration.*
 
 final case class StateDatabase(transactor: Transactor[IO]):
   def transact[A](action: ConnectionIO[A]): IO[A] =
-    TiDBTransactionRetry.run(action.transact(transactor))
+    PostgresTransactionRetry.run(action.transact(transactor))
 
 object StateDatabase:
-  private val Driver = "com.mysql.cj.jdbc.Driver"
+  private val Driver = "org.postgresql.Driver"
 
   def resource(config: StateStoreConfig): Resource[IO, StateDatabase] =
     for
@@ -38,12 +38,10 @@ object StateDatabase:
     value.setPassword(config.password)
     value.setMaximumPoolSize(config.poolSize)
     value.setMinimumIdle(1)
-    value.setPoolName("schema-migrator-tidb-state")
-    value.setConnectionInitSql("SET time_zone = '+00:00'")
-    value.addDataSourceProperty("connectionTimeZone", "UTC")
-    value.addDataSourceProperty("forceConnectionTimeZoneToSession", "true")
-    value.addDataSourceProperty("preserveInstants", "true")
-    value.addDataSourceProperty("characterEncoding", "UTF-8")
+    value.setPoolName("schema-migrator-postgres-state")
+    value.setConnectionInitSql("SET TIME ZONE 'UTC'")
+    value.addDataSourceProperty("ApplicationName", "schema-migrator")
+    value.addDataSourceProperty("stringtype", "unspecified")
     value
 
   extension (database: StateDatabase)
@@ -56,17 +54,22 @@ object StateDatabase:
     for
       version <- checked(StateSchemaVerificationFailure.Database)(sql"select version()".query[String].unique)
       _ <- Either
-        .cond(isSupportedTiDB(version), (), "server must be TiDB v8.5 or newer")
+        .cond(isSupportedPostgres(version), (), "server must be PostgreSQL 16 or newer")
         .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.Database, detail))
         .liftTo[ConnectionIO]
-      database <- checked(StateSchemaVerificationFailure.Database)(sql"select database()".query[Option[String]].unique)
+      database <- checked(StateSchemaVerificationFailure.Database)(sql"select current_database()".query[String].unique)
       _ <- Either
-        .cond(database.contains("schema_migrator"), (), "selected database must be schema_migrator")
+        .cond(database == "sync", (), "selected database must be sync")
         .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.Database, detail))
         .liftTo[ConnectionIO]
-      timeZone <- checked(StateSchemaVerificationFailure.SessionTimeZone)(sql"select @@session.time_zone".query[String].unique)
+      schema <- checked(StateSchemaVerificationFailure.Database)(sql"select current_schema()".query[String].unique)
       _ <- Either
-        .cond(Set("+00:00", "UTC").contains(timeZone), (), "session time zone must be UTC")
+        .cond(schema == "schema_migrator", (), "current schema must be schema_migrator")
+        .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.Database, detail))
+        .liftTo[ConnectionIO]
+      timeZone <- checked(StateSchemaVerificationFailure.SessionTimeZone)(sql"show timezone".query[String].unique)
+      _ <- Either
+        .cond(Set("UTC", "Etc/UTC").contains(timeZone), (), "session time zone must be UTC")
         .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.SessionTimeZone, detail))
         .liftTo[ConnectionIO]
       ledger <- checked(StateSchemaVerificationFailure.LedgerVersionChecksum)(
@@ -92,12 +95,10 @@ object StateDatabase:
         StateSchemaVerificationFailure(category, "verification query failed", error).raiseError[ConnectionIO, A]
     }
 
-  private[store] def isSupportedTiDB(value: String): Boolean =
-    val Version = raw"(?i).*TiDB-v(\d+)\.(\d+)(?:\.\d+)?.*".r
+  private[store] def isSupportedPostgres(value: String): Boolean =
+    val Version = raw"(?i).*PostgreSQL\s+(\d+)(?:\.(\d+))?.*".r
     value match
-      case Version(major, minor) =>
-        val parsed = major.toInt -> minor.toInt
-        parsed._1 > 8 || (parsed._1 == 8 && parsed._2 >= 5)
+      case Version(major, _) => major.toInt >= 16
       case _ => false
 
 private[store] final case class StateSchemaContract(version: String, checksum: String)
@@ -156,14 +157,14 @@ private[store] object StateSchemaVerificationFailure:
     error match
       case failure: StateSchemaVerificationFailure =>
         IllegalStateException(
-          s"TiDB state schema verification failed [${failure.category}]: ${failure.detail}; " +
-            "apply sql/tidb/schema_migrator with the provisioning schema job before starting the runtime",
+          s"PostgreSQL state schema verification failed [${failure.category}]: ${failure.detail}; " +
+            "apply sql/postgres/schema_migrator with the provisioning schema job before starting the runtime",
           failure
         )
       case other =>
         IllegalStateException(
-          "TiDB state schema verification failed [database]: verification query failed; " +
-            "apply sql/tidb/schema_migrator with the provisioning schema job before starting the runtime",
+          "PostgreSQL state schema verification failed [database]: verification query failed; " +
+            "apply sql/postgres/schema_migrator with the provisioning schema job before starting the runtime",
           other
         )
 
@@ -192,12 +193,12 @@ private[store] object StateSchemaContract:
         }
       }
 
-private[store] object TiDBTransactionRetry:
+private[store] object PostgresTransactionRetry:
   private val MaxAttempts = 5
   private val MaxElapsed = 2.seconds
   private val InitialDelay = 20.millis
   private val MaxDelay = 320.millis
-  private val RetryableVendorCodes = Set(1205, 1213, 8028, 9007)
+  private val RetryableSqlStates = Set("40001", "40P01", "55P03", "57P03")
 
   def run[A](operation: IO[A]): IO[A] =
     IO.monotonic.flatMap(started => loop(operation, started, attempt = 1, InitialDelay))
@@ -216,7 +217,7 @@ private[store] object TiDBTransactionRetry:
 
   private[store] def isRetryable(error: Throwable): Boolean =
     findSqlException(error).exists { sql =>
-      Option(sql.getSQLState).contains("40001") || RetryableVendorCodes.contains(sql.getErrorCode)
+      Option(sql.getSQLState).exists(RetryableSqlStates.contains)
     }
 
   private def findSqlException(error: Throwable): Option[SQLException] =

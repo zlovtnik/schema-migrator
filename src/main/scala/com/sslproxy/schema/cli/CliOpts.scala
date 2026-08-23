@@ -10,7 +10,7 @@ import scala.concurrent.duration.*
 
 object CliOpts:
   private given Argument[DbKind] =
-    Argument.from("postgres|oracle|tidb|mysql")(value => DbKind.parse(value).toValidatedNel)
+    Argument.from("postgres|oracle")(value => DbKind.parse(value).toValidatedNel)
 
   private given Argument[Path] =
     Argument.from("path")(value => Either.catchNonFatal(Paths.get(value)).leftMap(_.getMessage).toValidatedNel)
@@ -19,7 +19,7 @@ object CliOpts:
 
   private val dbKindOpt: Opts[DbKind] =
     Opts
-      .option[DbKind]("db-kind", help = "Database engine: postgres, oracle, or tidb")
+      .option[DbKind]("db-kind", help = "Database engine: postgres or deprecated oracle")
       .withDefault(env.get("SCHEMA_MIGRATOR_DB_KIND").flatMap(DbKind.parse(_).toOption).getOrElse(DbKind.Postgres))
 
   private val sqlDirOpt: Opts[Option[Path]] =
@@ -54,12 +54,6 @@ object CliOpts:
 
   private val oraclePasswordFileOpt: Opts[Option[Path]] =
     Opts.option[Path]("oracle-pass-file", help = "File containing Oracle password").orNone
-
-  private val tidbUserOpt: Opts[Option[String]] =
-    Opts.option[String]("tidb-user", help = "TiDB/MySQL username").orNone
-
-  private val tidbPasswordOpt: Opts[Option[String]] =
-    Opts.option[String]("tidb-password", help = "TiDB/MySQL password").orNone
 
   private val hostOpt: Opts[String] =
     Opts
@@ -178,10 +172,10 @@ object CliOpts:
 
   private val stateStoreOpt: Opts[Either[String, Option[StateStoreConfig]]] =
     (
-      Opts.option[String]("state-db-url", help = "JDBC MySQL/TiDB URL for persisted HTTP API state").orNone,
-      Opts.option[String]("state-db-user", help = "Dedicated TiDB user for persisted HTTP API state").orNone,
-      Opts.option[String]("state-db-password", help = "TiDB password for persisted HTTP API state").orNone,
-      Opts.option[Int]("state-db-pool-size", help = "TiDB state connection pool size").orNone
+      Opts.option[String]("state-db-url", help = "PostgreSQL JDBC URL for persisted HTTP API state").orNone,
+      Opts.option[String]("state-db-user", help = "Dedicated PostgreSQL role for persisted HTTP API state").orNone,
+      Opts.option[String]("state-db-password", help = "PostgreSQL password for persisted HTTP API state").orNone,
+      Opts.option[Int]("state-db-pool-size", help = "PostgreSQL state connection pool size").orNone
     ).mapN { (urlArg, userArg, passwordArg, poolArg) =>
       stateStoreConfigFromOptions(
         urlArg.orElse(env.get("BEDROCK_STATE_DB_URL")).flatMap(nonBlank),
@@ -270,8 +264,6 @@ object CliOpts:
       oracleAliasOpt,
       oracleUserOpt,
       oraclePasswordFileOpt,
-      tidbUserOpt,
-      tidbPasswordOpt,
       Opts.flag("json", help = "Print machine-readable JSON").orFalse,
       serverOpts
     ).mapN {
@@ -289,8 +281,6 @@ object CliOpts:
         oracleAlias,
         oracleUser,
         oraclePasswordFile,
-        tidbUser,
-        tidbPassword,
         json,
         serverConfig
       ) =>
@@ -307,8 +297,6 @@ object CliOpts:
           oracleTnsAlias = oracleAlias.orElse(env.get("ORACLE_CONN")),
           oracleUser = oracleUser.orElse(env.get("ORACLE_USER")),
           oraclePasswordFile = oraclePasswordFile.orElse(env.get("ORACLE_PASS_FILE").map(Paths.get(_))),
-          tidbUser = tidbUser.orElse(env.get("TIDB_USER")).flatMap(nonBlank),
-          tidbPassword = tidbPassword.orElse(env.get("TIDB_PASSWORD")).flatMap(nonBlank),
           json = json,
           server = serverConfig,
           customer = customer.flatMap(nonBlank)
@@ -358,7 +346,6 @@ object CliOpts:
     dbKind match
       case DbKind.Postgres => Paths.get("./sql")
       case DbKind.Oracle => Paths.get("./sql/oracle")
-      case DbKind.TiDB => Paths.get("./sql/tidb")
 
   private def commaSet(value: String): Set[String] =
     value.split(",").map(_.trim).filter(_.nonEmpty).toSet
