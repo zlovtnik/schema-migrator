@@ -59,6 +59,9 @@ PostgreSQL. Connection-test hosts are restricted by
 `BEDROCK_DB_TEST_ALLOWED_HOSTS`. Do not embed usernames/passwords in JDBC URLs
 when a separate credential field exists.
 
+`BEDROCK_ENCRYPT_KEY` never leaves the backend. API responses rely on HTTPS and
+OIDC transport protection and are not encrypted with a browser-held key.
+
 PostgreSQL/PostgreSQL target support also exists for explicit migration operations.
 Oracle flags and providers are deprecated compatibility surfaces, not a
 recommended target workflow.
