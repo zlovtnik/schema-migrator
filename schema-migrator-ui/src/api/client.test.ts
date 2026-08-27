@@ -2,13 +2,10 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   ApiError,
-  ResponseDecryptionError,
   apiRequest,
   setApiBaseUrl,
   setAuthToken,
-  setAuthTokenProvider,
-  setEncryptKey,
-  validateEncryptKey
+  setAuthTokenProvider
 } from "./client";
 
 const jsonResponse = (body: unknown, status = 200): Response =>
@@ -77,47 +74,4 @@ describe("apiRequest", () => {
     );
   });
 
-  test("rejects encrypted responses when no AES key is configured", async () => {
-    const encrypted = new Response(JSON.stringify({ data: "AAAA", iv: "AAAA" }), {
-      status: 200,
-      headers: {
-        "content-type": "application/json",
-        "X-Bedrock-Encrypted": "1"
-      }
-    });
-    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(encrypted));
-
-    await expect(apiRequest("/targets")).rejects.toBeInstanceOf(ResponseDecryptionError);
-  });
-
-  test("decrypts encrypted responses without native SubtleCrypto", async () => {
-    setEncryptKey("MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY=");
-    vi.stubGlobal("crypto", {} as Crypto);
-    const encrypted = new Response(
-      JSON.stringify({
-        data: "IKKS2OEFdZ5Mu7IClXu1+3PrVZizzBTRJeS8EACe",
-        iv: "AAECAwQFBgcICQoL",
-        key_version: "current"
-      }),
-      {
-        status: 200,
-        headers: {
-          "content-type": "application/json",
-          "X-Bedrock-Encrypted": "1"
-        }
-      }
-    );
-    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(encrypted));
-
-    await expect(apiRequest("/targets")).resolves.toEqual({ targets: [] });
-  });
-});
-
-describe("validateEncryptKey", () => {
-  test("accepts empty and 32-byte Base64 keys only", () => {
-    expect(validateEncryptKey("")).toBeUndefined();
-    expect(validateEncryptKey("MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY=")).toBeUndefined();
-    expect(validateEncryptKey("c2hvcnQ=")).toBe("AES-GCM key must decode to 32 bytes");
-    expect(validateEncryptKey("not base64")).toBe("AES-GCM key must be valid Base64");
-  });
 });

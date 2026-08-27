@@ -1,4 +1,3 @@
-import { gcm } from "@noble/ciphers/aes.js";
 import { runtimeConfig } from "../runtimeConfig";
 
 export class ApiError extends Error {
@@ -13,15 +12,7 @@ export class ApiError extends Error {
   }
 }
 
-export class ResponseDecryptionError extends Error {
-  constructor() {
-    super("Encrypted response could not be decrypted with the configured AES-GCM key");
-    this.name = "ResponseDecryptionError";
-  }
-}
-
 const API_BASE_KEY = "schemaMigrator.apiBaseUrl";
-const ENCRYPT_KEY = "schemaMigrator.encryptKey";
 let authToken = "";
 let authTokenProvider: (() => Promise<string>) | undefined;
 export const AUTH_TOKEN_CHANGED_EVENT = "schema-migrator-auth-token-changed";
@@ -45,20 +36,6 @@ export const getApiBaseUrl = (): string => {
 export const setApiBaseUrl = (value: string): void => {
   const normalized = normalizeApiBaseUrl(value);
   window.localStorage.setItem(API_BASE_KEY, normalized);
-};
-
-export const getEncryptKey = (): string => {
-  return window.sessionStorage.getItem(ENCRYPT_KEY) || "";
-};
-
-export const setEncryptKey = (value: string): void => {
-  const trimmed = value.trim();
-  window.localStorage.removeItem(ENCRYPT_KEY);
-  if (trimmed) {
-    window.sessionStorage.setItem(ENCRYPT_KEY, trimmed);
-  } else {
-    window.sessionStorage.removeItem(ENCRYPT_KEY);
-  }
 };
 
 export const getAuthToken = (): string => authToken;
@@ -96,71 +73,8 @@ const readErrorBody = async (response: Response): Promise<unknown> => {
   return readResponseText(response);
 };
 
-type EncryptedEnvelope = {
-  data: string;
-  iv: string;
-  key_version?: string;
-};
-
-const base64ToBytes = (value: string): Uint8Array => {
-  const binary = window.atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-};
-
-export const validateEncryptKey = (value: string): string | undefined => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-
-  try {
-    const bytes = base64ToBytes(trimmed);
-    return bytes.byteLength === 32 ? undefined : "AES-GCM key must decode to 32 bytes";
-  } catch {
-    return "AES-GCM key must be valid Base64";
-  }
-};
-
-const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer => {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-};
-
-const decryptEnvelope = async (text: string): Promise<string> => {
-  const key = getEncryptKey();
-  if (!key) {
-    throw new Error("Encrypted response received but no AES key is configured");
-  }
-
-  const envelope = JSON.parse(text) as EncryptedEnvelope;
-  const keyBytes = base64ToBytes(key);
-  const iv = base64ToBytes(envelope.iv);
-  const data = base64ToBytes(envelope.data);
-  const subtle = globalThis.crypto?.subtle;
-  if (subtle) {
-    const cryptoKey = await subtle.importKey("raw", toArrayBuffer(keyBytes), "AES-GCM", false, ["decrypt"]);
-    const plain = await subtle.decrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, cryptoKey, toArrayBuffer(data));
-    return new TextDecoder().decode(plain);
-  }
-
-  // LAN deployments can use application-layer encryption from an HTTP origin,
-  // where browsers do not expose SubtleCrypto.
-  return new TextDecoder().decode(gcm(keyBytes, iv).decrypt(data));
-};
-
 const readResponseText = async (response: Response): Promise<string> => {
-  const text = await response.text();
-  if (response.headers.get("X-Bedrock-Encrypted") === "1") {
-    try {
-      return await decryptEnvelope(text);
-    } catch {
-      throw new ResponseDecryptionError();
-    }
-  }
-  return text;
+  return response.text();
 };
 
 export const ensureAuthToken = async (): Promise<string> => {

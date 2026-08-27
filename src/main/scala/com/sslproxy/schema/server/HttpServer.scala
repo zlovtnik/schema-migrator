@@ -7,7 +7,7 @@ import com.comcast.ip4s.{Host, Port}
 import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.server.auth.{JwtMiddleware, KeycloakJwks}
 import com.sslproxy.schema.server.compress.Bzip2Middleware
-import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
+import com.sslproxy.schema.server.crypto.AesGcm
 import com.sslproxy.schema.store.{KeycloakConfigStore, StateDatabase, PostgresStores}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.ember.client.EmberClientBuilder
@@ -46,7 +46,6 @@ object HttpServer:
             .leftMap(message => new IllegalArgumentException(message))
         )
       )
-      encryptKeyRing = encryptKey.map(key => AesGcm.KeyRing("current", key, Map.empty))
       stateStoreConfig <- Resource.eval(
         IO.fromEither(config.server.stateStoreConfig.leftMap(message => new IllegalArgumentException(message)))
       )
@@ -95,8 +94,7 @@ object HttpServer:
       )
       routed = Router("/api" -> apiRoutes)
       authed = JwtMiddleware(config.server, keycloakVerifier)(routed)
-      encrypted = AesGcmMiddleware(encryptKeyRing)(authed)
-      compressed = Bzip2Middleware(encrypted)
+      compressed = Bzip2Middleware(authed)
       withCors = CorsMiddleware(config.server)(compressed)
       logged = LoggingMiddleware(withCors.orNotFound)
       httpApp = logged

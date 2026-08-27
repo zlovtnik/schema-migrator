@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import {
-  ResponseDecryptionError,
-  getApiBaseUrl,
-  getEncryptKey,
-  setApiBaseUrl,
-  setEncryptKey,
-  validateEncryptKey
-} from "../../api/client";
+import { getApiBaseUrl, setApiBaseUrl } from "../../api/client";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useTargets } from "../../hooks/useTargets";
 
@@ -18,8 +11,6 @@ export const SettingsPage = () => {
   const queryClient = useQueryClient();
   const { data: targets = [], isLoading: targetsLoading, error: targetsError } = useTargets();
   const [apiBase, setApiBase] = useState(getApiBaseUrl());
-  const [encryptKey, setEncryptKeyValue] = useState(getEncryptKey());
-  const [encryptKeyError, setEncryptKeyError] = useState<string | undefined>(undefined);
   const [theme, setTheme] = useState(() => window.localStorage.getItem(THEME_KEY) || "dark");
   const [saved, setSaved] = useState(false);
   const productionTargets = targets.filter((target) => target.env === "production").length;
@@ -29,22 +20,8 @@ export const SettingsPage = () => {
     window.localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  const onEncryptKeyChange = (value: string) => {
-    setEncryptKeyValue(value);
-    setEncryptKeyError(validateEncryptKey(value));
-    setSaved(false);
-  };
-
   const save = () => {
-    const keyError = validateEncryptKey(encryptKey);
-    if (keyError) {
-      setEncryptKeyError(keyError);
-      setSaved(false);
-      return;
-    }
-
     setApiBaseUrl(apiBase);
-    setEncryptKey(encryptKey);
     queryClient.clear();
     setSaved(true);
     window.setTimeout(() => setSaved(false), 1800);
@@ -89,24 +66,6 @@ export const SettingsPage = () => {
                   onChange={(event) => setApiBase(event.target.value)}
                   placeholder="/api"
                 />
-              </label>
-              <label htmlFor="settings-encrypt-key">
-                AES-GCM key
-                <input
-                  autoComplete="off"
-                  id="settings-encrypt-key"
-                  name="encrypt-key"
-                  value={encryptKey}
-                  onChange={(event) => onEncryptKeyChange(event.target.value)}
-                  aria-describedby={encryptKeyError ? "settings-encrypt-key-error" : undefined}
-                  aria-invalid={Boolean(encryptKeyError) || undefined}
-                  type="password"
-                />
-                {encryptKeyError ? (
-                  <span className="field-error" id="settings-encrypt-key-error" role="alert">
-                    {encryptKeyError}
-                  </span>
-                ) : null}
               </label>
               <label htmlFor="settings-theme">
                 Theme
@@ -158,9 +117,7 @@ export const SettingsPage = () => {
 
             {targetsError ? (
               <div className="status-banner status-banner--error">
-                {targetsError instanceof ResponseDecryptionError
-                  ? "Enter the current AES-GCM key above and save settings to load targets."
-                  : "Unable to load targets."}
+                Unable to load targets.
               </div>
             ) : null}
 
