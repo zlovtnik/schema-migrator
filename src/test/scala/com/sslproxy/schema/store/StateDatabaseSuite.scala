@@ -7,17 +7,19 @@ import java.sql.SQLException
 import java.nio.file.{Files, Path}
 
 class StateDatabaseSuite extends FunSuite:
-  test("accepts only TiDB v8.5 or newer") {
-    assert(StateDatabase.isSupportedTiDB("5.7.25-TiDB-v8.5.0"))
-    assert(StateDatabase.isSupportedTiDB("5.7.25-TiDB-v9.0.1"))
-    assert(!StateDatabase.isSupportedTiDB("5.7.25-TiDB-v8.4.9"))
-    assert(!StateDatabase.isSupportedTiDB("8.5.0 MySQL Community Server"))
+  test("accepts only PostgreSQL v14 or newer") {
+    assert(StateDatabase.isSupportedPostgreSQL("PostgreSQL 14.0"))
+    assert(StateDatabase.isSupportedPostgreSQL("PostgreSQL 16.2"))
+    assert(StateDatabase.isSupportedPostgreSQL("PostgreSQL 14.1"))
+    assert(!StateDatabase.isSupportedPostgreSQL("PostgreSQL 13.9"))
+    assert(!StateDatabase.isSupportedPostgreSQL("PostgreSQL 12.14"))
+    assert(!StateDatabase.isSupportedPostgreSQL("8.5.0 MySQL Community Server"))
   }
 
   test("loads a pinned canonical schema contract") {
     val contract = StateSchemaContract.load.unsafeRunSync()
     val manifest = List(Path.of("."), Path.of("..", ".."))
-      .map(_.resolve("sql/tidb/schema_migrator/manifest.yaml").normalize())
+      .map(_.resolve("sql/postgres/schema_migrator/manifest.yaml").normalize())
       .find(path => Files.isRegularFile(path))
       .getOrElse(fail("canonical schema_migrator manifest is missing"))
     val values = Files.readAllLines(manifest).toArray.toList.map(_.toString).collect {
@@ -61,12 +63,12 @@ class StateDatabaseSuite extends FunSuite:
     assert(!message.contains("jdbc:"))
   }
 
-  test("retries TiDB transaction conflicts but not terminal SQL errors") {
-    val serialization = SQLException("write conflict", "40001", 0)
-    val deadlock = SQLException("deadlock", "HY000", 1213)
-    val syntax = SQLException("syntax", "42000", 1064)
+  test("retries PostgreSQL transaction conflicts but not terminal SQL errors") {
+    val serialization = SQLException("could not serialize access", "40001", 0)
+    val deadlock = SQLException("deadlock detected", "40P01", 0)
+    val syntax = SQLException("syntax error", "42601", 0)
 
-    assert(TiDBTransactionRetry.isRetryable(serialization))
-    assert(TiDBTransactionRetry.isRetryable(deadlock))
-    assert(!TiDBTransactionRetry.isRetryable(syntax))
+    assert(PostgresTransactionRetry.isRetryable(serialization))
+    assert(PostgresTransactionRetry.isRetryable(deadlock))
+    assert(!PostgresTransactionRetry.isRetryable(syntax))
   }

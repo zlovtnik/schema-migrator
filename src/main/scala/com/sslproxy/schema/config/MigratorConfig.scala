@@ -87,12 +87,15 @@ final case class StateStoreConfig(
   password: String,
   poolSize: Int = 10
 ):
+  private val RequiredSchemaParam = "currentSchema=schema_migrator"
+
   def validate: Either[String, Unit] =
     if url.trim.isEmpty then Left("BEDROCK_STATE_DB_URL must not be empty")
-    else if !url.trim.startsWith("jdbc:mysql://") then
-      Left("BEDROCK_STATE_DB_URL must be a JDBC MySQL/TiDB URL starting with jdbc:mysql://")
+    else if !url.trim.startsWith("jdbc:postgresql://") then
+      Left("BEDROCK_STATE_DB_URL must be a JDBC PostgreSQL URL starting with jdbc:postgresql://")
     else if user.trim.isEmpty then Left("BEDROCK_STATE_DB_USER must not be empty")
-    else if user.trim.equalsIgnoreCase("root") then Left("BEDROCK_STATE_DB_USER must be a dedicated non-root TiDB user")
+    else if user.trim.equalsIgnoreCase("root") || user.trim.equalsIgnoreCase("postgres") then
+      Left("BEDROCK_STATE_DB_USER must be a dedicated non-root PostgreSQL user")
     else if password.trim.isEmpty then Left("BEDROCK_STATE_DB_PASSWORD must not be empty")
     else if poolSize < 1 then Left("BEDROCK_STATE_DB_POOL_SIZE must be at least 1")
     else validateJdbcUrl
@@ -100,7 +103,7 @@ final case class StateStoreConfig(
   private def validateJdbcUrl: Either[String, Unit] =
     Try(URI.create(url.trim.stripPrefix("jdbc:"))).toEither
       .left
-      .map(_ => "BEDROCK_STATE_DB_URL must be a valid JDBC MySQL/TiDB URL")
+      .map(_ => "BEDROCK_STATE_DB_URL must be a valid JDBC PostgreSQL URL")
       .flatMap { uri =>
         val database = Option(uri.getPath).getOrElse("").stripPrefix("/")
         val params = Option(uri.getRawQuery)
@@ -112,15 +115,15 @@ final case class StateStoreConfig(
               case _ => None
           }
           .toMap
-        if Option(uri.getHost).forall(_.trim.isEmpty) then Left("BEDROCK_STATE_DB_URL must include a TiDB host")
+        if Option(uri.getHost).forall(_.trim.isEmpty) then Left("BEDROCK_STATE_DB_URL must include a PostgreSQL host")
         else if Set("localhost", "127.0.0.1", "::1").contains(uri.getHost.toLowerCase(Locale.ROOT)) then
-          Left("BEDROCK_STATE_DB_URL must use an external non-loopback TiDB host")
+          Left("BEDROCK_STATE_DB_URL must use an external non-loopback PostgreSQL host")
         else if Option(uri.getUserInfo).nonEmpty then
           Left("BEDROCK_STATE_DB_URL must not contain inline credentials")
         else if database != "schema_migrator" then
           Left("BEDROCK_STATE_DB_URL must select the schema_migrator database")
-        else if !params.get("sslmode").exists(_.equalsIgnoreCase("VERIFY_IDENTITY")) then
-          Left("BEDROCK_STATE_DB_URL must set sslMode=VERIFY_IDENTITY")
+        else if !params.get("currentschema").exists(_.equalsIgnoreCase("schema_migrator")) then
+          Left(s"BEDROCK_STATE_DB_URL must set $RequiredSchemaParam")
         else Right(())
       }
 
