@@ -8,12 +8,11 @@ import java.nio.file.{Files, Path}
 
 class StateDatabaseSuite extends FunSuite:
   test("accepts only PostgreSQL v14 or newer") {
-    assert(StateDatabase.isSupportedPostgreSQL("PostgreSQL 14.0"))
-    assert(StateDatabase.isSupportedPostgreSQL("PostgreSQL 16.2"))
-    assert(StateDatabase.isSupportedPostgreSQL("PostgreSQL 14.1"))
-    assert(!StateDatabase.isSupportedPostgreSQL("PostgreSQL 13.9"))
-    assert(!StateDatabase.isSupportedPostgreSQL("PostgreSQL 12.14"))
-    assert(!StateDatabase.isSupportedPostgreSQL("8.5.0 MySQL Community Server"))
+    assert(StateDatabase.isSupportedPostgreSQL(140000))
+    assert(StateDatabase.isSupportedPostgreSQL(160002))
+    assert(StateDatabase.isSupportedPostgreSQL(140001))
+    assert(!StateDatabase.isSupportedPostgreSQL(139999))
+    assert(!StateDatabase.isSupportedPostgreSQL(120014))
   }
 
   test("loads a pinned canonical schema contract") {

@@ -51,14 +51,18 @@ object StateDatabase:
 
   private def runtimeVerification(contract: StateSchemaContract): ConnectionIO[Unit] =
     for
-      version <- checked(StateSchemaVerificationFailure.Database)(sql"select version()".query[String].unique)
+      version <- checked(StateSchemaVerificationFailure.Database)(
+        sql"select current_setting('server_version_num')::int".query[Int].unique
+      )
       _ <- Either
         .cond(isSupportedPostgreSQL(version), (), "server must be PostgreSQL v14 or newer")
         .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.Database, detail))
         .liftTo[ConnectionIO]
-      database <- checked(StateSchemaVerificationFailure.Database)(sql"select current_database()".query[Option[String]].unique)
+      schemaPresent <- checked(StateSchemaVerificationFailure.Database)(
+        sql"select exists(select 1 from pg_namespace where nspname = 'schema_migrator')".query[Boolean].unique
+      )
       _ <- Either
-        .cond(database.contains("schema_migrator"), (), "selected database must be schema_migrator")
+        .cond(schemaPresent, (), "required schema schema_migrator is missing")
         .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.Database, detail))
         .liftTo[ConnectionIO]
       timeZone <- checked(StateSchemaVerificationFailure.SessionTimeZone)(sql"show timezone".query[String].unique)
@@ -89,13 +93,8 @@ object StateDatabase:
         StateSchemaVerificationFailure(category, "verification query failed", error).raiseError[ConnectionIO, A]
     }
 
-  private[store] def isSupportedPostgreSQL(value: String): Boolean =
-    val Version = raw"(?i)PostgreSQL (\d+)\.(\d+)".r
-    value match
-      case Version(major, minor) =>
-        val parsed = major.toInt -> minor.toInt
-        parsed._1 >= 14
-      case _ => false
+  private[store] def isSupportedPostgreSQL(serverVersionNum: Int): Boolean =
+    serverVersionNum >= 140000
 
 private[store] final case class StateSchemaContract(version: String, checksum: String)
 

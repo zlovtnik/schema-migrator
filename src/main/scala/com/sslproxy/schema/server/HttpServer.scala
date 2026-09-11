@@ -8,7 +8,7 @@ import com.sslproxy.schema.config.MigratorConfig
 import com.sslproxy.schema.server.auth.{JwtMiddleware, KeycloakJwks}
 import com.sslproxy.schema.server.compress.Bzip2Middleware
 import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
-import com.sslproxy.schema.store.{KeycloakConfigStore, StateDatabase, TiDBStores}
+import com.sslproxy.schema.store.{KeycloakConfigStore, PostgresStores, StateDatabase}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.server.Router
@@ -56,7 +56,7 @@ object HttpServer:
           IllegalArgumentException("BEDROCK_ENCRYPT_KEY is required to encrypt stored target passwords")
         )
       )
-      stores <- TiDBStores.resource(stateDatabase, targetPasswordKey)
+      stores <- PostgresStores.resource(stateDatabase, targetPasswordKey)
       targetStore = stores.targetStore
       sqlFileStore = stores.sqlFileStore
       patchStore = stores.patchStore

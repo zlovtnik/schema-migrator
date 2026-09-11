@@ -15,7 +15,7 @@ class TargetStoreSuite extends FunSuite:
       sys.env.getOrElse("BEDROCK_STATE_DB_TEST_USER", "migrator"),
       sys.env.getOrElse("BEDROCK_STATE_DB_TEST_PASSWORD", "migrator")
     )
-    targetStoreContract("tidb", tidbResource(config))
+    targetStoreContract("postgres", postgresResource(config))
   }
 
   private val passwordKey =
@@ -88,8 +88,8 @@ class TargetStoreSuite extends FunSuite:
       assertEquals(missingFetch, None)
     }
 
-  private def tidbResource(config: StateStoreConfig): Resource[IO, TargetStore] =
-    StateDatabase.resource(config).map(database => TiDBTargetStore(database, passwordKey): TargetStore)
+  private def postgresResource(config: StateStoreConfig): Resource[IO, TargetStore] =
+    StateDatabase.resource(config).map(database => PostgresTargetStore(database, passwordKey): TargetStore)
 
   private def targetPayload(label: String, password: Option[String]): TargetPayload =
     TargetPayload(
