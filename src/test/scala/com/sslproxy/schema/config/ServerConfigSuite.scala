@@ -101,7 +101,7 @@ class ServerConfigSuite extends FunSuite:
         stateStore = Some(StateStoreConfig("r2dbc:postgresql://db.example/schema_migrator", "migrator", "secret"))
       )
       val noSchema = validConfig(stageDir).copy(
-        stateStore = Some(StateStoreConfig("jdbc:postgresql://db.example/schema_migrator", "migrator", "secret"))
+        stateStore = Some(StateStoreConfig("jdbc:postgresql://db.example/sync", "migrator", "secret"))
       )
 
       assertEquals(
@@ -119,7 +119,7 @@ class ServerConfigSuite extends FunSuite:
   test("state database validation requires the canonical database and a non-root account") {
     assertEquals(
       validStateStore.copy(url = "jdbc:postgresql://db.example/other?currentSchema=schema_migrator").validate,
-      Left("BEDROCK_STATE_DB_URL must select the schema_migrator database")
+      Left("BEDROCK_STATE_DB_URL must select the sync database")
     )
     assertEquals(
       validStateStore.copy(user = "root").validate,
@@ -146,7 +146,7 @@ class ServerConfigSuite extends FunSuite:
     )
 
   private val validStateStore =
-    StateStoreConfig("jdbc:postgresql://db.example:5432/schema_migrator?currentSchema=schema_migrator", "migrator", "secret")
+    StateStoreConfig("jdbc:postgresql://db.example:5432/sync?currentSchema=schema_migrator", "migrator", "secret")
 
   private def deleteIfExists(path: java.nio.file.Path): Unit =
     Files.deleteIfExists(path)

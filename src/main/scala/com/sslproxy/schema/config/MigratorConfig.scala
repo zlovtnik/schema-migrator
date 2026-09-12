@@ -120,8 +120,8 @@ final case class StateStoreConfig(
           Left("BEDROCK_STATE_DB_URL must use an external non-loopback PostgreSQL host")
         else if Option(uri.getUserInfo).nonEmpty then
           Left("BEDROCK_STATE_DB_URL must not contain inline credentials")
-        else if database != "schema_migrator" then
-          Left("BEDROCK_STATE_DB_URL must select the schema_migrator database")
+        else if database != "sync" then
+          Left("BEDROCK_STATE_DB_URL must select the sync database")
         else if !params.get("currentschema").exists(_.equalsIgnoreCase("schema_migrator")) then
           Left(s"BEDROCK_STATE_DB_URL must set $RequiredSchemaParam")
         else Right(())
