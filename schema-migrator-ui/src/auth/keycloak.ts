@@ -56,7 +56,7 @@ const syncToken = (): string => {
   return token;
 };
 
-export const initKeycloak = async (): Promise<boolean> => {
+export const initKeycloak = async ({ checkSso = true }: { checkSso?: boolean } = {}): Promise<boolean> => {
   if (!keycloak) {
     setAuthToken("");
     return false;
@@ -74,8 +74,9 @@ export const initKeycloak = async (): Promise<boolean> => {
 
     initPromise = keycloak
       .init({
-        checkLoginIframe: secureCryptoAvailable(),
-        onLoad: "check-sso",
+        // The public gateway denies framing; use redirects and token refresh for sessions.
+        checkLoginIframe: false,
+        ...(checkSso ? { onLoad: "check-sso" as const } : {}),
         pkceMethod: secureCryptoAvailable() ? "S256" : false,
         redirectUri: keycloakRedirectUri()
       })
@@ -124,7 +125,7 @@ export const loginWithKeycloak = async (): Promise<void> => {
   if (!keycloak) {
     throw new Error("Keycloak is not configured");
   }
-  await initKeycloak();
+  await initKeycloak({ checkSso: false });
   await keycloak.login({ redirectUri: keycloakRedirectUri() });
 };
 
