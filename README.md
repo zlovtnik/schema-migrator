@@ -3,11 +3,12 @@
 Schema Migrator is a Scala 3/Cats Effect service and CLI for discovering,
 validating, planning and applying ordered SQL to external target databases. Its
 HTTP API, target CRUD, encrypted credentials, runs, snapshots, patches and
-audit state live only in the dedicated TiDB `schema_migrator` database.
+audit state live in the `schema_migrator` schema of the external PostgreSQL
+`sync` database.
 
-PostgreSQL is supported as an external migration target. It is not the
-service's internal state store. Oracle provider and SQL code remains for
-deprecated compatibility and historical validation; do not use it as current
+PostgreSQL is also supported as an external migration target. Oracle provider
+and SQL code remains for deprecated compatibility and historical validation;
+do not use it as current
 deployment guidance or add new Oracle material.
 
 The parent platform architecture is documented in
@@ -20,13 +21,14 @@ The parent platform architecture is documented in
 - database connection checks and guarded apply/rollback flows
 - PostgreSQL catalog drift analysis for external targets
 - HTTP target, run, snapshot, patch, validation and audit APIs
-- encrypted target credentials and TiDB-backed control state
+- encrypted target credentials and PostgreSQL-backed control state
 - Keycloak or configured bearer-token authorization
 - a Vite/React operator UI in `schema-migrator-ui/`
 
 The service does not provision its own internal schema. The parent
 repository's schema executor applies the checksummed
-`sql/tidb/schema_migrator` manifest before this service starts.
+[`sql/postgres/schema_migrator`](../../sql/postgres/schema_migrator) manifest
+before this service starts.
 
 ## Internal state
 
@@ -34,14 +36,14 @@ The server requires:
 
 | Variable | Purpose |
 |---|---|
-| `BEDROCK_STATE_DB_URL` | `jdbc:mysql://` TiDB URL selecting exactly `schema_migrator`, without inline credentials and with `sslMode=VERIFY_IDENTITY` |
-| `BEDROCK_STATE_DB_USER` | Dedicated non-root TiDB account |
-| `BEDROCK_STATE_DB_PASSWORD` | TiDB account password |
+| `BEDROCK_STATE_DB_URL` | `jdbc:postgresql://` URL selecting `sync` with `currentSchema=schema_migrator`, without inline credentials; production uses verified TLS |
+| `BEDROCK_STATE_DB_USER` | Dedicated non-root PostgreSQL account |
+| `BEDROCK_STATE_DB_PASSWORD` | PostgreSQL account password |
 | `BEDROCK_STATE_DB_POOL_SIZE` | Pool size, default `10` |
 
-Startup rejects loopback state-store hosts, TiDB older than 8.5, a non-UTC
+Startup rejects loopback state-store hosts, PostgreSQL older than 14, a non-UTC
 session, a wrong database and missing/mismatched manifest readiness. Provide
-the TiDB CA through the JVM truststore used by the deployment.
+the PostgreSQL CA through the JDBC TLS configuration used by the deployment.
 
 ## External targets
 
@@ -54,7 +56,7 @@ sbt "run --db-kind postgres \
 ```
 
 Target credentials entered through the API are encrypted before storage in
-TiDB. Connection-test hosts are restricted by
+PostgreSQL. Connection-test hosts are restricted by
 `BEDROCK_DB_TEST_ALLOWED_HOSTS`. Do not embed usernames/passwords in JDBC URLs
 when a separate credential field exists.
 
@@ -113,13 +115,14 @@ The parent repository owns the Schema Migrator Kubernetes resources in its
 Kustomize app-stack base and environment slices. Argo CD reconciles those
 resources from the parent repository's `main` branch.
 
-The in-cluster Keycloak uses its own deployment-created `keycloak` database.
-It is separate from the four canonical application manifests.
+The in-cluster Keycloak uses the isolated `keycloak` schema in the external
+PostgreSQL `sync` database. Its authoritative manifest is
+[`sql/postgres/keycloak`](../../sql/postgres/keycloak).
 
 ## Local development
 
-Docker Compose may be used only as a local service/UI test harness, with TiDB
-and identity endpoints provisioned outside the harness:
+Docker Compose may be used only as a local service/UI test harness, with
+PostgreSQL and identity endpoints provisioned outside the harness:
 
 ```bash
 docker-compose up --build

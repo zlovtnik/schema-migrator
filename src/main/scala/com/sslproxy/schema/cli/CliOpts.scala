@@ -87,7 +87,7 @@ object CliOpts:
     )
 
   private val encryptKeyOpt: Opts[Option[String]] =
-    Opts.option[String]("encrypt-key", help = "Base64 AES-256-GCM response encryption key").orNone
+    Opts.option[String]("encrypt-key", help = "Base64 AES-256-GCM key for stored target credentials (server only)").orNone
 
   private val jwtSecretOpt: Opts[String] =
     Opts

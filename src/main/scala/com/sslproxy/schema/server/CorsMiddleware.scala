@@ -57,7 +57,6 @@ object CorsMiddleware:
             Header.Raw(CIString("Access-Control-Allow-Credentials"), "true"),
             Header.Raw(CIString("Access-Control-Allow-Methods"), "GET, POST, PUT, DELETE, OPTIONS"),
             Header.Raw(CIString("Access-Control-Allow-Headers"), "Authorization, Content-Type"),
-            Header.Raw(CIString("Access-Control-Expose-Headers"), "X-Bedrock-Encrypted"),
             Header.Raw(CIString("Access-Control-Max-Age"), "3600"),
             Header.Raw(vary, nextVary)
           )

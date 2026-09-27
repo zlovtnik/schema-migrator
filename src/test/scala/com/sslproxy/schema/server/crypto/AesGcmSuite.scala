@@ -4,6 +4,7 @@ import cats.effect.unsafe.implicits.global
 import munit.FunSuite
 
 import java.nio.charset.StandardCharsets
+import javax.crypto.AEADBadTagException
 
 class AesGcmSuite extends FunSuite:
   private val keyText = "MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY="
@@ -21,17 +22,24 @@ class AesGcmSuite extends FunSuite:
     assert(AesGcm.keyFromBase64("c2hvcnQ=").isLeft)
   }
 
-  test("AES-GCM key ring decrypts envelopes encrypted under an old key version") {
-    val oldKey =
+  test("stored credentials cannot be decrypted with a different key") {
+    val wrongKey =
       AesGcm.keyFromBase64("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=").fold(message => fail(message), identity)
-    val currentKey = AesGcm.keyFromBase64(keyText).fold(message => fail(message), identity)
-    val oldRing = AesGcm.KeyRing("v1", oldKey, Map.empty)
-    val rotatedRing = AesGcm.KeyRing("v2", currentKey, Map("v1" -> oldKey))
-    val plain = "rotatable payload".getBytes(StandardCharsets.UTF_8)
+    val key = AesGcm.keyFromBase64(keyText).fold(message => fail(message), identity)
+    val plain = "stored password".getBytes(StandardCharsets.UTF_8)
+    val (cipherText, iv) = AesGcm.encrypt(key, plain).unsafeRunSync()
 
-    val envelope = AesGcm.encryptEnvelope(oldRing, plain).unsafeRunSync()
-    val decrypted = AesGcm.decryptEnvelope(rotatedRing, envelope).unsafeRunSync()
+    intercept[AEADBadTagException] {
+      AesGcm.decrypt(wrongKey, cipherText, iv).unsafeRunSync()
+    }
+  }
 
-    assertEquals(envelope.keyVersion, "v1")
-    assertEquals(String(decrypted, StandardCharsets.UTF_8), "rotatable payload")
+  test("stored credentials use a fresh nonce for each encryption") {
+    val key = AesGcm.keyFromBase64(keyText).fold(message => fail(message), identity)
+    val plain = "stored password".getBytes(StandardCharsets.UTF_8)
+    val (firstCipherText, firstIv) = AesGcm.encrypt(key, plain).unsafeRunSync()
+    val (secondCipherText, secondIv) = AesGcm.encrypt(key, plain).unsafeRunSync()
+
+    assertNotEquals(firstIv.toSeq, secondIv.toSeq)
+    assertNotEquals(firstCipherText.toSeq, secondCipherText.toSeq)
   }

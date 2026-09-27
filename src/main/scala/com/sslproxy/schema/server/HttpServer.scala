@@ -4,13 +4,14 @@ import cats.effect.{IO, Resource}
 import cats.effect.std.Supervisor
 import cats.syntax.all.*
 import com.comcast.ip4s.{Host, Port}
-import com.sslproxy.schema.config.MigratorConfig
+import com.sslproxy.schema.config.{MigratorConfig, ServerConfig}
 import com.sslproxy.schema.server.auth.{JwtMiddleware, KeycloakJwks}
 import com.sslproxy.schema.server.compress.Bzip2Middleware
-import com.sslproxy.schema.server.crypto.{AesGcm, AesGcmMiddleware}
+import com.sslproxy.schema.server.crypto.AesGcm
 import com.sslproxy.schema.store.{KeycloakConfigStore, PostgresStores, StateDatabase}
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.ember.client.EmberClientBuilder
+import org.http4s.{HttpApp, HttpRoutes}
 import org.http4s.server.Router
 import org.typelevel.log4cats.LoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
@@ -46,7 +47,6 @@ object HttpServer:
             .leftMap(message => new IllegalArgumentException(message))
         )
       )
-      encryptKeyRing = encryptKey.map(key => AesGcm.KeyRing("current", key, Map.empty))
       stateStoreConfig <- Resource.eval(
         IO.fromEither(config.server.stateStoreConfig.leftMap(message => new IllegalArgumentException(message)))
       )
@@ -93,20 +93,24 @@ object HttpServer:
         auditStore,
         runExecutor
       )
-      routed = Router("/api" -> apiRoutes)
-      authed = JwtMiddleware(config.server, keycloakVerifier)(routed)
-      encrypted = AesGcmMiddleware(encryptKeyRing)(authed)
-      compressed = Bzip2Middleware(encrypted)
-      withCors = CorsMiddleware(config.server)(compressed)
-      logged = LoggingMiddleware(withCors.orNotFound)
-      httpApp = logged
       server <- EmberServerBuilder
         .default[IO]
         .withHost(host)
         .withPort(port)
-        .withHttpApp(httpApp)
+        .withHttpApp(httpApp(config.server, apiRoutes, keycloakVerifier))
         .build
     yield server
+
+  private[server] def httpApp(
+    config: ServerConfig,
+    apiRoutes: HttpRoutes[IO],
+    keycloakVerifier: Option[JwtMiddleware.TokenVerifier]
+  ): HttpApp[IO] =
+    val routed = Router("/api" -> apiRoutes)
+    val authed = JwtMiddleware(config, keycloakVerifier)(routed)
+    val compressed = Bzip2Middleware(authed)
+    val withCors = CorsMiddleware(config)(compressed)
+    LoggingMiddleware(withCors.orNotFound)
 
   private def keycloakVerifierResource(config: MigratorConfig): Resource[IO, Option[JwtMiddleware.TokenVerifier]] =
     if !config.server.keycloakEnabled then Resource.pure[IO, Option[JwtMiddleware.TokenVerifier]](None)

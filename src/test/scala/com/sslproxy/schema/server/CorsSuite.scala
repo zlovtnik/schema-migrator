@@ -48,7 +48,7 @@ class CorsSuite extends FunSuite:
     )
     assertEquals(
       response.headers.headers.find(_.name == CIString("Access-Control-Expose-Headers")).map(_.value),
-      Some("X-Bedrock-Encrypted")
+      None
     )
   }
 

@@ -2,13 +2,10 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   ApiError,
-  ResponseDecryptionError,
   apiRequest,
   setApiBaseUrl,
   setAuthToken,
-  setAuthTokenProvider,
-  setEncryptKey,
-  validateEncryptKey
+  setAuthTokenProvider
 } from "./client";
 
 const jsonResponse = (body: unknown, status = 200): Response =>
@@ -77,7 +74,15 @@ describe("apiRequest", () => {
     );
   });
 
-  test("rejects encrypted responses when no AES key is configured", async () => {
+  test("loads target JSON without a browser key or native crypto", async () => {
+    vi.stubGlobal("crypto", {} as Crypto);
+    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ targets: [{ id: "target-1" }] })));
+
+    await expect(apiRequest("/targets")).resolves.toEqual({ targets: [{ id: "target-1" }] });
+    expect(window.sessionStorage.getItem("schemaMigrator.encryptKey")).toBeNull();
+  });
+
+  test("rejects a legacy encrypted API response rather than treating its envelope as data", async () => {
     const encrypted = new Response(JSON.stringify({ data: "AAAA", iv: "AAAA" }), {
       status: 200,
       headers: {
@@ -87,37 +92,23 @@ describe("apiRequest", () => {
     });
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(encrypted));
 
-    await expect(apiRequest("/targets")).rejects.toBeInstanceOf(ResponseDecryptionError);
+    await expect(apiRequest("/targets")).rejects.toMatchObject({
+      name: "ApiError",
+      status: 502,
+      message: "The API server needs an update before this client can load data."
+    });
   });
 
-  test("decrypts encrypted responses without native SubtleCrypto", async () => {
-    setEncryptKey("MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY=");
-    vi.stubGlobal("crypto", {} as Crypto);
-    const encrypted = new Response(
-      JSON.stringify({
-        data: "IKKS2OEFdZ5Mu7IClXu1+3PrVZizzBTRJeS8EACe",
-        iv: "AAECAwQFBgcICQoL",
-        key_version: "current"
-      }),
-      {
-        status: 200,
-        headers: {
-          "content-type": "application/json",
-          "X-Bedrock-Encrypted": "1"
-        }
-      }
-    );
-    vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(encrypted));
+  test("removes backend keys saved by older clients without clearing other settings", async () => {
+    window.localStorage.setItem("schemaMigrator.encryptKey", "legacy-local-key");
+    window.sessionStorage.setItem("schemaMigrator.encryptKey", "legacy-session-key");
+    window.localStorage.setItem("schemaMigrator.apiBaseUrl", "/custom-api");
+    vi.resetModules();
 
-    await expect(apiRequest("/targets")).resolves.toEqual({ targets: [] });
-  });
-});
+    const client = await import("./client");
 
-describe("validateEncryptKey", () => {
-  test("accepts empty and 32-byte Base64 keys only", () => {
-    expect(validateEncryptKey("")).toBeUndefined();
-    expect(validateEncryptKey("MDEyMzQ1Njc4OUFCQ0RFRjAxMjM0NTY3ODlBQkNERUY=")).toBeUndefined();
-    expect(validateEncryptKey("c2hvcnQ=")).toBe("AES-GCM key must decode to 32 bytes");
-    expect(validateEncryptKey("not base64")).toBe("AES-GCM key must be valid Base64");
+    expect(window.localStorage.getItem("schemaMigrator.encryptKey")).toBeNull();
+    expect(window.sessionStorage.getItem("schemaMigrator.encryptKey")).toBeNull();
+    expect(client.getApiBaseUrl()).toBe("/custom-api");
   });
 });
