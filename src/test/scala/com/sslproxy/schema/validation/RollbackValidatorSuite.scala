@@ -59,7 +59,13 @@ class RollbackValidatorSuite extends FunSuite:
   test("stored validation uses supplied content and never falls back to local files") {
     withRoot { root =>
       val file = source(root, "rollbacks/drop.sql", content = true)
-      val rollback = SqlFile("rollbacks", root.resolve("rollbacks/drop.sql"), "drop.sql", "rollbacks/drop.sql", Some("drop table example;"))
+      val rollback = SqlFile(
+        "rollbacks",
+        root.resolve("rollbacks/drop.sql"),
+        "drop.sql",
+        "rollbacks/drop.sql",
+        Some("drop table example;")
+      )
       assertEquals(RollbackValidator.validate(List(file), List(file, rollback)), Nil)
       assert(RollbackValidator.validate(List(file)).nonEmpty)
       val absolute = file.copy(content = Some("-- rollback: /dev/zero\nselect 1;"))

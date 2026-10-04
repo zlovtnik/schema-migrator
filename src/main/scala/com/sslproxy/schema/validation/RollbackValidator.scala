@@ -30,14 +30,14 @@ object RollbackValidator:
                 val root = repositoryRoot(file)
                 val targets = candidates(file, rollback, root)
                 val matches = available.filter(other => targets.contains(other.path.toAbsolutePath.normalize()))
-                val content = matches.headOption.flatMap(_.content)
+                val content = matches.headOption
+                  .flatMap(_.content)
                   .getOrElse(throw IllegalArgumentException("rollback is not in the supplied repository files"))
                 if content.getBytes(StandardCharsets.UTF_8).length > MaxRollbackBytes then
                   throw IllegalArgumentException("rollback exceeds the byte limit")
                 content
               else readRollback(file, rollback, repositoryRoot(file))
-            if rollbackSql.trim.isEmpty then
-              results += s"${file.relativePath}: rollback file '$rollback' is empty"
+            if rollbackSql.trim.isEmpty then results += s"${file.relativePath}: rollback file '$rollback' is empty"
           catch
             case error: Exception =>
               results += s"${file.relativePath}: invalid rollback file '$rollback' (${error.getMessage})"
@@ -52,7 +52,7 @@ object RollbackValidator:
         val relative = root.toAbsolutePath.normalize().relativize(path)
         val components = (0 until relative.getNameCount).map(index => root.resolve(relative.subpath(0, index + 1)))
         !components.exists(Files.isSymbolicLink(_)) &&
-          Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) && path.toRealPath().startsWith(realRoot)
+        Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) && path.toRealPath().startsWith(realRoot)
       }
     catch case _: Exception => None
 
@@ -75,8 +75,8 @@ object RollbackValidator:
   private def repositoryRoot(file: SqlFile): Path =
     val relative = Path.of(file.relativePath)
     val absolute = file.path.toAbsolutePath.normalize()
-    if relative.isAbsolute || relative.iterator().asScala.exists(_.toString == "..") || !absolute.endsWith(relative) then
-      throw IllegalArgumentException("invalid repository-relative SQL path")
+    if relative.isAbsolute || relative.iterator().asScala.exists(_.toString == "..") || !absolute.endsWith(relative)
+    then throw IllegalArgumentException("invalid repository-relative SQL path")
     (0 until relative.getNameCount).foldLeft(absolute)((path, _) => path.getParent)
 
   private def candidates(file: SqlFile, rollback: String, root: Path): List[Path] =
@@ -99,8 +99,12 @@ object RollbackValidator:
           }
       val fileRelative = Option(file.path.getParent).toList.map(_.resolve(reference))
       val rootRelative = List(normalizedRoot.resolve(reference)) ++
-        Option.when(reference.getNameCount > 1 && reference.getName(0).toString == "sql")(
-          normalizedRoot.resolve(reference.subpath(1, reference.getNameCount))
-        ).toList
+        Option
+          .when(reference.getNameCount > 1 && reference.getName(0).toString == "sql")(
+            normalizedRoot.resolve(reference.subpath(1, reference.getNameCount))
+          )
+          .toList
       (sqlDirCandidates ::: fileRelative ::: rootRelative)
-        .map(_.toAbsolutePath.normalize()).filter(_.startsWith(normalizedRoot)).distinct
+        .map(_.toAbsolutePath.normalize())
+        .filter(_.startsWith(normalizedRoot))
+        .distinct

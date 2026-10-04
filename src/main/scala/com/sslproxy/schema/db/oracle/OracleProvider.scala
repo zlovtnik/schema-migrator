@@ -104,10 +104,11 @@ final class OracleSession(connection: Connection) extends DbSession:
         name = target.sourceFile,
         relativePath = target.sourceFile
       )
-      val rollbackPath = RollbackValidator.resolveExistingRollbackPath(pseudoFile, target.rollbackFile, sqlDir).getOrElse {
-        throw MigratorError
-          .Apply(s"${target.objectName} declares rollback file '${target.rollbackFile}' but it was not found")
-      }
+      val rollbackPath =
+        RollbackValidator.resolveExistingRollbackPath(pseudoFile, target.rollbackFile, sqlDir).getOrElse {
+          throw MigratorError
+            .Apply(s"${target.objectName} declares rollback file '${target.rollbackFile}' but it was not found")
+        }
       val rollbackSql = IO.blocking(RollbackValidator.readRollback(pseudoFile, target.rollbackFile, sqlDir))
       rollbackSql.flatMap { sql =>
         if sql.trim.isEmpty then IO.raiseError(MigratorError.Apply(s"$rollbackPath: rollback SQL file is empty"))
