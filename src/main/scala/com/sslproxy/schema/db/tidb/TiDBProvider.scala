@@ -11,7 +11,7 @@ import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.validation.RollbackValidator
 import io.r2dbc.spi.{ConnectionFactories, ConnectionFactory, ConnectionFactoryOptions}
 
-import java.nio.file.{Files, Path}
+import java.nio.file.Path
 
 final class TiDBProvider(cf: ConnectionFactory) extends DbProvider:
   override val dialect: SqlDialect = SqlDialect.TiDB
@@ -126,12 +126,12 @@ final class TiDBSession(conn: io.r2dbc.spi.Connection) extends DbSession:
         folder = target.kind, path = sqlDir.resolve(target.sourceFile),
         name = target.sourceFile, relativePath = target.sourceFile
       )
-      val rollbackPath = RollbackValidator.resolveExistingRollbackPath(pseudoFile, target.rollbackFile).getOrElse {
+      val rollbackPath = RollbackValidator.resolveExistingRollbackPath(pseudoFile, target.rollbackFile, sqlDir).getOrElse {
         throw MigratorError.Apply(
           s"${target.objectName} declares rollback file '${target.rollbackFile}' but it was not found"
         )
       }
-      IO.blocking(Files.readString(rollbackPath)).flatMap { sql =>
+      IO.blocking(RollbackValidator.readRollback(pseudoFile, target.rollbackFile, sqlDir)).flatMap { sql =>
         if sql.trim.isEmpty then IO.raiseError(MigratorError.Apply(s"$rollbackPath: rollback SQL file is empty"))
         else IO(System.nanoTime()).flatMap { started =>
           inTransaction {

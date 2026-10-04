@@ -26,12 +26,12 @@ final class Validator(dbKind: DbKind):
   private val idempotentRoutineRetirement =
     raw"(?is)(?:\s*drop\s+(?:function|procedure)\s+if\s+exists\s+[^;]+;\s*)+".r
 
-  def validate(files: List[SqlFile]): IO[ValidationReport] =
+  def validate(files: List[SqlFile], repositoryFiles: List[SqlFile] = Nil): IO[ValidationReport] =
     IO.blocking {
       val fileReport = files.foldLeft(ValidationReport()) { (report, file) =>
         validateOne(report, file)
       }
-      val rollbackErrors = RollbackValidator.validate(files)
+      val rollbackErrors = RollbackValidator.validate(files, repositoryFiles)
       val duplicateDefinitionErrors =
         if dbKind == DbKind.Postgres then postgresDuplicateDefinitionErrors(files)
         else Nil

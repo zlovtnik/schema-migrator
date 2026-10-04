@@ -17,7 +17,7 @@ import com.sslproxy.schema.engine.*
 import com.sslproxy.schema.error.MigratorError
 import com.sslproxy.schema.validation.RollbackValidator
 
-import java.nio.file.{Files, Path}
+import java.nio.file.Path
 import java.sql.{Connection, SQLException}
 
 final class OracleProvider(config: JdbcConnectionConfig) extends DbProvider:
@@ -104,11 +104,11 @@ final class OracleSession(connection: Connection) extends DbSession:
         name = target.sourceFile,
         relativePath = target.sourceFile
       )
-      val rollbackPath = RollbackValidator.resolveExistingRollbackPath(pseudoFile, target.rollbackFile).getOrElse {
+      val rollbackPath = RollbackValidator.resolveExistingRollbackPath(pseudoFile, target.rollbackFile, sqlDir).getOrElse {
         throw MigratorError
           .Apply(s"${target.objectName} declares rollback file '${target.rollbackFile}' but it was not found")
       }
-      val rollbackSql = IO.blocking(Files.readString(rollbackPath))
+      val rollbackSql = IO.blocking(RollbackValidator.readRollback(pseudoFile, target.rollbackFile, sqlDir))
       rollbackSql.flatMap { sql =>
         if sql.trim.isEmpty then IO.raiseError(MigratorError.Apply(s"$rollbackPath: rollback SQL file is empty"))
         else

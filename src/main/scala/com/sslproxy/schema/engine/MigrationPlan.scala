@@ -47,7 +47,7 @@ object MigrationPlan:
         case Right(None) => None
         case Left(_) => Some(file)
     }
-    inspectValidated(dbKind, dialect, discovery, validationFiles)
+    inspectValidated(dbKind, dialect, discovery, validationFiles, files)
 
   def inspect(dbKind: DbKind, dialect: SqlDialect, discovery: DiscoveryResult): IO[MigrationPlan] =
     inspectValidated(dbKind, dialect, discovery, discovery.files)
@@ -56,9 +56,10 @@ object MigrationPlan:
     dbKind: DbKind,
     dialect: SqlDialect,
     discovery: DiscoveryResult,
-    validationFiles: List[SqlFile]
+    validationFiles: List[SqlFile],
+    repositoryFiles: List[SqlFile] = Nil
   ): IO[MigrationPlan] =
-    Validator(dbKind).validate(validationFiles).flatMap { validation =>
+    Validator(dbKind).validate(validationFiles, repositoryFiles).flatMap { validation =>
       val checked = validation.copy(warnings = (discovery.warnings ++ validation.warnings).distinct)
       buildPlan(dialect, discovery, checked)
     }
