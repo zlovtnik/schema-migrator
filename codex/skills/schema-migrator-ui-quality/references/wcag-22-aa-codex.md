@@ -84,7 +84,7 @@ Logic:
 IF text or meaningful iconography is rendered against a surface
 THEN normal text contrast must be at least 4.5:1.
 Validation:
-Keep token contrast tests current for light and dark themes.
+Keep token contrast tests current for the shared dark-only theme.
 
 [RULE: MOTION_REDUCED_01]
 Scope: Transitions, page entry animation, drawer/modal animation, hover motion.
