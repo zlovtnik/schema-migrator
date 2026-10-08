@@ -1,24 +1,16 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { getApiBaseUrl, setApiBaseUrl } from "../../api/client";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useTargets } from "../../hooks/useTargets";
 
-const THEME_KEY = "schemaMigrator.theme";
-
 export const SettingsPage = () => {
   const queryClient = useQueryClient();
   const { data: targets = [], isLoading: targetsLoading, error: targetsError } = useTargets();
   const [apiBase, setApiBase] = useState(getApiBaseUrl());
-  const [theme, setTheme] = useState(() => window.localStorage.getItem(THEME_KEY) || "dark");
   const [saved, setSaved] = useState(false);
   const productionTargets = targets.filter((target) => target.env === "production").length;
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
 
   const save = () => {
     setApiBaseUrl(apiBase);
@@ -66,18 +58,6 @@ export const SettingsPage = () => {
                   onChange={(event) => setApiBase(event.target.value)}
                   placeholder="/api"
                 />
-              </label>
-              <label htmlFor="settings-theme">
-                Theme
-                <select
-                  id="settings-theme"
-                  name="theme"
-                  value={theme}
-                  onChange={(event) => setTheme(event.target.value)}
-                >
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                </select>
               </label>
               <div className="form-actions">
                 <button className="button button--primary" type="button" onClick={save}>

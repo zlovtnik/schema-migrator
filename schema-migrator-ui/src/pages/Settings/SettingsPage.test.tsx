@@ -21,6 +21,7 @@ describe("SettingsPage", () => {
 
     expect(screen.queryByLabelText(/AES-GCM/)).not.toBeInTheDocument();
     expect(screen.queryByText(/current AES-GCM key/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Theme")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("API base URL"), { target: { value: "/custom-api" } });
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
 

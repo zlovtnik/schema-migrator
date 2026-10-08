@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { primitiveTokens, scaleTokens, semanticDarkTokens, semanticLightTokens } from "./tokens";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTokenStyleSheet, installDesignTokens, primitiveTokens, scaleTokens, semanticDarkTokens } from "./tokens";
+import { sqlHighlightTheme } from "./sqlHighlightTheme";
 
 const resolveToken = (tokens: Record<string, string>, name: string): string => {
   const value = tokens[name];
@@ -52,59 +53,71 @@ const contrast = (a: string, b: string): number => {
 };
 
 describe("design color tokens", () => {
-  it("uses the requested warm operations-console theme values", () => {
-    expect(semanticLightTokens["--color-bg-base"]).toBe("#FBF8F1");
-    expect(semanticLightTokens["--color-bg-surface"]).toBe("#FFFDF8");
-    expect(semanticLightTokens["--color-bg-elevated"]).toBe("#F1EADF");
-    expect(semanticLightTokens["--color-text-primary"]).toBe("#201A13");
-    expect(semanticLightTokens["--color-text-secondary"]).toBe("#6C6258");
-    expect(resolveToken(semanticLightTokens, "--color-accent-primary")).toBe("#8A5200");
-    expect(semanticLightTokens["--color-border"]).toBe("#DED2C1");
-    expect(semanticLightTokens["--color-success"]).toBe("#257846");
-    expect(semanticLightTokens["--color-warning"]).toBe("#9B5E0C");
-    expect(semanticLightTokens["--color-danger"]).toBe("#A93C34");
-    expect(semanticLightTokens["--color-info"]).toBe("#2F5F9F");
+  afterEach(() => {
+    vi.restoreAllMocks();
+    window.localStorage.removeItem("schemaMigrator.theme");
+  });
 
-    expect(resolveToken(semanticDarkTokens, "--color-bg-base")).toBe("#100F0D");
-    expect(resolveToken(semanticDarkTokens, "--color-bg-surface")).toBe("#171512");
-    expect(resolveToken(semanticDarkTokens, "--color-bg-elevated")).toBe("#201E19");
-    expect(resolveToken(semanticDarkTokens, "--color-text-primary")).toBe("#EDE9E0");
-    expect(resolveToken(semanticDarkTokens, "--color-text-secondary")).toBe("#78726B");
-    expect(resolveToken(semanticDarkTokens, "--color-accent-primary")).toBe("#E0963C");
-    expect(semanticDarkTokens["--color-border"]).toBe("rgb(255 230 160 / 9%)");
-    expect(resolveToken(semanticDarkTokens, "--color-success")).toBe("#6BCB8A");
-    expect(resolveToken(semanticDarkTokens, "--color-warning")).toBe("#E0963C");
-    expect(resolveToken(semanticDarkTokens, "--color-danger")).toBe("#A93C34");
-    expect(resolveToken(semanticDarkTokens, "--color-info")).toBe("#6B94D4");
+  it("uses the shared RCLabs dark-only palette", () => {
+    expect(resolveToken(semanticDarkTokens, "--color-bg-base")).toBe("#090909");
+    expect(resolveToken(semanticDarkTokens, "--color-bg-surface")).toBe("#141414");
+    expect(resolveToken(semanticDarkTokens, "--color-bg-elevated")).toBe("#1C1C1C");
+    expect(resolveToken(semanticDarkTokens, "--color-text-primary")).toBe("#F5F5F2");
+    expect(resolveToken(semanticDarkTokens, "--color-text-secondary")).toBe("#BEC2B9");
+    expect(resolveToken(semanticDarkTokens, "--color-accent-primary")).toBe("#A3E6A3");
     expect(semanticDarkTokens["--surface-glass"]).toContain("transparent");
-    expect(semanticLightTokens["--surface-glass"]).toContain("transparent");
     expect(scaleTokens["--elevation-blur-sm"]).toBe("4px");
     expect(scaleTokens["--elevation-blur-md"]).toBe("12px");
     expect(scaleTokens["--elevation-blur-lg"]).toBe("20px");
+    expect(createTokenStyleSheet()).not.toMatch(/color-scheme: light|data-theme="light"|prefers-color-scheme/);
   });
 
-  it("keeps status and button foreground tokens above WCAG AA contrast", () => {
-    for (const tokens of [semanticLightTokens, semanticDarkTokens]) {
-      const surface = resolveToken(tokens, "--color-bg-surface");
+  it.each(["light", "system", "dark", "invalid"])("ignores the saved %s theme and existing root preference", (saved) => {
+    window.localStorage.setItem("schemaMigrator.theme", saved);
+    document.documentElement.dataset.theme = saved;
+    installDesignTokens();
+    installDesignTokens();
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.querySelectorAll("#schema-migrator-design-tokens")).toHaveLength(1);
+  });
+
+  it("installs dark tokens when local storage is unavailable", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("Storage blocked"); });
+    expect(() => installDesignTokens()).not.toThrow();
+    expect(document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("keeps normal text at 7:1 and controls/focus at 3:1 across the dark surfaces", () => {
+    const tokens = semanticDarkTokens;
+    for (const name of ["base", "surface", "elevated", "popover", "sidebar"]) {
+      const surface = resolveToken(tokens, `--color-bg-${name}`);
+      for (const role of ["primary", "secondary", "muted"]) {
+        expect(contrast(resolveToken(tokens, `--color-text-${role}`), surface), `${role} on ${name}`).toBeGreaterThanOrEqual(7);
+      }
+      for (const role of ["border", "border-strong", "accent-primary"]) {
+        expect(contrast(resolveToken(tokens, `--color-${role}`), surface), `${role} on ${name}`).toBeGreaterThanOrEqual(3);
+      }
 
       for (const tone of ["success", "warning", "danger", "info"]) {
         const color = resolveToken(tokens, `--color-${tone}`);
         const text = resolveToken(tokens, `--color-${tone}-text`);
-        expect(contrast(text, blend(color, surface, 0.16))).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(text, blend(color, surface, 0.16)), `${tone} on ${name}`).toBeGreaterThanOrEqual(7);
       }
+    }
+    for (const suffix of ["", "-hover"]) {
+      expect(
+        contrast(resolveToken(tokens, "--color-accent-contrast"), resolveToken(tokens, `--color-accent-primary${suffix}`))
+      ).toBeGreaterThanOrEqual(7);
+      expect(
+        contrast(resolveToken(tokens, "--color-danger-contrast"), resolveToken(tokens, `--color-danger${suffix}`))
+      ).toBeGreaterThanOrEqual(7);
+    }
+  });
 
-      expect(
-        contrast(resolveToken(tokens, "--color-accent-contrast"), resolveToken(tokens, "--color-accent-primary"))
-      ).toBeGreaterThanOrEqual(4.5);
-      expect(
-        contrast(resolveToken(tokens, "--color-accent-contrast"), resolveToken(tokens, "--color-accent-primary-hover"))
-      ).toBeGreaterThanOrEqual(4.5);
-      expect(
-        contrast(resolveToken(tokens, "--color-danger-contrast"), resolveToken(tokens, "--color-danger"))
-      ).toBeGreaterThanOrEqual(4.5);
-      expect(
-        contrast(resolveToken(tokens, "--color-danger-contrast"), resolveToken(tokens, "--color-danger-hover"))
-      ).toBeGreaterThanOrEqual(4.5);
+  it("keeps SQL syntax and comments at 7:1", () => {
+    const background = sqlHighlightTheme.colors["editor.background"];
+    for (const color of [sqlHighlightTheme.colors["editor.foreground"], ...sqlHighlightTheme.tokenColors.map(({ settings }) => settings.foreground)]) {
+      expect(contrast(color, background)).toBeGreaterThanOrEqual(7);
     }
   });
 });

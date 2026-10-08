@@ -33,9 +33,9 @@ const blocksPasteInHandler = (text: string): boolean =>
 
 const px = (value: string): number => Number.parseInt(value.replace("px", ""), 10);
 
-describe("WCAG 2.2 AA UI codex", () => {
+describe("WCAG 2.2 AAA theme guardrails (partial automated evidence)", () => {
   it("defines enforceable accessibility tokens", () => {
-    expect(px(scaleTokens["--a11y-target-min"])).toBeGreaterThanOrEqual(24);
+    expect(px(scaleTokens["--a11y-target-min"])).toBeGreaterThanOrEqual(44);
     expect(px(scaleTokens["--a11y-target-comfort"])).toBeGreaterThanOrEqual(44);
     expect(scaleTokens["--a11y-focus-ring-width"]).toBe("2px");
     expect(scaleTokens["--a11y-focus-ring-offset"]).toBe("2px");
@@ -51,7 +51,7 @@ describe("WCAG 2.2 AA UI codex", () => {
     expect(globalStyles).toContain("outline-offset: var(--a11y-focus-ring-offset);");
   });
 
-  it("keeps shared controls at or above the WCAG 2.2 AA target floor", () => {
+  it("keeps shared controls at or above the 44px enhanced target floor", () => {
     expect(globalStyles).toContain("min-height: max(38px, var(--a11y-target-min));");
     expect(globalStyles).toContain("min-height: max(32px, var(--a11y-target-min));");
     expect(globalStyles).toContain("width: max(38px, var(--a11y-target-min));");
@@ -60,6 +60,23 @@ describe("WCAG 2.2 AA UI codex", () => {
     expect(globalStyles).toContain("min-height: max(32px, var(--a11y-target-min));");
     expect(globalStyles).toContain("min-height: max(40px, var(--a11y-target-min));");
     expect(globalStyles).toContain("min-height: max(44px, var(--a11y-target-comfort));");
+  });
+
+  it("preserves reduced motion and system colors with visible selected and focused states", () => {
+    expect(globalStyles).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(globalStyles).toContain("@media (forced-colors: active)");
+    expect(globalStyles).toContain("outline: 2px solid Highlight !important;");
+    expect(globalStyles).toContain("textarea:focus-visible");
+    expect(globalStyles).toContain("summary:focus-visible");
+  });
+
+  it("starts both web and desktop surfaces in dark before renderer startup", () => {
+    const html = readFileSync(join(process.cwd(), "index.html"), "utf8");
+    const desktop = readFileSync(join(process.cwd(), "electron/main.ts"), "utf8");
+    expect(html).toContain('data-theme="dark"');
+    expect(html).toContain('name="color-scheme" content="dark"');
+    expect(desktop).toContain('nativeTheme.themeSource = "dark"');
+    expect(desktop).toContain('backgroundColor: "#090909"');
   });
 
   it("does not block paste in authentication or credential fields", () => {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, session, shell, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, Menu, nativeTheme, session, shell, type MenuItemConstructorOptions } from "electron";
 import { createReadStream, promises as fs } from "node:fs";
 import {
   createServer,
@@ -344,6 +344,7 @@ const createWindow = async (): Promise<void> => {
     minWidth: 960,
     minHeight: 640,
     title: "Bedrock Schema Migrator",
+    backgroundColor: "#090909",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -378,6 +379,7 @@ const createWindow = async (): Promise<void> => {
 installApplicationMenu();
 
 void app.whenReady().then(() => {
+  nativeTheme.themeSource = "dark";
   installContentSecurityPolicy();
 
   createWindow().catch((error: unknown) => {

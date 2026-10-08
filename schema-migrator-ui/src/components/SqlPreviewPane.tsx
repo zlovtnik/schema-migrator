@@ -3,6 +3,7 @@ import { CopyIcon } from "@phosphor-icons/react/dist/csr/Copy";
 import { TerminalIcon } from "@phosphor-icons/react/dist/csr/Terminal";
 import { Icon } from "./ui/Icon";
 import type { HighlighterCore } from "shiki/core";
+import { sqlHighlightTheme } from "../design/sqlHighlightTheme";
 
 interface SqlPreviewPaneProps {
   code?: string | null | undefined;
@@ -25,7 +26,7 @@ export const SqlPreviewPane = ({ code, title = "SQL preview" }: SqlPreviewPanePr
     setHtml(null);
 
     loadSqlHighlighter()
-      .then((highlighter) => highlighter.codeToHtml(text, { lang: "sql", theme: "github-dark" }))
+      .then((highlighter) => highlighter.codeToHtml(text, { lang: "sql", theme: sqlHighlightTheme.name }))
       .then((value) => {
         if (active) {
           setHtml(value);
@@ -82,12 +83,11 @@ const loadSqlHighlighter = (): Promise<HighlighterCore> => {
     sqlHighlighter = Promise.all([
       import("shiki/core"),
       import("shiki/engine/javascript"),
-      import("shiki/langs/sql.mjs"),
-      import("shiki/themes/github-dark.mjs")
+      import("shiki/langs/sql.mjs")
     ])
-      .then(([core, engine, sql, githubDark]) =>
+      .then(([core, engine, sql]) =>
         core.createHighlighterCore({
-          themes: [githubDark.default],
+          themes: [sqlHighlightTheme],
           langs: [sql.default],
           engine: engine.createJavaScriptRegexEngine()
         })

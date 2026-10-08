@@ -1387,6 +1387,24 @@ select:focus-visible {
   outline-offset: var(--a11y-focus-ring-offset);
 }
 
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: var(--a11y-focus-ring-width) solid var(--color-accent-primary);
+  outline-offset: var(--a11y-focus-ring-offset);
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-contrast);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
 /* Shared UI primitives use globally namespaced selectors. */
 .ui-button {
   --button-bg: transparent;
@@ -1563,7 +1581,7 @@ select:focus-visible {
 }
 .ui-input-control:focus-within {
   border-color: var(--input-border-focus);
-  outline: 2px solid color-mix(in srgb, var(--input-border-focus) 28%, transparent);
+  outline: var(--a11y-focus-ring-width) solid var(--input-border-focus);
   outline-offset: 2px;
 }
 .ui-input {
@@ -4441,5 +4459,52 @@ kbd {
 
   .upgrade-step__copy strong {
     max-width: 70px;
+  }
+}
+
+/* Keep target geometry consistent across compact and responsive controls. */
+:root :is(button, select, input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), textarea, summary,
+  .button, .nav-link, .sidebar__collapse, .settings-nav__item, .settings-target-row, .app-breadcrumbs a) {
+  min-width: var(--a11y-target-min);
+  min-height: var(--a11y-target-min);
+}
+
+:root :is(.checkbox-row, .sql-file-checkbox, .upgrade-object__checkbox) {
+  min-height: var(--a11y-target-min);
+  min-width: var(--a11y-target-min);
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--primary);
+}
+
+@media (forced-colors: active) {
+  :root {
+    --primary: LinkText;
+    --color-accent-primary: Highlight;
+    --border: CanvasText;
+    --color-border: CanvasText;
+    --color-border-strong: CanvasText;
+  }
+
+  :is(button, input, select, textarea, summary, .button, .nav-link, .settings-nav__item) {
+    border-color: ButtonText;
+  }
+
+  :is(.nav-link.active, .nav-link[aria-current="page"], [aria-selected="true"], [aria-pressed="true"]) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px !important;
+  }
+
+  .ui-progress__bar,
+  .progress-meter > div {
+    background: Highlight;
+    forced-color-adjust: none;
   }
 }
