@@ -42,8 +42,7 @@ object RunExecutor:
   private val LeaseDuration = 30.seconds
   private val LeaseRenewInterval = 10.seconds
 
-  final case class LeaseLost(runId: String)
-      extends RuntimeException(s"run '$runId' lost its TiDB control lease")
+  final case class LeaseLost(runId: String) extends RuntimeException(s"run '$runId' lost its TiDB control lease")
 
   def supervised(delegate: RunExecutor, supervisor: Supervisor[IO], runStore: RunStore): RunExecutor =
     val ownerId = s"schema-migrator-${UUID.randomUUID()}"
@@ -65,7 +64,9 @@ object RunExecutor:
               case (Some(target), Some(patch)) if patch.target_id == run.target_id => launch(target, run, patch, lease)
               case _ =>
                 Clock[IO].realTimeInstant.flatMap(now =>
-                  runStore.failRun(lease, now.toString, "", "recovery could not load the persisted target and patch").void
+                  runStore
+                    .failRun(lease, now.toString, "", "recovery could not load the persisted target and patch")
+                    .void
                 )
             }
         }
@@ -74,22 +75,25 @@ object RunExecutor:
         supervisor.supervise(withRenewal(target, run, patch, lease)).void
 
       private def withRenewal(target: StoredTarget, run: Run, patch: Patch, lease: RunLease): IO[Unit] =
-        Deferred[IO, Unit].flatMap { lost =>
-          def renewLoop: IO[Unit] =
-            IO.sleep(LeaseRenewInterval) *> runStore.renew(lease, LeaseDuration).attempt.flatMap {
-              case Right(true) => renewLoop
-              case Right(false) | Left(_) => lost.complete(()).void
-            }
+        Deferred[IO, Unit]
+          .flatMap { lost =>
+            def renewLoop: IO[Unit] =
+              IO.sleep(LeaseRenewInterval) *> runStore.renew(lease, LeaseDuration).attempt.flatMap {
+                case Right(true) => renewLoop
+                case Right(false) | Left(_) => lost.complete(()).void
+              }
 
-          for
-            renewal <- renewLoop.start
-            outcome <- IO.race(delegate.runClaimed(target, run, patch, lease), lost.get)
-              .guarantee(renewal.cancel)
-            _ <- outcome match
-              case Left(_) => IO.unit
-              case Right(_) => IO.raiseError(LeaseLost(run.id))
-          yield ()
-        }.guarantee(runStore.release(lease).void)
+            for
+              renewal <- renewLoop.start
+              outcome <- IO
+                .race(delegate.runClaimed(target, run, patch, lease), lost.get)
+                .guarantee(renewal.cancel)
+              _ <- outcome match
+                case Left(_) => IO.unit
+                case Right(_) => IO.raiseError(LeaseLost(run.id))
+            yield ()
+          }
+          .guarantee(runStore.release(lease).void)
 
   def real(
     config: MigratorConfig,
@@ -196,9 +200,11 @@ private final class RealRunExecutor(
         warnings = warnings => warnings.traverse_(warning => runStore.log(run.id, "warn", warning)),
         scriptStarted = (prepared, _, _) =>
           scriptFor(prepared, scriptsBySource)
-            .traverse_(script => lease.fold(runStore.scriptStarted(run.id, script.id, script.filename, script.order, total))(
-              runStore.scriptStarted(_, script.id, script.filename, script.order, total)
-            )),
+            .traverse_(script =>
+              lease.fold(runStore.scriptStarted(run.id, script.id, script.filename, script.order, total))(
+                runStore.scriptStarted(_, script.id, script.filename, script.order, total)
+              )
+            ),
         scriptSkipped = (prepared, _, _, elapsed) =>
           scriptFor(prepared, scriptsBySource).traverse_(script =>
             lease.fold(runStore.scriptCompleted(run.id, script.id, script.filename, elapsed))(
@@ -208,9 +214,11 @@ private final class RealRunExecutor(
           ),
         scriptCompleted = (prepared, _, _, elapsed) =>
           scriptFor(prepared, scriptsBySource)
-            .traverse_(script => lease.fold(runStore.scriptCompleted(run.id, script.id, script.filename, elapsed))(
-              runStore.scriptCompleted(_, script.id, script.filename, elapsed)
-            )),
+            .traverse_(script =>
+              lease.fold(runStore.scriptCompleted(run.id, script.id, script.filename, elapsed))(
+                runStore.scriptCompleted(_, script.id, script.filename, elapsed)
+              )
+            ),
         scriptFailed = (prepared, _, _, error, elapsed) =>
           scriptFor(prepared, scriptsBySource).traverse_ { script =>
             val scriptError = scriptErrorFor(error)
@@ -233,14 +241,16 @@ private final class RealRunExecutor(
 
   private def completeRun(run: Run, patch: Patch, lease: Option[RunLease]): IO[Unit] =
     nowString.flatMap { ended =>
-      lease.fold(runStore.completeRun(run.id, ended, validationTriggered = true))(
-        runStore.completeRun(_, ended, validationTriggered = true)
-      ).flatMap {
-        case Some(completed) =>
-          patchStore.markApplied(patch.id, ended) *>
-            recordRunAudit(completed, "run.complete", None)
-        case None => IO.unit
-      }
+      lease
+        .fold(runStore.completeRun(run.id, ended, validationTriggered = true))(
+          runStore.completeRun(_, ended, validationTriggered = true)
+        )
+        .flatMap {
+          case Some(completed) =>
+            patchStore.markApplied(patch.id, ended) *>
+              recordRunAudit(completed, "run.complete", None)
+          case None => IO.unit
+        }
     }
 
   private def failRun(
@@ -254,12 +264,14 @@ private final class RealRunExecutor(
       case Some("aborted") | Some("completed") => IO.unit
       case _ =>
         nowString.flatMap { ended =>
-          lease.fold(runStore.failRun(run.id, ended, failedScriptId, reason))(
-            runStore.failRun(_, ended, failedScriptId, reason)
-          ).flatMap {
-            case Some(failed) => patchStore.markFailed(patch.id) *> recordRunAudit(failed, "run.fail", Some(reason))
-            case None => IO.unit
-          }
+          lease
+            .fold(runStore.failRun(run.id, ended, failedScriptId, reason))(
+              runStore.failRun(_, ended, failedScriptId, reason)
+            )
+            .flatMap {
+              case Some(failed) => patchStore.markFailed(patch.id) *> recordRunAudit(failed, "run.fail", Some(reason))
+              case None => IO.unit
+            }
         }
     }
 

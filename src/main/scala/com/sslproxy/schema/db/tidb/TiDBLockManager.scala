@@ -12,9 +12,10 @@ final class TiDBLockManager(conn: Connection) extends LockManager[IO]:
       row.get(0, classOf[java.lang.Number])
     }.flatMap {
       case Some(n) if n.longValue() == 1L => IO.unit
-      case _ => IO.raiseError(
-        MigratorError.Apply("TiDB schema apply lock schema_migrate could not be acquired (timeout 10s)")
-      )
+      case _ =>
+        IO.raiseError(
+          MigratorError.Apply("TiDB schema apply lock schema_migrate could not be acquired (timeout 10s)")
+        )
     }
 
   override def release: IO[Unit] =
@@ -22,7 +23,8 @@ final class TiDBLockManager(conn: Connection) extends LockManager[IO]:
       row.get(0, classOf[java.lang.Number])
     }.flatMap {
       case Some(n) if n.longValue() == 1L => IO.unit
-      case _ => IO.raiseError(
-        MigratorError.LockNotHeld("TiDB schema apply lock schema_migrate was not held")
-      )
+      case _ =>
+        IO.raiseError(
+          MigratorError.LockNotHeld("TiDB schema apply lock schema_migrate was not held")
+        )
     }

@@ -7,7 +7,6 @@ import com.sslproxy.schema.discovery.SqlFile
 import com.sslproxy.schema.engine.MigrationPlan
 import com.sslproxy.schema.validation.ValidationReport
 
-
 trait ValidationStore:
   def list(targetId: Option[String]): IO[List[ValidationResult]]
   def get(runId: String): IO[Option[ValidationResult]]
@@ -87,4 +86,3 @@ private final class InMemoryValidationStore(ref: Ref[IO, Map[String, ValidationR
 
   private def nowString: IO[String] =
     Clock[IO].realTimeInstant.map(_.toString)
-

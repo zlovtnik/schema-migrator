@@ -61,5 +61,3 @@ private final class InMemoryAuditStore(ref: Ref[IO, Map[String, AuditEvent]]) ex
       event = AuditEvent(id, actor, role, action, entityType, entityId, targetId, now, metadata)
       _ <- ref.update(_ + (id -> event))
     yield event
-
-

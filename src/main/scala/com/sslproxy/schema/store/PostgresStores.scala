@@ -253,28 +253,31 @@ private[store] final class PostgresTargetStore(database: StateDatabase, password
   override def get(id: String): IO[Option[Target]] = row(id).map(_.map(_.target))
 
   override def getStored(id: String): IO[Option[StoredTarget]] =
-    row(id).flatMap(_.traverse(value => crypto.decrypt(value.passwordCiphertext, value.passwordIv).map(StoredTarget(value.target, _))))
+    row(id).flatMap(
+      _.traverse(value => crypto.decrypt(value.passwordCiphertext, value.passwordIv).map(StoredTarget(value.target, _)))
+    )
 
   override def update(id: String, payload: TargetPayload): IO[Option[Target]] =
     idOption(id).fold(IO.pure(Option.empty[Target])) { targetId =>
       payload.password.filter(_.nonEmpty).traverse(crypto.encrypt).flatMap { encrypted =>
-      val action = for
-        existing <- (fr"select" ++ targetColumns ++ fr"from targets where id = $targetId for update")
-          .query[TargetRow]
-          .option
-        result <- existing match
-          case None => none[Target].pure[ConnectionIO]
-          case Some(current) =>
-            val repoChanged = current.repoUrl != payload.repo_url || current.repoBranch != payload.repo_branch || current.repoSqlPath != payload.repo_sql_path
-            val next = Target
-              .fromPayload(id, apiTime(current.createdAt), payload)
-              .copy(
-                last_synced_commit = Option.unless(repoChanged)(current.lastSyncedCommit).flatten,
-                last_synced_at = Option.unless(repoChanged)(current.lastSyncedAt.map(apiTime)).flatten
-              )
-            val passwordCiphertext = encrypted.map(_.ciphertext).orElse(current.passwordCiphertext)
-            val passwordIv = encrypted.map(_.iv).orElse(current.passwordIv)
-            sql"""
+        val action = for
+          existing <- (fr"select" ++ targetColumns ++ fr"from targets where id = $targetId for update")
+            .query[TargetRow]
+            .option
+          result <- existing match
+            case None => none[Target].pure[ConnectionIO]
+            case Some(current) =>
+              val repoChanged =
+                current.repoUrl != payload.repo_url || current.repoBranch != payload.repo_branch || current.repoSqlPath != payload.repo_sql_path
+              val next = Target
+                .fromPayload(id, apiTime(current.createdAt), payload)
+                .copy(
+                  last_synced_commit = Option.unless(repoChanged)(current.lastSyncedCommit).flatten,
+                  last_synced_at = Option.unless(repoChanged)(current.lastSyncedAt.map(apiTime)).flatten
+                )
+              val passwordCiphertext = encrypted.map(_.ciphertext).orElse(current.passwordCiphertext)
+              val passwordIv = encrypted.map(_.iv).orElse(current.passwordIv)
+              sql"""
               update targets set
                 label = ${next.label}, app_name = ${next.app_name}, environment = ${next.env},
                 jdbc_url = ${next.jdbc_url}, db_kind = ${next.db_kind}, updated_at = CURRENT_TIMESTAMP,
@@ -284,24 +287,24 @@ private[store] final class PostgresTargetStore(database: StateDatabase, password
                 password_ciphertext = $passwordCiphertext, password_iv = $passwordIv
               where id = $targetId
             """.update.run.as(Some(next))
-      yield result
-      database.transact(action)
+        yield result
+        database.transact(action)
       }
     }
 
   override def recordRepoSync(id: String, commitSha: String, syncedAt: String): IO[Boolean] =
     idOption(id).fold(IO.pure(false)) { targetId =>
       database.transact(
-        sql"update targets set last_synced_commit = $commitSha, last_synced_at = ${dbTime(syncedAt)}, updated_at = CURRENT_TIMESTAMP where id = $targetId"
-          .update.run.map(_ > 0)
+        sql"update targets set last_synced_commit = $commitSha, last_synced_at = ${dbTime(syncedAt)}, updated_at = CURRENT_TIMESTAMP where id = $targetId".update.run
+          .map(_ > 0)
       )
     }
 
   override def clearRepoSync(id: String): IO[Boolean] =
     idOption(id).fold(IO.pure(false)) { targetId =>
       database.transact(
-        sql"update targets set last_synced_commit = null, last_synced_at = null, updated_at = CURRENT_TIMESTAMP where id = $targetId"
-          .update.run.map(_ > 0)
+        sql"update targets set last_synced_commit = null, last_synced_at = null, updated_at = CURRENT_TIMESTAMP where id = $targetId".update.run
+          .map(_ > 0)
       )
     }
 
@@ -331,18 +334,30 @@ private[store] final class PostgresSqlFileStore(database: StateDatabase) extends
   override def replaceAll(targetId: String, files: List[StoredSqlFile]): IO[Unit] =
     val targetUuid = id(targetId)
     val rows = files.map(file =>
-      (targetUuid, file.path, file.folder, file.filename, Base64.getDecoder.decode(file.contentBase64), file.sha256, dbTime(file.uploadedAt))
+      (
+        targetUuid,
+        file.path,
+        file.folder,
+        file.filename,
+        Base64.getDecoder.decode(file.contentBase64),
+        file.sha256,
+        dbTime(file.uploadedAt)
+      )
     )
     val insert = Update[(UUID, String, String, String, Array[Byte], String, LocalDateTime)](
       "insert into sql_files (target_id, path, folder, filename, content, sha256, uploaded_at) values (?, ?, ?, ?, ?, ?, ?)"
     )
-    database.transact((sql"delete from sql_files where target_id = $targetUuid".update.run *> insert.updateMany(rows)).void)
+    database.transact(
+      (sql"delete from sql_files where target_id = $targetUuid".update.run *> insert.updateMany(rows)).void
+    )
 
   override def clear(targetId: String): IO[Unit] =
     database.transact(sql"delete from sql_files where target_id = ${id(targetId)}".update.run.void)
 
   override def isEmpty(targetId: String): IO[Boolean] =
-    database.transact(sql"select not exists(select 1 from sql_files where target_id = ${id(targetId)})".query[Boolean].unique)
+    database.transact(
+      sql"select not exists(select 1 from sql_files where target_id = ${id(targetId)})".query[Boolean].unique
+    )
 
   private def fromRow(row: Row): StoredSqlFile =
     StoredSqlFile(row._1, row._2, row._3, Base64.getEncoder.encodeToString(row._4), row._5, apiTime(row._6))
@@ -353,7 +368,9 @@ private[store] final class PostgresPatchStore(database: StateDatabase) extends P
   override def list(targetId: Option[String]): IO[List[Patch]] =
     val filter = targetId.fold(Fragment.empty)(value => fr"where target_id = ${id(value)}")
     database.transact(
-      (fr"select" ++ patchColumns ++ fr"from patches" ++ filter ++ fr"order by version").query[PatchRow].to[List]
+      (fr"select" ++ patchColumns ++ fr"from patches" ++ filter ++ fr"order by version")
+        .query[PatchRow]
+        .to[List]
         .flatMap(_.traverse(toPatch))
     )
 
@@ -362,7 +379,16 @@ private[store] final class PostgresPatchStore(database: StateDatabase) extends P
       id <- IO(UUID.randomUUID())
       now <- Clock[IO].realTimeInstant
       scripts = uploads.sortBy(_.order).map(upload => PatchStore.scriptFromUpload(id.toString, upload))
-      patch = Patch(id.toString, targetId, PatchStore.versionFormatter.format(now), scripts.map(_.filename).mkString(", "), scripts, "pending", None, sourceSnapshotId)
+      patch = Patch(
+        id.toString,
+        targetId,
+        PatchStore.versionFormatter.format(now),
+        scripts.map(_.filename).mkString(", "),
+        scripts,
+        "pending",
+        None,
+        sourceSnapshotId
+      )
       _ <- database.transact(insertPatch(patch, uploads))
     yield patch
 
@@ -374,27 +400,44 @@ private[store] final class PostgresPatchStore(database: StateDatabase) extends P
 
   override def markApplied(id: String, appliedAt: String): IO[Unit] =
     val patchId = PostgresStoreSupport.id(id)
-    database.transact((sql"update patches set status = 'applied', applied_at = ${dbTime(appliedAt)} where id = $patchId".update.run *>
-      sql"update patch_scripts set status = 'completed', duration_ms = coalesce(duration_ms, 0) where patch_id = $patchId".update.run).void
+    database.transact(
+      (sql"update patches set status = 'applied', applied_at = ${dbTime(appliedAt)} where id = $patchId".update.run *>
+        sql"update patch_scripts set status = 'completed', duration_ms = coalesce(duration_ms, 0) where patch_id = $patchId".update.run).void
     )
 
   override def markFailed(id: String): IO[Unit] =
-    database.transact(sql"update patches set status = 'failed' where id = ${PostgresStoreSupport.id(id)}".update.run.void)
+    database.transact(
+      sql"update patches set status = 'failed' where id = ${PostgresStoreSupport.id(id)}".update.run.void
+    )
 
   override def sqlFiles(patch: Patch, dbKind: DbKind): IO[List[PatchSqlFile]] =
-    database.transact(sql"select id, patch_id, script_order, filename, checksum, status, error, duration_ms, content from patch_scripts where patch_id = ${PostgresStoreSupport.id(patch.id)} order by script_order"
-      .query[PatchScriptRow].to[List].flatMap { rows =>
-        rows.traverse { row =>
-          val script = row.script
-          val content = String(row.content, StandardCharsets.UTF_8)
-          PatchStore.sqlFile(script, Path.of(script.filename), content, dbKind).pure[ConnectionIO]
+    database.transact(
+      sql"select id, patch_id, script_order, filename, checksum, status, error, duration_ms, content from patch_scripts where patch_id = ${PostgresStoreSupport.id(patch.id)} order by script_order"
+        .query[PatchScriptRow]
+        .to[List]
+        .flatMap { rows =>
+          rows.traverse { row =>
+            val script = row.script
+            val content = String(row.content, StandardCharsets.UTF_8)
+            PatchStore.sqlFile(script, Path.of(script.filename), content, dbKind).pure[ConnectionIO]
+          }
         }
-      })
+    )
 
   private def insertPatch(patch: Patch, uploads: List[PatchUpload]): ConnectionIO[Unit] =
     val patchId = PostgresStoreSupport.id(patch.id)
     val rows = patch.scripts.zip(uploads.sortBy(_.order)).map { case (script, upload) =>
-      (id(script.id), patchId, script.order, script.filename, script.checksum, script.status, errorJson(script.error), script.duration_ms, upload.bytes)
+      (
+        id(script.id),
+        patchId,
+        script.order,
+        script.filename,
+        script.checksum,
+        script.status,
+        errorJson(script.error),
+        script.duration_ms,
+        upload.bytes
+      )
     }
     val insertScripts = Update[(UUID, UUID, Int, String, String, String, Option[String], Option[Long], Array[Byte])](
       "insert into patch_scripts (id, patch_id, script_order, filename, checksum, status, error, duration_ms, content) values (?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -406,22 +449,39 @@ private[store] final class PostgresPatchStore(database: StateDatabase) extends P
     """.update.run *> insertScripts.updateMany(rows).void
 
   private def load(patchId: UUID): ConnectionIO[Option[Patch]] =
-    (fr"select" ++ patchColumns ++ fr"from patches where id = $patchId").query[PatchRow].option.flatMap(_.traverse(toPatch))
+    (fr"select" ++ patchColumns ++ fr"from patches where id = $patchId")
+      .query[PatchRow]
+      .option
+      .flatMap(_.traverse(toPatch))
 
   private def toPatch(row: PatchRow): ConnectionIO[Patch] =
     (fr"select" ++ patchScriptColumns ++ fr"from patch_scripts where patch_id = ${row.id} order by script_order")
-      .query[PatchScriptRow].to[List].map(scripts =>
-        Patch(row.id.toString, row.targetId.toString, row.version, row.label, scripts.map(_.script), row.status, row.appliedAt.map(apiTime), row.sourceSnapshotId.map(_.toString))
+      .query[PatchScriptRow]
+      .to[List]
+      .map(scripts =>
+        Patch(
+          row.id.toString,
+          row.targetId.toString,
+          row.version,
+          row.label,
+          scripts.map(_.script),
+          row.status,
+          row.appliedAt.map(apiTime),
+          row.sourceSnapshotId.map(_.toString)
+        )
       )
 
 private[store] final class PostgresRunStore(database: StateDatabase, protected val topic: Topic[IO, RunEvent])
-    extends RunStore with RunStoreEvents:
+    extends RunStore
+    with RunStoreEvents:
   import PostgresStoreSupport.*
 
   override def list(targetId: Option[String]): IO[List[Run]] =
     val filter = targetId.fold(Fragment.empty)(value => fr"where target_id = ${id(value)}")
     database.transact(
-      (fr"select" ++ runColumns ++ fr"from runs" ++ filter ++ fr"order by started_at").query[RunRow].to[List]
+      (fr"select" ++ runColumns ++ fr"from runs" ++ filter ++ fr"order by started_at")
+        .query[RunRow]
+        .to[List]
         .flatMap(_.traverse(toRun))
     )
 
@@ -429,7 +489,16 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
     for
       runId <- IO.delay(UUID.randomUUID().toString)
       now <- Clock[IO].realTimeInstant
-      run = Run(runId, payload.target_id, payload.patch_id, "pending", patch.scripts.map(script => ScriptRun(script.id, script.filename, script.order, "pending", None, None)), now.toString, None, triggeredBy)
+      run = Run(
+        runId,
+        payload.target_id,
+        payload.patch_id,
+        "pending",
+        patch.scripts.map(script => ScriptRun(script.id, script.filename, script.order, "pending", None, None)),
+        now.toString,
+        None,
+        triggeredBy
+      )
       result <- database.transact(insertRun(run)).attempt
       _ <- result match
         case Left(error) if isDuplicate(error) => IO.raiseError(RunStore.ConcurrentRun(payload.target_id))
@@ -438,7 +507,9 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
     yield run
 
   override def get(id: String): IO[Option[Run]] =
-    idOption(id).fold(IO.pure(Option.empty[Run]))(runId => database.transact(load(runId, lock = false).map(_.map(_._2))))
+    idOption(id).fold(IO.pure(Option.empty[Run]))(runId =>
+      database.transact(load(runId, lock = false).map(_.map(_._2)))
+    )
 
   override def abort(id: String): IO[Option[Run]] =
     nowString
@@ -477,13 +548,25 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
       else IO.unit
     )
 
-  override def scriptFailed(id: String, scriptId: String, filename: String, error: ScriptError, durationMs: Long): IO[Boolean] =
-    updateScript(id, scriptId, None)(_.copy(status = "failed", error = Some(error), duration_ms = Some(durationMs))).flatTap(changed =>
-      if changed then publishScriptError(id, scriptId, error) *> log(id, "error", s"failed $filename: ${error.message}")
-      else IO.unit
-    )
+  override def scriptFailed(
+    id: String,
+    scriptId: String,
+    filename: String,
+    error: ScriptError,
+    durationMs: Long
+  ): IO[Boolean] =
+    updateScript(id, scriptId, None)(_.copy(status = "failed", error = Some(error), duration_ms = Some(durationMs)))
+      .flatTap(changed =>
+        if changed then
+          publishScriptError(id, scriptId, error) *> log(id, "error", s"failed $filename: ${error.message}")
+        else IO.unit
+      )
 
-  override def claim(id: String, ownerId: String, leaseFor: scala.concurrent.duration.FiniteDuration): IO[Option[RunLease]] =
+  override def claim(
+    id: String,
+    ownerId: String,
+    leaseFor: scala.concurrent.duration.FiniteDuration
+  ): IO[Option[RunLease]] =
     idOption(id).fold(IO.pure(Option.empty[RunLease])) { runId =>
       IO.delay(UUID.randomUUID()).flatMap { token =>
         database.transact(claimAction(runId, ownerId, token, leaseFor.toMicros))
@@ -539,7 +622,11 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
         case _ =>
           leaseOwned(lease).flatMap(owned =>
             if !owned then false.pure[ConnectionIO]
-            else sql"select status = 'running' from runs where id = ${id(lease.runId)}".query[Boolean].option.map(_.contains(true))
+            else
+              sql"select status = 'running' from runs where id = ${id(lease.runId)}"
+                .query[Boolean]
+                .option
+                .map(_.contains(true))
           )
       }
     }
@@ -565,7 +652,12 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
     total: Int
   ): IO[Boolean] =
     updateScript(lease.runId, scriptId, Some(lease))(_.copy(status = "running")).flatTap(changed =>
-      if changed then publishScriptStart(lease.runId, scriptId, filename, order, total) *> log(lease.runId, "info", s"running $filename")
+      if changed then
+        publishScriptStart(lease.runId, scriptId, filename, order, total) *> log(
+          lease.runId,
+          "info",
+          s"running $filename"
+        )
       else IO.unit
     )
 
@@ -577,7 +669,8 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
   ): IO[Boolean] =
     updateScript(lease.runId, scriptId, Some(lease))(_.copy(status = "completed", duration_ms = Some(durationMs)))
       .flatTap(changed =>
-        if changed then publishScriptComplete(lease.runId, scriptId, durationMs) *> log(lease.runId, "info", s"completed $filename")
+        if changed then
+          publishScriptComplete(lease.runId, scriptId, durationMs) *> log(lease.runId, "info", s"completed $filename")
         else IO.unit
       )
 
@@ -591,7 +684,12 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
     updateScript(lease.runId, scriptId, Some(lease))(
       _.copy(status = "failed", error = Some(error), duration_ms = Some(durationMs))
     ).flatTap(changed =>
-      if changed then publishScriptError(lease.runId, scriptId, error) *> log(lease.runId, "error", s"failed $filename: ${error.message}")
+      if changed then
+        publishScriptError(lease.runId, scriptId, error) *> log(
+          lease.runId,
+          "error",
+          s"failed $filename: ${error.message}"
+        )
       else IO.unit
     )
 
@@ -638,24 +736,53 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
 
   private def insertScripts(run: Run): ConnectionIO[Int] =
     val runId = id(run.id)
-    val rows = run.scripts.map(script => (runId, id(script.script_id), script.filename, script.order, script.status, errorJson(script.error), script.duration_ms))
+    val rows = run.scripts.map(script =>
+      (
+        runId,
+        id(script.script_id),
+        script.filename,
+        script.order,
+        script.status,
+        errorJson(script.error),
+        script.duration_ms
+      )
+    )
     Update[(UUID, UUID, String, Int, String, Option[String], Option[Long])](
       "insert into run_scripts (run_id, script_id, filename, script_order, status, error, duration_ms) values (?, ?, ?, ?, ?, ?, ?)"
     ).updateMany(rows)
 
   private def load(runId: UUID, lock: Boolean): ConnectionIO[Option[(RunRow, Run)]] =
     val suffix = if lock then fr"for update" else Fragment.empty
-    (fr"select" ++ runColumns ++ fr"from runs where id = $runId" ++ suffix).query[RunRow].option.flatMap(
-      _.traverse(row => toRun(row).map(row -> _))
-    )
+    (fr"select" ++ runColumns ++ fr"from runs where id = $runId" ++ suffix)
+      .query[RunRow]
+      .option
+      .flatMap(
+        _.traverse(row => toRun(row).map(row -> _))
+      )
 
   private def toRun(row: RunRow): ConnectionIO[Run] =
     (fr"select" ++ runScriptColumns ++ fr"from run_scripts where run_id = ${row.id} order by script_order")
-      .query[RunScriptRow].to[List].map(scripts =>
-        Run(row.id.toString, row.targetId.toString, row.patchId.toString, row.status, scripts.map(_.script), apiTime(row.startedAt), row.endedAt.map(apiTime), row.triggeredBy)
+      .query[RunScriptRow]
+      .to[List]
+      .map(scripts =>
+        Run(
+          row.id.toString,
+          row.targetId.toString,
+          row.patchId.toString,
+          row.status,
+          scripts.map(_.script),
+          apiTime(row.startedAt),
+          row.endedAt.map(apiTime),
+          row.triggeredBy
+        )
       )
 
-  private def claimAction(runId: UUID, ownerId: String, token: UUID, leaseMicros: Long): ConnectionIO[Option[RunLease]] =
+  private def claimAction(
+    runId: UUID,
+    ownerId: String,
+    token: UUID,
+    leaseMicros: Long
+  ): ConnectionIO[Option[RunLease]] =
     sql"""
       update runs set
         owner_id = $ownerId,
@@ -690,8 +817,11 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
         and attempt_count >= max_attempts
         and (lease_token is null or lease_expires_at <= CURRENT_TIMESTAMP)
       limit 64
-    """.query[UUID].to[List].flatMap(_.traverse_ { runId =>
-      sql"""
+    """
+      .query[UUID]
+      .to[List]
+      .flatMap(_.traverse_ { runId =>
+        sql"""
         update runs set
           status = 'failed', ended_at = CURRENT_TIMESTAMP, last_error = 'run lease attempts exhausted',
           owner_id = null, lease_token = null, lease_expires_at = null, updated_at = CURRENT_TIMESTAMP
@@ -699,13 +829,15 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
           and attempt_count >= max_attempts
           and (lease_token is null or lease_expires_at <= CURRENT_TIMESTAMP)
       """.update.run.flatMap {
-        case 0 => ().pure[ConnectionIO]
-        case 1 =>
-          sql"update run_scripts set status = 'skipped' where run_id = $runId and status in ('pending', 'running')"
-            .update.run *> clearControlLease(runId, None)
-        case count => IllegalStateException(s"exhausted run cleanup updated $count rows for $runId").raiseError
-      }
-    })
+          case 0 => ().pure[ConnectionIO]
+          case 1 =>
+            sql"update run_scripts set status = 'skipped' where run_id = $runId and status in ('pending', 'running')".update.run *> clearControlLease(
+              runId,
+              None
+            )
+          case count => IllegalStateException(s"exhausted run cleanup updated $count rows for $runId").raiseError
+        }
+      })
 
   private def renewAction(lease: RunLease, leaseMicros: Long): ConnectionIO[Boolean] =
     sql"""
@@ -759,15 +891,16 @@ private[store] final class PostgresRunStore(database: StateDatabase, protected v
     }
 
   private def clearLease(runId: UUID): ConnectionIO[Unit] =
-    sql"update runs set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = CURRENT_TIMESTAMP where id = $runId"
-      .update.run *> clearControlLease(runId, None)
+    sql"update runs set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = CURRENT_TIMESTAMP where id = $runId".update.run *> clearControlLease(
+      runId,
+      None
+    )
 
   private def clearControlLease(runId: UUID, lease: Option[RunLease]): ConnectionIO[Unit] =
     val predicate = lease.fold(Fragment.empty)(value =>
       fr"and owner_id = ${value.ownerId} and lease_token = ${id(value.token)} and fence = ${value.fence}"
     )
-    (fr"update control_leases set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = CURRENT_TIMESTAMP where resource_type = 'run' and resource_id = ${runId.toString}" ++ predicate)
-      .update.run.void
+    (fr"update control_leases set owner_id = null, lease_token = null, lease_expires_at = null, updated_at = CURRENT_TIMESTAMP where resource_type = 'run' and resource_id = ${runId.toString}" ++ predicate).update.run.void
 
   private def upsertControlLease(lease: RunLease): ConnectionIO[Unit] =
     sql"""
@@ -800,16 +933,24 @@ private[store] final class PostgresValidationStore(database: StateDatabase) exte
     val filter = targetId.fold(Fragment.empty)(value => fr"where target_id = ${id(value)}")
     database.transact(
       (fr"select run_id, target_id, checked_at, status from validations" ++ filter ++ fr"order by checked_at")
-        .query[ValidationRow].to[List].flatMap(_.traverse(toResult))
+        .query[ValidationRow]
+        .to[List]
+        .flatMap(_.traverse(toResult))
     )
 
   override def get(runId: String): IO[Option[ValidationResult]] =
     database.transact(
       sql"select run_id, target_id, checked_at, status from validations where run_id = ${id(runId)}"
-        .query[ValidationRow].option.flatMap(_.traverse(toResult))
+        .query[ValidationRow]
+        .option
+        .flatMap(_.traverse(toResult))
     )
 
-  override def record(runId: String, targetId: String, report: com.sslproxy.schema.validation.ValidationReport): IO[ValidationResult] =
+  override def record(
+    runId: String,
+    targetId: String,
+    report: com.sslproxy.schema.validation.ValidationReport
+  ): IO[ValidationResult] =
     for
       now <- Clock[IO].realTimeInstant
       result = ValidationStore.resultFromReport(runId, targetId, now.toString, report)
@@ -831,13 +972,24 @@ private[store] final class PostgresValidationStore(database: StateDatabase) exte
         target_id = EXCLUDED.target_id,
         checked_at = EXCLUDED.checked_at,
         status = EXCLUDED.status
-    """.update.run *> sql"delete from validation_issues where run_id = $runId".update.run *> insertIssues.updateMany(rows)).void
+    """.update.run *> sql"delete from validation_issues where run_id = $runId".update.run *> insertIssues.updateMany(
+      rows
+    )).void
 
   private def toResult(row: ValidationRow): ConnectionIO[ValidationResult] =
     sql"select run_id, issue_order, object_type, schema_name, object_name, error, severity from validation_issues where run_id = ${row.runId} order by issue_order"
-      .query[ValidationIssueRow].to[List].map { issues =>
+      .query[ValidationIssueRow]
+      .to[List]
+      .map { issues =>
         val (warnings, invalid) = issues.map(_.issue).partition(_.severity == "warning")
-        ValidationResult(row.runId.toString, row.targetId.toString, apiTime(row.checkedAt), invalid, row.status, warnings)
+        ValidationResult(
+          row.runId.toString,
+          row.targetId.toString,
+          apiTime(row.checkedAt),
+          invalid,
+          row.status,
+          warnings
+        )
       }
 
 private[store] final class PostgresSnapshotStore(database: StateDatabase) extends SnapshotStore:
@@ -847,10 +999,17 @@ private[store] final class PostgresSnapshotStore(database: StateDatabase) extend
     val filter = targetId.fold(Fragment.empty)(value => fr"where target_id = ${id(value)}")
     database.transact(
       (fr"select id, target_id, label, created_at, created_by, file_count from snapshots" ++ filter ++ fr"order by created_at desc")
-        .query[SnapshotRow].to[List].flatMap(_.traverse(toSnapshot))
+        .query[SnapshotRow]
+        .to[List]
+        .flatMap(_.traverse(toSnapshot))
     )
 
-  override def create(targetId: String, label: Option[String], files: List[StoredSqlFile], createdBy: String): IO[Snapshot] =
+  override def create(
+    targetId: String,
+    label: Option[String],
+    files: List[StoredSqlFile],
+    createdBy: String
+  ): IO[Snapshot] =
     for
       id <- IO(UUID.randomUUID())
       now <- Clock[IO].realTimeInstant
@@ -861,24 +1020,46 @@ private[store] final class PostgresSnapshotStore(database: StateDatabase) extend
   override def get(id: String): IO[Option[Snapshot]] =
     database.transact(
       sql"select id, target_id, label, created_at, created_by, file_count from snapshots where id = ${PostgresStoreSupport.id(id)}"
-        .query[SnapshotRow].option.flatMap(_.traverse(toSnapshot))
+        .query[SnapshotRow]
+        .option
+        .flatMap(_.traverse(toSnapshot))
     )
 
   private def persist(snapshot: Snapshot): ConnectionIO[Unit] =
     val snapshotId = id(snapshot.id)
     val rows = snapshot.files.map(file =>
-      (snapshotId, file.path, file.folder, file.filename, file.sha256, Base64.getDecoder.decode(file.content_base64.getOrElse("")), dbTime(file.uploaded_at), file.size_bytes)
+      (
+        snapshotId,
+        file.path,
+        file.folder,
+        file.filename,
+        file.sha256,
+        Base64.getDecoder.decode(file.content_base64.getOrElse("")),
+        dbTime(file.uploaded_at),
+        file.size_bytes
+      )
     )
     val insertFiles = Update[(UUID, String, String, String, String, Array[Byte], LocalDateTime, Long)](
       "insert into snapshot_files (snapshot_id, path, folder, filename, sha256, content, uploaded_at, size_bytes) values (?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    sql"insert into snapshots (id, target_id, label, created_at, created_by, file_count) values ($snapshotId, ${id(snapshot.target_id)}, ${snapshot.label}, ${dbTime(snapshot.created_at)}, ${snapshot.created_by}, ${snapshot.file_count})"
-      .update.run *> insertFiles.updateMany(rows).void
+    sql"insert into snapshots (id, target_id, label, created_at, created_by, file_count) values ($snapshotId, ${id(snapshot.target_id)}, ${snapshot.label}, ${dbTime(snapshot.created_at)}, ${snapshot.created_by}, ${snapshot.file_count})".update.run *> insertFiles
+      .updateMany(rows)
+      .void
 
   private def toSnapshot(row: SnapshotRow): ConnectionIO[Snapshot] =
     sql"select snapshot_id, path, folder, filename, sha256, content, uploaded_at, size_bytes from snapshot_files where snapshot_id = ${row.id} order by folder, filename"
-      .query[SnapshotFileRow].to[List].map(files =>
-        Snapshot(row.id.toString, row.targetId.toString, row.label, apiTime(row.createdAt), row.createdBy, row.fileCount, files.map(_.file))
+      .query[SnapshotFileRow]
+      .to[List]
+      .map(files =>
+        Snapshot(
+          row.id.toString,
+          row.targetId.toString,
+          row.label,
+          apiTime(row.createdAt),
+          row.createdBy,
+          row.fileCount,
+          files.map(_.file)
+        )
       )
 
 private[store] final class PostgresAuditStore(database: StateDatabase) extends AuditStore:
@@ -894,17 +1075,29 @@ private[store] final class PostgresAuditStore(database: StateDatabase) extends A
     val where = clauses.headOption.fold(Fragment.empty)(head => Fragments.whereAnd(head, clauses.tail*))
     database.transact(
       (fr"select id, actor, role, action, entity_type, entity_id, target_id, at, metadata from audit_events" ++ where ++ fr"order by at desc limit ${filters.limit}")
-        .query[AuditRow].to[List].map(_.map(_.event))
+        .query[AuditRow]
+        .to[List]
+        .map(_.map(_.event))
     )
 
-  override def record(actor: String, role: String, action: String, entityType: String, entityId: String, targetId: Option[String], metadata: Option[Json]): IO[AuditEvent] =
+  override def record(
+    actor: String,
+    role: String,
+    action: String,
+    entityType: String,
+    entityId: String,
+    targetId: Option[String],
+    metadata: Option[Json]
+  ): IO[AuditEvent] =
     for
       id <- IO(UUID.randomUUID())
       now <- Clock[IO].realTimeInstant
       event = AuditEvent(id.toString, actor, role, action, entityType, entityId, targetId, now.toString, metadata)
       _ <- database.transact(sql"""
         insert into audit_events (id, actor, role, action, entity_type, entity_id, target_id, at, metadata)
-        values ($id, $actor, $role, $action, $entityType, $entityId, ${targetId.map(PostgresStoreSupport.id)}, ${dbTime(now)}, ${metadata.map(_.noSpaces)})
+        values ($id, $actor, $role, $action, $entityType, $entityId, ${targetId.map(PostgresStoreSupport.id)}, ${dbTime(
+          now
+        )}, ${metadata.map(_.noSpaces)})
       """.update.run)
     yield event
 

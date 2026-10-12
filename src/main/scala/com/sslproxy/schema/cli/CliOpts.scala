@@ -87,7 +87,9 @@ object CliOpts:
     )
 
   private val encryptKeyOpt: Opts[Option[String]] =
-    Opts.option[String]("encrypt-key", help = "Base64 AES-256-GCM key for stored target credentials (server only)").orNone
+    Opts
+      .option[String]("encrypt-key", help = "Base64 AES-256-GCM key for stored target credentials (server only)")
+      .orNone
 
   private val jwtSecretOpt: Opts[String] =
     Opts
@@ -187,7 +189,9 @@ object CliOpts:
         urlArg.orElse(env.get("BEDROCK_STATE_DB_URL")).flatMap(nonBlank),
         userArg.orElse(env.get("BEDROCK_STATE_DB_USER")).flatMap(nonBlank),
         passwordArg.orElse(env.get("BEDROCK_STATE_DB_PASSWORD")).flatMap(nonBlank),
-        poolArg.orElse(env.get("BEDROCK_STATE_DB_POOL_SIZE").flatMap(value => Either.catchNonFatal(value.toInt).toOption)).getOrElse(10)
+        poolArg
+          .orElse(env.get("BEDROCK_STATE_DB_POOL_SIZE").flatMap(value => Either.catchNonFatal(value.toInt).toOption))
+          .getOrElse(10)
       )
     }
 

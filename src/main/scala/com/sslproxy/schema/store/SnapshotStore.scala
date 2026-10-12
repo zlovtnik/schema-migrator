@@ -93,5 +93,3 @@ private final class InMemorySnapshotStore(ref: Ref[IO, Map[String, Snapshot]]) e
 
   override def get(id: String): IO[Option[Snapshot]] =
     ref.get.map(_.get(id))
-
-

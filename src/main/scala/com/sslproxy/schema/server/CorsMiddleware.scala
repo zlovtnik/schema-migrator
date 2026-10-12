@@ -36,7 +36,7 @@ object CorsMiddleware:
     val port = request.uri.port
     val selfOrigin = port match
       case Some(p) if p != 80 && p != 443 => s"$scheme://$host:$p"
-      case _                              => s"$scheme://$host"
+      case _ => s"$scheme://$host"
     originValue.equalsIgnoreCase(selfOrigin)
 
   private def withCorsHeaders(response: Response[IO], origin: Option[String]): Response[IO] =

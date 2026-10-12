@@ -126,7 +126,9 @@ class ServerConfigSuite extends FunSuite:
       Left("BEDROCK_STATE_DB_USER must be a dedicated non-root PostgreSQL user")
     )
     assertEquals(
-      validStateStore.copy(url = "jdbc:postgresql://localhost:5432/schema_migrator?currentSchema=schema_migrator").validate,
+      validStateStore
+        .copy(url = "jdbc:postgresql://localhost:5432/schema_migrator?currentSchema=schema_migrator")
+        .validate,
       Left("BEDROCK_STATE_DB_URL must use an external non-loopback PostgreSQL host")
     )
   }

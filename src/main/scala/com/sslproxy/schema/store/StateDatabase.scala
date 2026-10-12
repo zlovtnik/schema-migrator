@@ -71,7 +71,9 @@ object StateDatabase:
         .leftMap(detail => StateSchemaVerificationFailure(StateSchemaVerificationFailure.SessionTimeZone, detail))
         .liftTo[ConnectionIO]
       ledger <- checked(StateSchemaVerificationFailure.LedgerVersionChecksum)(
-        sql"select checksum from schema_migrator.state_schema_migrations where version = ${contract.version}".query[String].option
+        sql"select checksum from schema_migrator.state_schema_migrations where version = ${contract.version}"
+          .query[String]
+          .option
       )
       _ <- StateSchemaVerificationFailure
         .ledgerFailure(contract, ledger)
@@ -137,7 +139,8 @@ private[store] object StateSchemaVerificationFailure:
           if requiredVersion == contract.version &&
             appliedVersion == contract.version &&
             requiredChecksum.equalsIgnoreCase(contract.checksum) &&
-            appliedChecksum.equalsIgnoreCase(contract.checksum) => None
+            appliedChecksum.equalsIgnoreCase(contract.checksum) =>
+        None
       case Some((requiredVersion, appliedVersion, requiredChecksum, appliedChecksum, ready)) =>
         Some(
           StateSchemaVerificationFailure(
@@ -179,9 +182,12 @@ private[store] object StateSchemaContract:
         IO.blocking {
           val properties = Properties()
           properties.load(stream)
-          val version = Option(properties.getProperty("version")).map(_.trim).filter(_.nonEmpty)
+          val version = Option(properties.getProperty("version"))
+            .map(_.trim)
+            .filter(_.nonEmpty)
             .getOrElse(throw IllegalStateException("state schema contract version is missing"))
-          val checksum = Option(properties.getProperty("checksum")).map(_.trim.toLowerCase)
+          val checksum = Option(properties.getProperty("checksum"))
+            .map(_.trim.toLowerCase)
             .filter(value => Sha256.matches(value))
             .getOrElse(throw IllegalStateException("state schema contract checksum must be lowercase SHA-256"))
           StateSchemaContract(version, checksum)

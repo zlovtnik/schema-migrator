@@ -266,7 +266,12 @@ class DiscoveryServiceSuite extends FunSuite:
   test("returns ignored table and view files as non-runnable warnings with paths") {
     val files = List(
       SqlFile("views", Path.of("views/001_ready_view.sql"), "001_ready_view.sql", "views/001_ready_view.sql"),
-      SqlFile("scratch", Path.of("scratch/002_ignored_view.sql"), "002_ignored_view.sql", "scratch/002_ignored_view.sql")
+      SqlFile(
+        "scratch",
+        Path.of("scratch/002_ignored_view.sql"),
+        "002_ignored_view.sql",
+        "scratch/002_ignored_view.sql"
+      )
     )
 
     val discovered = DiscoveryService().discoverFromFiles(files, DbKind.Postgres)

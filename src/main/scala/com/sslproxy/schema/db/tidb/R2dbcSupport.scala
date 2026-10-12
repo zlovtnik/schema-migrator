@@ -26,7 +26,8 @@ object R2dbcSupport:
     val stmt = conn.createStatement(sql)
     bindParams(stmt, params)
     publisherToList(
-      Flux.from(stmt.execute())
+      Flux
+        .from(stmt.execute())
         .flatMap(result => result.map((row, _) => f(row)))
     ).map(_.headOption)
 
@@ -34,7 +35,8 @@ object R2dbcSupport:
     val stmt = conn.createStatement(sql)
     bindParams(stmt, params)
     publisherToList(
-      Flux.from(stmt.execute())
+      Flux
+        .from(stmt.execute())
         .flatMap(result => result.map((row, _) => f(row)))
     )
 

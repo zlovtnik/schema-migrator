@@ -96,4 +96,3 @@ object StoredSqlFile:
       sha256 = sha256,
       uploadedAt = uploadedAt
     )
-

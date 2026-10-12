@@ -21,10 +21,16 @@ class StateDatabaseSuite extends FunSuite:
       .map(_.resolve("sql/postgres/schema_migrator/manifest.yaml").normalize())
       .find(path => Files.isRegularFile(path))
       .getOrElse(fail("canonical schema_migrator manifest is missing"))
-    val values = Files.readAllLines(manifest).toArray.toList.map(_.toString).collect {
-      case line if line.startsWith("schema_version:") => "version" -> line.stripPrefix("schema_version:").trim
-      case line if line.startsWith("manifest_sha256:") => "checksum" -> line.stripPrefix("manifest_sha256:").trim
-    }.toMap
+    val values = Files
+      .readAllLines(manifest)
+      .toArray
+      .toList
+      .map(_.toString)
+      .collect {
+        case line if line.startsWith("schema_version:") => "version" -> line.stripPrefix("schema_version:").trim
+        case line if line.startsWith("manifest_sha256:") => "checksum" -> line.stripPrefix("manifest_sha256:").trim
+      }
+      .toMap
 
     assertEquals(contract.version, values("version"))
     assertEquals(contract.checksum, values("checksum"))
@@ -33,15 +39,19 @@ class StateDatabaseSuite extends FunSuite:
   test("maps ledger and readiness discrepancies to safe stable categories") {
     val contract = StateSchemaContract("001", "a" * 64)
 
-    val missingLedger = StateSchemaVerificationFailure.ledgerFailure(contract, None).getOrElse(fail("expected ledger failure"))
+    val missingLedger =
+      StateSchemaVerificationFailure.ledgerFailure(contract, None).getOrElse(fail("expected ledger failure"))
     assertEquals(missingLedger.category, "ledger-version-checksum")
     assertEquals(missingLedger.detail, "missing version 001")
 
-    val checksumMismatch = StateSchemaVerificationFailure.ledgerFailure(contract, Some("b" * 64)).getOrElse(fail("expected checksum failure"))
+    val checksumMismatch = StateSchemaVerificationFailure
+      .ledgerFailure(contract, Some("b" * 64))
+      .getOrElse(fail("expected checksum failure"))
     assertEquals(checksumMismatch.category, "ledger-version-checksum")
     assert(checksumMismatch.detail.contains("expected="))
 
-    val missingReadiness = StateSchemaVerificationFailure.readinessFailure(contract, None).getOrElse(fail("expected readiness failure"))
+    val missingReadiness =
+      StateSchemaVerificationFailure.readinessFailure(contract, None).getOrElse(fail("expected readiness failure"))
     assertEquals(missingReadiness.category, "readiness")
     assertEquals(missingReadiness.detail, "row is missing")
 
@@ -54,7 +64,8 @@ class StateDatabaseSuite extends FunSuite:
   }
 
   test("reports a safe categorized runtime gate error") {
-    val failure = StateSchemaVerificationFailure(StateSchemaVerificationFailure.SessionTimeZone, "session time zone must be UTC")
+    val failure =
+      StateSchemaVerificationFailure(StateSchemaVerificationFailure.SessionTimeZone, "session time zone must be UTC")
     val message = StateSchemaVerificationFailure.topLevel(failure).getMessage
 
     assert(message.contains("[session-timezone]"))

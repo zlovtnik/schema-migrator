@@ -44,7 +44,8 @@ class ProviderSuite extends FunSuite:
   }
 
   test("normalizes mysql:// URI into JDBC config with credentials") {
-    val config = PostgresProvider.normalize("mysql://admin:s3cret@tidb.example:4000/mydb?sslMode=VERIFY_IDENTITY").toOption.get
+    val config =
+      PostgresProvider.normalize("mysql://admin:s3cret@tidb.example:4000/mydb?sslMode=VERIFY_IDENTITY").toOption.get
     assertEquals(config.url, "jdbc:mysql://tidb.example:4000/mydb?sslMode=VERIFY_IDENTITY")
     assertEquals(config.user, Some("admin"))
     assertEquals(config.password, Some("s3cret"))

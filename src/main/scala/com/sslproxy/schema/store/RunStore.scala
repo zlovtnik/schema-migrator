@@ -221,8 +221,7 @@ private final class InMemoryRunStore(
   ref: Ref[IO, Map[String, Run]],
   leases: Ref[IO, Map[String, MemoryLeaseState]],
   protected val topic: Topic[IO, RunEvent]
-)
-    extends RunStore
+) extends RunStore
     with RunStoreEvents:
   override def list(targetId: Option[String]): IO[List[Run]] =
     ref.get.map { runs =>
@@ -373,7 +372,10 @@ private final class InMemoryRunStore(
     Clock[IO].realTimeInstant.flatMap { now =>
       leases.modify { values =>
         values.get(lease.runId) match
-          case Some(state) if state.current.exists(current => sameLease(current, lease) && java.time.Instant.parse(current.expiresAt).isAfter(now)) =>
+          case Some(state)
+              if state.current.exists(current =>
+                sameLease(current, lease) && java.time.Instant.parse(current.expiresAt).isAfter(now)
+              ) =>
             val renewed = lease.copy(expiresAt = now.plusNanos(leaseFor.toNanos).toString)
             values.updated(lease.runId, state.copy(current = Some(renewed))) -> true
           case _ => values -> false
@@ -383,9 +385,9 @@ private final class InMemoryRunStore(
   override def ownsLease(lease: RunLease): IO[Boolean] =
     Clock[IO].realTimeInstant.flatMap { now =>
       leases.get.map(
-        _.get(lease.runId).flatMap(_.current).exists(current =>
-          sameLease(current, lease) && java.time.Instant.parse(current.expiresAt).isAfter(now)
-        )
+        _.get(lease.runId)
+          .flatMap(_.current)
+          .exists(current => sameLease(current, lease) && java.time.Instant.parse(current.expiresAt).isAfter(now))
       )
     }
 
@@ -456,9 +458,7 @@ private final class InMemoryRunStore(
     left.ownerId == right.ownerId && left.token == right.token && left.fence == right.fence
 
   private def clearLease(id: String): IO[Unit] =
-    leases.update(values =>
-      values.get(id).fold(values)(state => values.updated(id, state.copy(current = None)))
-    )
+    leases.update(values => values.get(id).fold(values)(state => values.updated(id, state.copy(current = None))))
 
   private def updateScript(id: String, scriptId: String)(f: ScriptRun => ScriptRun): IO[Boolean] =
     updateRun(id)(RunState.updateScript(_, scriptId)(f)).map(_.nonEmpty)

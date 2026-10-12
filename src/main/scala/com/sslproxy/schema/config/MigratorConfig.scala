@@ -101,13 +101,11 @@ final case class StateStoreConfig(
     else validateJdbcUrl
 
   private def validateJdbcUrl: Either[String, Unit] =
-    Try(URI.create(url.trim.stripPrefix("jdbc:"))).toEither
-      .left
+    Try(URI.create(url.trim.stripPrefix("jdbc:"))).toEither.left
       .map(_ => "BEDROCK_STATE_DB_URL must be a valid JDBC PostgreSQL URL")
       .flatMap { uri =>
         val database = Option(uri.getPath).getOrElse("").stripPrefix("/")
-        val params = Option(uri.getRawQuery)
-          .toList
+        val params = Option(uri.getRawQuery).toList
           .flatMap(_.split("&").toList)
           .flatMap { entry =>
             entry.split("=", 2).toList match
@@ -118,10 +116,8 @@ final case class StateStoreConfig(
         if Option(uri.getHost).forall(_.trim.isEmpty) then Left("BEDROCK_STATE_DB_URL must include a PostgreSQL host")
         else if Set("localhost", "127.0.0.1", "::1").contains(uri.getHost.toLowerCase(Locale.ROOT)) then
           Left("BEDROCK_STATE_DB_URL must use an external non-loopback PostgreSQL host")
-        else if Option(uri.getUserInfo).nonEmpty then
-          Left("BEDROCK_STATE_DB_URL must not contain inline credentials")
-        else if database != "sync" then
-          Left("BEDROCK_STATE_DB_URL must select the sync database")
+        else if Option(uri.getUserInfo).nonEmpty then Left("BEDROCK_STATE_DB_URL must not contain inline credentials")
+        else if database != "sync" then Left("BEDROCK_STATE_DB_URL must select the sync database")
         else if !params.get("currentschema").exists(_.equalsIgnoreCase("schema_migrator")) then
           Left(s"BEDROCK_STATE_DB_URL must set $RequiredSchemaParam")
         else Right(())

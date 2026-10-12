@@ -20,7 +20,8 @@ final class DiscoveryService:
     val normalized = files.map(file => SqlPathNormalizer.normalizeForDb(file, dbKind))
     val filesByFolder = normalized.collect { case Right(Some(file)) => file }.groupBy(_.folder)
 
-    val extraFolderWarnings = normalized.zip(files)
+    val extraFolderWarnings = normalized
+      .zip(files)
       .collect { case (Left(folder), file) if folder != "uncategorized" => folder -> file.relativePath }
       .distinct
       .sortBy((folder, path) => (folder, path))
