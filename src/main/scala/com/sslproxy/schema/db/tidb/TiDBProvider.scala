@@ -46,40 +46,42 @@ final class TiDBSession(conn: io.r2dbc.spi.Connection) extends DbSession:
     objects.traverse(prepareOne)
 
   private def prepareOne(objectDef: SchemaObject): IO[PreparedObject] =
-    for
-      existing <- queryOne[(String, String)](
-        conn,
-        TiDBStatements.lookupExistingSql,
-        Seq(objectDef.kind, objectDef.objectName)
-      ) { row =>
-        readString(row, "content_sha256") -> readString(row, "apply_status")
-      }
-      oldSha = existing.map(_._1)
-      oldStatus = existing.map(_._2)
-      needsApply = !oldSha.exists(_ == objectDef.sha256) || !oldStatus.exists(Set("applied", "skipped"))
-      status = if needsApply then "pending" else "skipped"
-      _ <- execUpdate(
-        conn,
-        TiDBStatements.prepareSql,
-        Seq(
-          objectDef.kind,
-          objectDef.objectName,
-          objectDef.sourceFile,
-          objectDef.dependsOn.mkString(","),
-          objectDef.rollbackFile.orNull,
-          objectDef.canonicalSql,
-          objectDef.sha256,
-          status,
-          status
-        )
-      ).void
-    yield PreparedObject(objectDef, oldSha, needsApply)
-      .adaptError { case e: Exception =>
-        MigratorError.Apply(
-          s"failed to prepare TiDB schema control state for ${objectDef.kind}:${objectDef.objectName}: ${e.getMessage}",
-          e
-        )
-      }
+    val operation =
+      for
+        existing <- queryOne[(String, String)](
+          conn,
+          TiDBStatements.lookupExistingSql,
+          Seq(objectDef.kind, objectDef.objectName)
+        ) { row =>
+          readString(row, "content_sha256") -> readString(row, "apply_status")
+        }
+        oldSha = existing.map(_._1)
+        oldStatus = existing.map(_._2)
+        needsApply = !oldSha.exists(_ == objectDef.sha256) || !oldStatus.exists(Set("applied", "skipped"))
+        status = if needsApply then "pending" else "skipped"
+        _ <- execUpdate(
+          conn,
+          TiDBStatements.prepareSql,
+          Seq(
+            objectDef.kind,
+            objectDef.objectName,
+            objectDef.sourceFile,
+            objectDef.dependsOn.mkString(","),
+            objectDef.rollbackFile.orNull,
+            objectDef.canonicalSql,
+            objectDef.sha256,
+            status,
+            status
+          )
+        ).void
+      yield PreparedObject(objectDef, oldSha, needsApply)
+
+    operation.adaptError { case e: Exception =>
+      MigratorError.Apply(
+        s"failed to prepare TiDB schema control state for ${objectDef.kind}:${objectDef.objectName}: ${e.getMessage}",
+        e
+      )
+    }
 
   override def retire(objects: List[SchemaObject]): IO[Unit] =
     objects.traverse_ { objectDef =>
