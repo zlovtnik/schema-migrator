@@ -1,0 +1,20 @@
+name: Main branch source policy
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  require-dev-source:
+    name: Require dev source branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify pull request source
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: test "$HEAD_REF" = "dev"
