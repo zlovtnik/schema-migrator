@@ -6,6 +6,13 @@ HTTP API, target CRUD, encrypted credentials, runs, snapshots, patches and
 audit state live in the `schema_migrator` schema of the external PostgreSQL
 `sync` database.
 
+Catalog drift checks compare selected object definitions and table presence;
+they do not compare column definitions or nullability. A clean drift report
+cannot rule out column drift. CLI dry-run output collapses whitespace and
+shortens SQL longer than 120 characters, so review the complete source files
+alongside the preview. Offline validation does not establish target execution
+safety.
+
 PostgreSQL is also supported as an external migration target. Oracle provider
 and SQL code remains for deprecated compatibility and historical validation;
 do not use it as current
@@ -66,7 +73,16 @@ recommended target workflow.
 
 ## CLI
 
-Commands are available through sbt during development:
+Offline discovery, validation, and preview work from a standalone checkout with
+a JDK and sbt, without a database or the parent platform:
+
+```bash
+git clone https://github.com/zlovtnik/schema-migrator.git
+cd schema-migrator
+```
+
+Commands are available through sbt during development. In the parent workspace,
+first change to `apps/schema-migrator`:
 
 ```bash
 sbt "run --db-kind postgres --sql-dir ./sql/postgres list"
