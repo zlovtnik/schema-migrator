@@ -85,7 +85,7 @@ lazy val root = (project in file("."))
       "com.oracle.database.security" % "osdt_cert" % oracleOsdtVersion,
       "io.asyncer" % "r2dbc-mysql" % r2dbcMysqlVersion,
       "com.h2database" % "h2" % "2.4.240" % Test,
-      "org.scalameta" %% "munit" % "1.3.4" % Test
+      "org.scalameta" %% "munit" % "1.3.6" % Test
     ),
     scalacOptions ++= Seq(
       "-java-output-version:21",
