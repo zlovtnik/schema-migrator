@@ -30,12 +30,24 @@ The parent platform architecture is documented in
 - HTTP target, run, snapshot, patch, validation and audit APIs
 - encrypted target credentials and PostgreSQL-backed control state
 - Keycloak or configured bearer-token authorization
-- a Vite/React operator UI in `schema-migrator-ui/`
+- a Vite/React operator UI and optional Electron desktop shell in
+  [`schema-migrator-ui/`](schema-migrator-ui/)
 
 The service does not provision its own internal schema. The parent
 repository's schema executor applies the checksummed
 [`sql/postgres/schema_migrator`](../../sql/postgres/schema_migrator) manifest
-before this service starts.
+before this service starts. The bundled `sql/` files are target-migration
+inputs; they are not the authoritative provisioning source for the parent
+platform's runtime schemas.
+
+## Source map
+
+| Path | Responsibility |
+|---|---|
+| [`src/main/scala/com/sslproxy/schema/cli/CliOpts.scala`](src/main/scala/com/sslproxy/schema/cli/CliOpts.scala) | CLI commands, flags and environment defaults |
+| [`src/main/scala/com/sslproxy/schema/config/MigratorConfig.scala`](src/main/scala/com/sslproxy/schema/config/MigratorConfig.scala) | Target and HTTP server configuration validation |
+| [`src/main/scala/com/sslproxy/schema/server/`](src/main/scala/com/sslproxy/schema/server/) | Authenticated HTTP routes and target operations |
+| [`src/main/scala/com/sslproxy/schema/store/StateDatabase.scala`](src/main/scala/com/sslproxy/schema/store/StateDatabase.scala) | Internal PostgreSQL connection and schema-contract verification |
 
 ## Internal state
 
@@ -74,7 +86,8 @@ recommended target workflow.
 ## CLI
 
 Offline discovery, validation, and preview work from a standalone checkout with
-a JDK and sbt, without a database or the parent platform:
+JDK 21 and sbt, without a database or the parent platform. The sbt version is
+pinned in [`project/build.properties`](project/build.properties):
 
 ```bash
 git clone https://github.com/zlovtnik/schema-migrator.git
@@ -123,7 +136,18 @@ Server configuration uses the `BEDROCK_*` family:
 - `BEDROCK_DB_TEST_ALLOWED_HOSTS`
 
 The server fails closed when required auth, encryption or state-store
-configuration is missing.
+configuration is missing. The encryption key must be base64 encoding of 32
+bytes. Once those environment variables and the external schema are ready,
+start the API from this directory:
+
+```bash
+sbt "run serve"
+```
+
+The default bind address is `127.0.0.1:8080`. `/api/health` is an
+unauthenticated process-health endpoint; successful startup has already
+verified the internal schema contract. It does not validate every external
+migration target.
 
 ## Kubernetes runtime
 
@@ -137,12 +161,20 @@ PostgreSQL `sync` database. Its authoritative manifest is
 
 ## Local development
 
-Docker Compose may be used only as a local service/UI test harness, with
-PostgreSQL and identity endpoints provisioned outside the harness:
+Run the backend as above against externally provisioned PostgreSQL state and
+identity endpoints. In a second terminal, start the UI:
 
 ```bash
-docker-compose up --build
+cd schema-migrator-ui
+bun install --frozen-lockfile
+bun run dev
 ```
+
+Vite listens on port `5173` and proxies `/api` to `http://localhost:8080`.
+Set `VITE_API_PROXY_TARGET` when the backend is elsewhere. Configure browser
+identity settings using the UI's [environment example](schema-migrator-ui/.env.example).
+The checked-in Compose harness retains legacy TiDB truststore settings; it
+requires reconciliation with the current PostgreSQL configuration before use.
 
 ## Build and test
 
@@ -151,6 +183,9 @@ sbt compile
 sbt test
 sbt assembly
 cd schema-migrator-ui
+bun install --frozen-lockfile
+bun run lint
+bun run typecheck
 bun run test
 bun run build
 ```
